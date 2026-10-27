@@ -500,9 +500,17 @@ function scalar(document: SkillDocument, key: string): string | undefined {
 /** Routing hint derived from the frontmatter's own trigger list. */
 function triggerHint(description: string | undefined): string | undefined {
   if (description === undefined) return undefined
-  const index = description.indexOf('Triggers on:')
-  if (index === -1) return undefined
-  const triggers = description.slice(index + 'Triggers on:'.length).trim().replace(/[.]$/u, '')
+  // Upstream phrases this list two ways: 'Triggers on:' in the reviewer and
+  // deep-research skills, plain 'Triggers:' in academic-paper. Both are the skill's
+  // own trigger list, so both are served; when neither marker is present nothing is
+  // invented and whenToUse stays absent.
+  const marker = description.includes('Triggers on:')
+    ? 'Triggers on:'
+    : description.includes('Triggers:')
+      ? 'Triggers:'
+      : undefined
+  if (marker === undefined) return undefined
+  const triggers = description.slice(description.indexOf(marker) + marker.length).trim().replace(/[.]$/u, '')
   return triggers === '' ? undefined : 'Triggers on: ' + triggers
 }
 

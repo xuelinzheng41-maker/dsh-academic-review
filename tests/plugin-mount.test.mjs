@@ -34,7 +34,7 @@ async function workspace() {
   return { root, paper, cleanup: async () => { await rm(root, { recursive: true, force: true }) } }
 }
 
-test('applying the plugin registers five tools and both vendored skills', async t => {
+test('applying the plugin registers five tools and every vendored skill', async t => {
   const space = await workspace()
   t.after(space.cleanup)
   const { skills, tools } = mount({ stateDir: '.academic-review', workspaceRoot: space.root })
@@ -49,12 +49,12 @@ test('applying the plugin registers five tools and both vendored skills', async 
   ])
 
   const summaries = await skills.list({ cwd: space.root })
-  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper-reviewer', 'deep-research'])
-  assert.equal(summaries[0].provider, 'academic-review')
-  assert.equal(summaries[1].provider, 'academic-review')
-  // Both resource bases are absolute directories under the packaged vendor tree.
-  assert.equal(summaries[0].resourceBase.path, join(process.cwd(), 'vendor', 'academic-paper-reviewer'))
-  assert.equal(summaries[1].resourceBase.path, join(process.cwd(), 'vendor', 'deep-research'))
+  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper', 'academic-paper-reviewer', 'deep-research'])
+  // Every resource base is an absolute directory under the packaged vendor tree.
+  for (const summary of summaries) {
+    assert.equal(summary.provider, 'academic-review')
+    assert.equal(summary.resourceBase.path, join(process.cwd(), 'vendor', summary.name))
+  }
   // deep-research is prompt-only: the plugin adds no tool for it.
   assert.equal(tools.schemas().filter(schema => schema.name.includes('research')).length, 0)
 })
@@ -143,7 +143,7 @@ test('an unknown skills config entry fails the mount with a clear message', asyn
   try {
     assert.throws(
       () => mount({ stateDir: '.academic-review', workspaceRoot: space.root, skills: ['deep-resarch'] }),
-      /unknown vendored skill "deep-resarch": available skills are academic-paper-reviewer, deep-research/u,
+      /unknown vendored skill "deep-resarch": available skills are academic-paper, academic-paper-reviewer, deep-research/u,
     )
   } finally {
     await space.cleanup()

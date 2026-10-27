@@ -32,7 +32,7 @@ const vendorRoot = join(repoRoot, 'vendor')
 const manifestPath = join(repoRoot, 'vendor-manifest.json')
 
 /** Skill trees vendored in full. Adding a skill is a one-line change here. */
-const SKILLS = ['academic-paper-reviewer', 'deep-research']
+const SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper']
 
 /** Attribution pinned by docs/PORT_SPEC.md section 5. */
 export const UPSTREAM = {
@@ -359,13 +359,7 @@ async function vendor(upstream) {
     typeOf: index.typeOf,
     filesUnder: index.filesUnder,
   })
-  if (closure.missing.length > 0) {
-    throw new Error(
-      'the vendored trees reference ' + closure.missing.length + ' shared/ path(s) that do not exist at ' + commit + ':\n  ' +
-        closure.missing.join('\n  ') +
-        '\nA reference that cannot be resolved means the closure is wrong, so nothing was written.',
-    )
-  }
+  assertClosureComplete(closure, commit)
 
   // Two rules decide what is vendored under shared/, and both are computed:
   //   1. the path scan above, which stays closed - an unreferenced file stays out;
@@ -448,6 +442,23 @@ async function vendor(upstream) {
   for (const entry of receipts.excluded) console.warn('  NOT vendored ' + entry.file + ': ' + entry.reason)
   for (const file of dropped) console.warn('  NO LONGER VENDORED (was pinned by the previous manifest): ' + file)
   if (filtered.length > 0) console.log(filtered.length + ' worktree copies had filtered line endings and were read from git')
+}
+
+/**
+ * Refuse to write anything when a vendored tree points at a shared/ path the
+ * upstream commit does not contain.
+ *
+ * A dangling reference is not a cosmetic warning: the closure would ship a skill
+ * whose own instructions name a file that is not there, and the next reader would
+ * find a hole with no record of why. So the run stops before anything is written.
+ */
+export function assertClosureComplete(closure, commit) {
+  if (closure.missing.length === 0) return
+  throw new Error(
+    'the vendored trees reference ' + closure.missing.length + ' shared/ path(s) that do not exist at ' + commit + ':\n  ' +
+      closure.missing.join('\n  ') +
+      '\nA reference that cannot be resolved means the closure is wrong, so nothing was written.',
+  )
 }
 
 export function foldCrlf(buffer) {

@@ -53,7 +53,6 @@ const vendorDir = join(repoRoot, 'vendor')
  * the skills the plugin serves plus their shared/ closure.
  */
 const UNVENDORED_UPSTREAM_AREAS = new Map([
-  ['academic-paper', 'upstream skill academic-paper: not vendored by this port (only the reviewer and deep-research are served)'],
   ['academic-pipeline', 'upstream skill academic-pipeline: not vendored by this port'],
   ['docs', 'upstream repository docs/design specs: not vendored by this port'],
   ['examples', 'upstream repository examples/: not vendored by this port'],
@@ -93,13 +92,15 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
     + String(outOfPort.length) + ' out-of-port ('
     + String(distinctOutOfPortTargets.length) + ' distinct targets across ' + String(outOfPortAreas.length) + ' unvendored upstream areas)')
 
-  // The walk has to cover both skills and the shared tree the skills read.
+  // The walk has to cover every skill the manifest says is vendored, plus the
+  // shared tree the skills read. Derived, not hard-coded: a newly vendored skill
+  // must show up here without anyone remembering to edit this list.
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
   assert.deepEqual(
     [...new Set(scan.files.map(name => name.split('/')[0]))].sort(),
-    [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, 'shared'].sort(),
+    [...manifest.skills.map(skill => skill.name), 'shared'].sort(),
     'the walk must cover every vendored area',
   )
-  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
   assert.equal(
     scan.files.filter(name => name.startsWith(REVIEW_SKILL_NAME + '/')).length,
     manifest.skills.find(skill => skill.name === REVIEW_SKILL_NAME).fileCount,
@@ -180,7 +181,7 @@ test('the deep-research frontmatter parses and the provider serves it with a por
   const skills = new SkillRegistry(ctx)
   registerReviewSkillProvider(ctx, { providerName: 'academic-review', vendorBasePath: vendorRoot })
   const summaries = await skills.list({ cwd: repoRoot })
-  assert.deepEqual(summaries.map(summary => summary.name), [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
 
   const definition = await skills.get(DEEP_RESEARCH_SKILL_NAME, { cwd: repoRoot })
   assert.ok(definition !== undefined, 'the provider must serve deep-research')

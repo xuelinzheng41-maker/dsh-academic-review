@@ -13,8 +13,13 @@ import { criterionIds } from '../scripts/vendor-upstream.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
-const EXPECTED_SKILLS = ['academic-paper-reviewer', 'deep-research']
-const EXPECTED_SKILL_FILE_COUNTS = { 'academic-paper-reviewer': 28, 'deep-research': 53 }
+const EXPECTED_SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper']
+const EXPECTED_SKILL_FILE_COUNTS = { 'academic-paper-reviewer': 28, 'deep-research': 53, 'academic-paper': 63 }
+// Counted from the upstream git objects: 144 skill files + 110 shared files.
+const EXPECTED_TOTAL_FILES = 254
+// The closure is derived, but its SIZE is pinned here on purpose: a rule change
+// that quietly stops following part of the tree has to be a deliberate edit.
+const EXPECTED_SHARED_COUNTS = { total: 110, byScan: 108, byRegistryReceipt: 2 }
 
 test('vendor-manifest.json pins the upstream identity and the vendored skills', async () => {
   const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
@@ -24,8 +29,13 @@ test('vendor-manifest.json pins the upstream identity and the vendored skills', 
   assert.equal(manifest.upstream.license, 'CC BY-NC 4.0')
   assert.deepEqual(manifest.vendored.skills, EXPECTED_SKILLS)
   assert.deepEqual(manifest.vendored.skillFileCounts, EXPECTED_SKILL_FILE_COUNTS)
-  assert.equal(manifest.vendored.skillFileCount, 28 + 53)
+  assert.equal(manifest.vendored.skillFileCount, 28 + 53 + 63)
   assert.equal(manifest.vendored.sharedFileCount, manifest.sharedFiles.length)
+  assert.equal(manifest.vendored.sharedFileCount, EXPECTED_SHARED_COUNTS.total)
+  assert.deepEqual(manifest.vendored.sharedFileCounts, {
+    byScan: EXPECTED_SHARED_COUNTS.byScan,
+    byRegistryReceipt: EXPECTED_SHARED_COUNTS.byRegistryReceipt,
+  })
   assert.equal(manifest.vendored.totalFileCount, Object.keys(manifest.files).length)
   assert.equal(
     manifest.vendored.totalFileCount,
@@ -37,7 +47,7 @@ test('vendor-manifest.json pins the upstream identity and the vendored skills', 
 test('every vendored file is byte-identical to the recorded SHA-256', async () => {
   const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
   const names = Object.keys(manifest.files)
-  assert.ok(names.length >= 181, 'expected at least 181 vendored files, got ' + names.length)
+  assert.equal(names.length, EXPECTED_TOTAL_FILES, 'expected ' + EXPECTED_TOTAL_FILES + ' vendored files, got ' + names.length)
   for (const name of names) {
     const bytes = await readFile(join(repoRoot, 'vendor', name))
     assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.files[name], 'digest drift in ' + name)
@@ -128,4 +138,97 @@ test('a provenance receipt is vendored only because the registry cites its crite
       ['sigsoft-empirical-standards.2026-08-24.json', 2],
     ],
   )
+})
+
+// --- the third skill: bytes, and what only it references --------------------
+//
+// academic-paper is the first vendored skill that ships a non-markdown file
+// (templates/latex_article_template.tex), and the first whose instructions reach
+// parts of shared/ the other two never mention. Both are asserted here, against
+// the real vendored tree, because both are the kind of thing a "works for markdown"
+// path would quietly get wrong.
+
+const PAPER_ONLY_SHARED = [
+  'shared/contracts/writer/full.json',
+  'shared/policy_data/nature_policy.md',
+  'shared/references/claim_strength_ladder.md',
+  'shared/raise_framework.md',
+]
+
+/** Every vendored file outside the given skill trees, as text, for mention checks. */
+async function textOutside(skills) {
+  const files = []
+  async function walk(dir, prefix) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
+      if (entry.isDirectory()) await walk(join(dir, entry.name), relative)
+      else files.push(relative)
+    }
+  }
+  await walk(join(repoRoot, 'vendor'), '')
+  const wanted = files.filter(name => !skills.some(skill => name.startsWith(skill + '/')))
+  return Promise.all(wanted.map(async name => ({ name, text: await readFile(join(repoRoot, 'vendor', name), 'utf8') })))
+}
+
+test('the one non-markdown file is vendored byte-for-byte, with no line-ending conversion', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const tex = 'academic-paper/templates/latex_article_template.tex'
+  assert.ok(manifest.files[tex] !== undefined, 'the .tex template is not pinned')
+  const bytes = await readFile(join(repoRoot, 'vendor', tex))
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.files[tex], 'digest drift in ' + tex)
+  // The vendoring path treats every file as bytes, so nothing may have rewritten
+  // the line endings of the one file that is not markdown.
+  assert.equal(bytes.includes(0x0d), false, 'the vendored .tex carries CR, so something text-converted it')
+  assert.ok(bytes.subarray(0, 1).toString('utf8') === '%', 'the .tex still starts with its LaTeX comment header')
+  // ...and the .tex is the only non-markdown file in the tree, so a filter that
+  // only knew about markdown would have been caught by the line above.
+  const extensions = new Set(Object.keys(manifest.files).filter(name => name.startsWith('academic-paper/')).map(name => name.slice(name.lastIndexOf('.'))))
+  assert.deepEqual([...extensions].sort(), ['.json', '.md', '.tex', '.yaml'].filter(ext => [...extensions].includes(ext)).sort())
+})
+
+/** The vendored files of the given skill trees, as text. */
+async function textUnder(skills) {
+  const entries = []
+  async function walk(dir, prefix) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
+      if (entry.isDirectory()) await walk(join(dir, entry.name), relative)
+      else entries.push({ name: relative, text: await readFile(join(repoRoot, 'vendor', relative), 'utf8') })
+    }
+  }
+  for (const skill of skills) await walk(join(repoRoot, 'vendor', skill), skill)
+  return entries
+}
+
+test('a shared file only academic-paper references is vendored, and the other skills never mention it', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const otherSkills = await textUnder(['academic-paper-reviewer', 'deep-research'])
+  const paper = await textUnder(['academic-paper'])
+  for (const file of PAPER_ONLY_SHARED) {
+    assert.ok(manifest.sharedFiles.includes(file), file + ' is not in the shared closure')
+    assert.ok(manifest.files[file] !== undefined, file + ' is not pinned')
+    assert.ok(
+      paper.some(entry => entry.text.includes(file)),
+      file + ' is not actually referenced by academic-paper, so this test would prove nothing',
+    )
+    // "Paper-only" means the two skills vendored before it never name it, so the
+    // file can only have entered the closure through the third skill. Mentions
+    // from other shared/ documents are fine - the closure follows those too.
+    const mentioned = otherSkills.filter(entry => entry.text.includes(file)).map(entry => entry.name)
+    assert.deepEqual(mentioned, [], file + ' is also referenced by ' + mentioned.join(', ') + ', so it is not paper-only')
+  }
+  assert.ok(PAPER_ONLY_SHARED.length > 0)
+})
+
+test('the registry receipts are unreachable by the path scan, so the receipt rule is what vendors them', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const receipts = manifest.sharedViaRegistryReceipts.map(entry => entry.file)
+  assert.equal(receipts.length, EXPECTED_SHARED_COUNTS.byRegistryReceipt)
+  const everything = await textOutside([])
+  for (const receipt of receipts) {
+    const mentions = everything.filter(entry => entry.name !== receipt && entry.text.includes(receipt)).map(entry => entry.name)
+    assert.deepEqual(mentions, [], receipt + ' is named by ' + mentions.join(', ') + ', so the scan could have found it')
+  }
+  // byScan must therefore be exactly the scan set, with the receipts added on top.
+  assert.equal(manifest.vendored.sharedFileCounts.byScan + receipts.length, manifest.sharedFiles.length)
 })

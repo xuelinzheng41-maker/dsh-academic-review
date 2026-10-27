@@ -239,7 +239,9 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   assert.equal(reviewer.metadata.unavailableSharedReferenceCount, reviewerShared.length)
   assert.equal(research.metadata.unavailableSharedReferenceCount, researchShared.length)
   // The known upstream areas the shared files point at, spot-checked by name.
-  assert.ok(reviewerShared.includes('academic-paper/references/abstract_writing_guide.md'), reviewerShared.join(', '))
+  // academic-paper is vendored now, so that reference resolves; the misses that
+  // remain are the upstream areas this port still does not ship.
+  assert.ok(reviewerShared.includes('academic-pipeline/references/plagiarism_detection_protocol.md'), reviewerShared.join(', '))
   assert.ok(reviewerShared.includes('scripts/adapters/'), reviewerShared.join(', '))
 
   // deep-research carries BOTH lists separately: one own-tree miss and the shared set.

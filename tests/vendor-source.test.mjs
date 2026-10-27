@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
+  assertClosureComplete,
   assertWorktreeClean,
   computeRegistryReceipts,
   computeSharedClosure,
@@ -312,4 +313,60 @@ test('the registry rule is idempotent and deterministic', () => {
   }
   const files = [receiptPath('one.json')]
   assert.deepEqual(receiptsFrom(tree, files), receiptsFrom(tree, files))
+})
+
+// --- the closure is a union over every vendored skill -----------------------
+//
+// The closure used to be computed for two skills. Nothing in the rule may assume
+// that: a file only the newest skill mentions has to come in exactly like a file
+// both old skills mention, and it has to come in through the same scan.
+
+test('a shared file only the third skill mentions is still in the closure', () => {
+  const closure = closureOf({
+    'academic-paper-reviewer/SKILL.md': 'see shared/reviewer-only.md',
+    'deep-research/SKILL.md': 'see shared/deep-research-only.md',
+    'academic-paper/SKILL.md': 'see shared/paper-only.md and shared/reviewer-only.md',
+    'shared/reviewer-only.md': 'reviewer',
+    'shared/deep-research-only.md': 'deep research',
+    'shared/paper-only.md': 'only academic-paper names this',
+    'shared/nobody.md': 'still unreferenced',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/deep-research-only.md',
+    'shared/paper-only.md',
+    'shared/reviewer-only.md',
+  ])
+  assert.deepEqual(closure.missing, [])
+  assert.equal(closure.sharedFiles.includes('shared/nobody.md'), false)
+})
+
+test('the third skill reaches a directory reference the other two never name', () => {
+  const closure = closureOf({
+    'academic-paper-reviewer/SKILL.md': 'see shared/protocol.md',
+    'academic-paper/SKILL.md': 'contracts live in shared/contracts/writer/',
+    'shared/protocol.md': 'protocol',
+    'shared/contracts/writer/full.json': '{}',
+    'shared/contracts/writer/partial.json': '{}',
+    'shared/contracts/unused/full.json': '{}',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/contracts/writer/full.json',
+    'shared/contracts/writer/partial.json',
+    'shared/protocol.md',
+  ])
+  assert.deepEqual(closure.expandedDirs, [{ dir: 'shared/contracts/writer', count: 2 }])
+})
+
+test('a missing upstream target stops the run instead of being skipped', () => {
+  const closure = closureOf({
+    'academic-paper/SKILL.md': 'see shared/present.md and shared/absent.md',
+    'shared/present.md': 'present',
+  })
+  assert.deepEqual(closure.missing, ['shared/absent.md'])
+  // The run refuses to write anything: shipping a skill whose own instructions
+  // name a file we did not vendor is worse than failing the build.
+  assert.throws(() => assertClosureComplete(closure, 'deadbeef'), /shared\/absent\.md/)
+  assert.throws(() => assertClosureComplete(closure, 'deadbeef'), /nothing was written/)
+  // A complete closure is not an error, so the guard cannot fire on a healthy tree.
+  assert.equal(assertClosureComplete(closureOf({ 'academic-paper/SKILL.md': 'see shared/x.md', 'shared/x.md': 'x' }), 'deadbeef'), undefined)
 })

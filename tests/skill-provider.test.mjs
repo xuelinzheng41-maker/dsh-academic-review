@@ -29,6 +29,9 @@ import {
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorBase = defaultVendorBasePath()
 
+/** The third vendored skill (P3-2). Discovery order is alphabetical. */
+const PAPER_SKILL_NAME = 'academic-paper'
+
 /** Registration control stand-in; the provider only reads it passively. */
 function control() {
   const controller = new AbortController()
@@ -50,16 +53,16 @@ async function candidateFor(skillName, config = {}) {
 
 test('discovery lists every vendored skill and skips the shared tree', async () => {
   const discovered = discoverVendoredSkills(vendorBase)
-  assert.deepEqual(discovered, [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(discovered, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
   assert.equal(discovered.includes('shared'), false)
   for (const name of discovered) {
     assert.equal(existsSync(join(vendorBase, name, 'SKILL.md')), true, name + ' has no SKILL.md')
   }
 })
 
-test('the provider advertises both vendored skills with absolute resource bases', async () => {
+test('the provider advertises every vendored skill with an absolute resource base', async () => {
   const candidates = await provider().list()
-  assert.deepEqual(candidates.map(item => item.name), [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(candidates.map(item => item.name), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
   for (const candidate of candidates) {
     assert.equal(candidate.provider, 'academic-review')
     assert.equal(candidate.source, REVIEW_SKILL_SOURCE)
@@ -82,7 +85,12 @@ test('the provider advertises both vendored skills with absolute resource bases'
 
 test('each skill reports its own frontmatter metadata, not a shared constant', async () => {
   const instance = provider()
-  const [reviewer, research] = await instance.list()
+  // Look the two skills up by name: the vendored set is no longer fixed at two and
+  // discovery order is alphabetical, so positional destructuring would silently
+  // compare the wrong skill once a third one is vendored.
+  const candidates = await instance.list()
+  const reviewer = candidates.find(item => item.name === REVIEW_SKILL_NAME)
+  const research = candidates.find(item => item.name === DEEP_RESEARCH_SKILL_NAME)
   const reviewerDefinition = await instance.get(reviewer, {})
   const researchDefinition = await instance.get(research, {})
 
@@ -140,19 +148,21 @@ test('a narrowed configuration serves only the named skill', async () => {
 
   const onlyReviewer = provider({ skills: [REVIEW_SKILL_NAME] })
   assert.deepEqual((await onlyReviewer.list()).map(item => item.name), [REVIEW_SKILL_NAME])
-  // Selection is order-independent and de-duplicated against the vendored order.
+  // Selection is order-independent and de-duplicated against the vendored order,
+  // and an explicit selection names exactly what is served - vendoring a third
+  // skill must not widen it.
   assert.deepEqual(resolveSkillSelection(vendorBase, [DEEP_RESEARCH_SKILL_NAME, REVIEW_SKILL_NAME]),
     [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
   // An empty selection means "everything vendored".
-  assert.deepEqual(resolveSkillSelection(vendorBase, []), [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(resolveSkillSelection(vendorBase, []), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
 })
 
 test('an unknown skill name is refused with a clear message', async () => {
   assert.throws(() => resolveSkillSelection(vendorBase, ['no-such-skill']), error => {
     assert.equal(error instanceof UnknownSkillSelectionError, true)
     assert.match(error.message, /unknown vendored skill "no-such-skill"/u)
-    assert.match(error.message, /available skills are academic-paper-reviewer, deep-research/u)
-    assert.deepEqual(error.available, [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+    assert.match(error.message, /available skills are academic-paper, academic-paper-reviewer, deep-research/u)
+    assert.deepEqual(error.available, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
     return true
   })
   // A vendor directory with nothing vendored is also a loud failure, not an empty catalog.
