@@ -45,6 +45,7 @@ import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { fileURLToPath } from 'node:url'
 import {
   PAPER_TEXT,
   callTool,
@@ -56,6 +57,9 @@ import {
   seatReport,
 } from '../tests/helpers.mjs'
 import { resolveRoute } from '../tests/host-prefix-matcher.mjs'
+
+/** Repository root, so the harness reads the same manifests the package ships. */
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 /** Review-state directory name used for both harness workspaces. */
 const STATE_DIR = '.academic-review'
@@ -616,10 +620,14 @@ async function main() {
     assert.deepEqual(tools.schemas().map(schema => schema.name).sort(), TOOL_NAMES)
     ok('plugin mounted on a real cordis Context; tool surface is exactly the five academic_review_* tools')
     const advertised = await skills.list({ cwd: runWorkspace })
-    assert.equal(advertised.length, 1)
-    assert.equal(advertised[0].name, 'academic-paper-reviewer')
-    assert.equal(advertised[0].provider, 'academic-review')
-    ok('plugin mounted; skill provider advertises the vendored academic-paper-reviewer skill')
+    // Discovery is a directory scan over vendor/, so the advertised surface follows
+    // vendor-manifest.json. Compare against the manifest instead of hard-coding one
+    // skill name: vendoring another skill must not silently change what is served.
+    const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+    const vendored = [...manifest.vendored.skills].sort()
+    assert.deepEqual(advertised.map(skill => skill.name), vendored)
+    for (const skill of advertised) assert.equal(skill.provider, 'academic-review')
+    ok('plugin mounted; skill provider advertises every vendored skill (' + vendored.join(', ') + ')')
 
     section('checkpoint 1: create -> attach (4 cards) -> confirm')
     const review = await runCheckpointOne(tools, runWorkspace, manuscript)

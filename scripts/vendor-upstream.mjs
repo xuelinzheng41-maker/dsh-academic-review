@@ -46,6 +46,11 @@ export const UPSTREAM = {
 }
 
 /** `shared/<path>` mentions, in markdown links, code spans and bare prose alike. */
+/** The review-criteria registry: the document provenance receipts have to justify. */
+const REGISTRY_PATH = 'shared/review_criteria_registry.json'
+/** Provenance receipts. A file here is vendored only if the registry cites it. */
+const RECEIPT_DIR = 'shared/review_criteria_sources'
+
 const SHARED_REF = /shared\/[A-Za-z0-9._\-/]+/g
 /** A reference that runs into a template placeholder (`shared/contracts/<d>/<m>.json`). */
 const PLACEHOLDER = /^[<{[[$|*]/
@@ -215,6 +220,57 @@ export function computeSharedClosure({ skillFiles, readText, typeOf, filesUnder,
   }
 }
 
+/** Every criterion_id value in a parsed document, collected at any depth. */
+export function criterionIds(document, found = new Set()) {
+  if (Array.isArray(document)) {
+    for (const item of document) criterionIds(item, found)
+    return found
+  }
+  if (document === null || typeof document !== 'object') return found
+  for (const [key, value] of Object.entries(document)) {
+    if (key === 'criterion_id' && typeof value === 'string') found.add(value)
+    else criterionIds(value, found)
+  }
+  return found
+}
+
+/**
+ * Vendor a provenance receipt only when the review-criteria registry cites it.
+ *
+ * Nothing names these files by path - the link is by criterion id, which no path
+ * scan can see - so a receipt whose ids the registry cites is evidence the vendored
+ * registry depends on, and a receipt nobody cites is just an extra file. Ids are
+ * read from criterion_id keys in the parsed JSON, so prose cannot satisfy the rule.
+ */
+export function computeRegistryReceipts({ receiptFiles, readText, registryFile = REGISTRY_PATH }) {
+  const registryIds = criterionIds(JSON.parse(readText(registryFile)))
+  const included = []
+  const excluded = []
+  for (const file of [...receiptFiles].sort()) {
+    const ids = [...criterionIds(JSON.parse(readText(file)))].sort()
+    const cited = ids.filter(id => registryIds.has(id))
+    if (cited.length > 0) {
+      included.push({ file, criterionIds: cited })
+      continue
+    }
+    excluded.push({
+      file,
+      criterionIds: ids,
+      reason:
+        ids.length === 0
+          ? 'it names no criterion_id, so it justifies nothing in ' + registryFile
+          : 'none of its criterion ids (' + ids.join(', ') + ') appear in ' + registryFile,
+    })
+  }
+  return { included, excluded, registryCriterionIds: registryIds.size }
+}
+
+/** Files the previous manifest pinned that the rules no longer reach: never dropped silently. */
+export function droppedPins(previousFiles, currentFiles) {
+  const current = new Set(currentFiles)
+  return [...new Set(previousFiles)].filter(file => !current.has(file)).sort()
+}
+
 async function listFiles(root, base = root) {
   const out = []
   for (const entry of await readdir(root, { withFileTypes: true })) {
@@ -293,14 +349,25 @@ async function vendor(upstream) {
     )
   }
 
-  // Never unpin a file silently. Anything pinned by the previous manifest that the
-  // scan no longer reaches is carried over and reported, so dropping it stays a
-  // human decision instead of a side effect of a grep change.
-  const previous = await previousManifest()
-  const previouslyPinned = Array.isArray(previous?.sharedFiles) ? previous.sharedFiles : []
+  // Two rules decide what is vendored under shared/, and both are computed:
+  //   1. the path scan above, which stays closed - an unreferenced file stays out;
+  //   2. provenance receipts the registry cites by criterion id. Nothing names
+  //      those files by path, so the scan cannot see the link, and dropping them
+  //      would ship a registry whose criteria claim provenance we do not vendor.
+  const receiptFiles = index.filesUnder(RECEIPT_DIR).sort()
+  const receipts =
+    receiptFiles.length === 0
+      ? { included: [], excluded: [], registryCriterionIds: 0 }
+      : computeRegistryReceipts({ receiptFiles, readText: index.readText, registryFile: REGISTRY_PATH })
   const scanned = new Set(closure.sharedFiles)
-  const carriedOver = previouslyPinned.filter(file => !scanned.has(file)).sort()
-  const sharedFiles = [...new Set([...closure.sharedFiles, ...carriedOver])].sort()
+  const viaReceipts = receipts.included.map(entry => entry.file).filter(file => !scanned.has(file))
+  const sharedFiles = [...new Set([...closure.sharedFiles, ...viaReceipts])].sort()
+  const sharedByScan = sharedFiles.filter(file => scanned.has(file)).length
+  const sharedByReceipt = sharedFiles.length - sharedByScan
+  // Compared against what the previous manifest pinned, so a file leaving the
+  // vendored set is always printed instead of vanishing with a rule change.
+  const previous = await previousManifest()
+  const dropped = droppedPins(Array.isArray(previous?.sharedFiles) ? previous.sharedFiles : [], sharedFiles)
 
   const entries = [...skillTrees.values()].flat().concat(sharedFiles).sort()
   const files = {}
@@ -333,11 +400,12 @@ async function vendor(upstream) {
       skillFileCounts,
       skillFileCount: [...skillTrees.values()].reduce((sum, skillFiles) => sum + skillFiles.length, 0),
       sharedFileCount: sharedFiles.length,
+      sharedFileCounts: { byScan: sharedByScan, byRegistryReceipt: sharedByReceipt },
       totalFileCount: entries.length,
     },
     skills: SKILLS.map(skill => ({ name: skill, dir: 'vendor/' + skill, fileCount: skillFileCounts[skill] })),
     sharedFiles,
-    sharedCarriedOver: carriedOver,
+    sharedViaRegistryReceipts: receipts.included,
     files,
   }
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
@@ -351,13 +419,16 @@ async function vendor(upstream) {
     'shared closure: ' + closure.sharedFiles.length + ' scanned' +
       (closure.expandedDirs.length > 0 ? ', ' + closure.expandedDirs.map(entry => entry.dir + ' (' + entry.count + ')').join(', ') : ''),
   )
-  if (carriedOver.length > 0) {
-    console.warn(
-      'WARNING: ' + carriedOver.length + ' previously pinned shared file(s) are not referenced by any vendored file and were carried over:',
+  console.log(
+    'shared by rule: ' + sharedByScan + ' by scan + ' + sharedByReceipt + ' by registry receipt = ' + sharedFiles.length,
+  )
+  for (const entry of receipts.included) {
+    console.log(
+      '  receipt ' + entry.file + ' <- ' + REGISTRY_PATH + ' cites ' + entry.criterionIds.length + ' of its criterion ids: ' + entry.criterionIds.join(', '),
     )
-    for (const file of carriedOver) console.warn('  ' + file)
-    console.warn('Remove them from vendor-manifest.json if they are no longer needed.')
   }
+  for (const entry of receipts.excluded) console.warn('  NOT vendored ' + entry.file + ': ' + entry.reason)
+  for (const file of dropped) console.warn('  NO LONGER VENDORED (was pinned by the previous manifest): ' + file)
   if (filtered.length > 0) console.log(filtered.length + ' worktree copies had filtered line endings and were read from git')
 }
 

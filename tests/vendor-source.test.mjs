@@ -14,7 +14,10 @@ import { join } from 'node:path'
 import test from 'node:test'
 import {
   assertWorktreeClean,
+  computeRegistryReceipts,
   computeSharedClosure,
+  criterionIds,
+  droppedPins,
   foldCrlf,
   repoBytes,
   resolveUpstreamCommit,
@@ -228,4 +231,85 @@ test('the closure is idempotent and deterministic', () => {
   const second = closureOf(tree)
   assert.deepEqual(first, second)
   assert.deepEqual(first.sharedFiles, [...first.sharedFiles].sort(), 'sorted')
+})
+// --- provenance receipts the registry cites ---------------------------------
+//
+// A receipt is vendored only when the review-criteria registry cites at least one
+// of its criterion ids. Nothing names these files by path, so the path scan cannot
+// see the link; the rule parses the receipt instead of grepping it, and a receipt
+// nobody cites is excluded instead of being carried along.
+
+const REGISTRY = 'shared/review_criteria_registry.json'
+const receiptPath = name => 'shared/review_criteria_sources/' + name
+
+function receiptsFrom(tree, receiptFiles) {
+  return computeRegistryReceipts({ receiptFiles, readText: path => tree[path], registryFile: REGISTRY })
+}
+
+test('a receipt is vendored for the criterion ids the registry cites, whatever its shape', () => {
+  const tree = {
+    [REGISTRY]: JSON.stringify({ criteria: [{ criterion_id: 'a.one' }, { criterion_id: 'b.two' }] }),
+    [receiptPath('locators.json')]: JSON.stringify({
+      criterion_locators: [{ criterion_id: 'a.one' }, { criterion_id: 'not.in.registry' }],
+    }),
+    [receiptPath('documents.json')]: JSON.stringify({
+      documents: [{ criterion_id: 'b.two' }, { criterion_id: 'a.one' }],
+    }),
+    [receiptPath('orphan.json')]: JSON.stringify({ documents: [{ criterion_id: 'not.in.registry' }] }),
+    [receiptPath('empty.json')]: JSON.stringify({ receipt_kind: 'git_repository_head_verification' }),
+  }
+  const result = receiptsFrom(tree, Object.keys(tree).filter(path => path.startsWith('shared/review_criteria_sources/')))
+
+  assert.deepEqual(result.included, [
+    { file: receiptPath('documents.json'), criterionIds: ['a.one', 'b.two'] },
+    { file: receiptPath('locators.json'), criterionIds: ['a.one'] },
+  ])
+  assert.equal(result.registryCriterionIds, 2)
+
+  // An uncited receipt is excluded with a reason that says why - it never rides along.
+  assert.deepEqual(
+    result.excluded.map(entry => entry.file),
+    [receiptPath('empty.json'), receiptPath('orphan.json')],
+  )
+  assert.match(result.excluded[0].reason, /names no criterion_id/)
+  assert.match(result.excluded[1].reason, /not\.in\.registry/)
+})
+
+test('the registry rule leaves every other unreferenced shared file out', () => {
+  const tree = {
+    [REGISTRY]: JSON.stringify({ criteria: [{ criterion_id: 'a.one' }] }),
+    [receiptPath('cited.json')]: JSON.stringify({ documents: [{ criterion_id: 'a.one' }] }),
+    'shared/references/orphan.md': 'an extra file nobody references',
+    'shared/templates/orphan.md': 'another one',
+  }
+  const result = receiptsFrom(tree, [receiptPath('cited.json')])
+  assert.deepEqual(result.included.map(entry => entry.file), [receiptPath('cited.json')])
+  // The receipts rule only ever sees the receipt directory; it cannot pull in
+  // arbitrary files elsewhere under shared/.
+  assert.equal(result.included.some(entry => entry.file.includes('/references/')), false)
+  assert.equal(result.included.some(entry => entry.file.includes('/templates/')), false)
+})
+
+test('dropping a previously pinned file is reported, never silent', () => {
+  assert.deepEqual(
+    droppedPins(['shared/review_criteria_sources/a.json', 'shared/references/b.md'], ['shared/references/b.md']),
+    ['shared/review_criteria_sources/a.json'],
+  )
+  assert.deepEqual(droppedPins(['shared/references/b.md'], ['shared/references/b.md']), [])
+  assert.deepEqual(droppedPins([], ['shared/references/b.md']), [])
+})
+
+test('criterion ids are collected at any depth and from either receipt shape', () => {
+  assert.deepEqual([...criterionIds({ criterion_locators: [{ criterion_id: 'x' }] })], ['x'])
+  assert.deepEqual([...criterionIds({ documents: [{ criterion_id: 'y' }, { nested: { criterion_id: 'z' } }] })], ['y', 'z'])
+  assert.deepEqual([...criterionIds({ criterion_ids: ['not.a.scalar.field'] })], [])
+})
+
+test('the registry rule is idempotent and deterministic', () => {
+  const tree = {
+    [REGISTRY]: JSON.stringify({ criteria: [{ criterion_id: 'a.one' }, { criterion_id: 'b.two' }] }),
+    [receiptPath('one.json')]: JSON.stringify({ documents: [{ criterion_id: 'b.two' }, { criterion_id: 'a.one' }] }),
+  }
+  const files = [receiptPath('one.json')]
+  assert.deepEqual(receiptsFrom(tree, files), receiptsFrom(tree, files))
 })

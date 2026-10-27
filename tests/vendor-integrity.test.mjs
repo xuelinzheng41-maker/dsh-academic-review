@@ -9,6 +9,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { criterionIds } from '../scripts/vendor-upstream.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -78,9 +79,53 @@ test('the shared closure is recorded once per file and never overlaps a skill tr
       'shared entry points into the ' + skill + ' tree',
     )
   }
-  // Carried-over entries are the only ones the closure scan did not reach; they
-  // must be a subset of sharedFiles so the manifest stays self-describing.
-  for (const file of manifest.sharedCarriedOver ?? []) {
-    assert.ok(manifest.sharedFiles.includes(file), 'carried-over entry not in sharedFiles: ' + file)
+  // Every shared file is vendored by exactly one rule, and the manifest says which.
+  assert.equal(manifest.sharedCarriedOver, undefined, 'no catch-all carry-over field')
+  const counts = manifest.vendored.sharedFileCounts
+  assert.equal(counts.byScan + counts.byRegistryReceipt, manifest.sharedFiles.length)
+  assert.equal(counts.byRegistryReceipt, manifest.sharedViaRegistryReceipts.length)
+})
+
+test('a provenance receipt is vendored only because the registry cites its criterion ids', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const registry = JSON.parse(
+    await readFile(join(repoRoot, 'vendor', 'shared', 'review_criteria_registry.json'), 'utf8'),
+  )
+  const registryIds = new Set(registry.criteria.map(criterion => criterion.criterion_id))
+
+  const byFile = new Map(manifest.sharedViaRegistryReceipts.map(entry => [entry.file, entry]))
+  assert.deepEqual(
+    [...byFile.keys()].sort(),
+    [
+      'shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json',
+      'shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json',
+    ],
+    'both receipt files are vendored by the registry rule',
+  )
+
+  for (const entry of manifest.sharedViaRegistryReceipts) {
+    assert.ok(manifest.sharedFiles.includes(entry.file), 'receipt not in sharedFiles: ' + entry.file)
+    assert.ok(manifest.files[entry.file] !== undefined, 'receipt not pinned: ' + entry.file)
+    const receipt = JSON.parse(await readFile(join(repoRoot, 'vendor', entry.file), 'utf8'))
+    // Receipts carry their ids under different keys (criterion_locators, documents),
+    // so collect every criterion_id in the document instead of assuming a shape.
+    const receiptIds = [...criterionIds(receipt)]
+    assert.ok(entry.criterionIds.length > 0, 'receipt carries no justification: ' + entry.file)
+    assert.deepEqual(entry.criterionIds, [...entry.criterionIds].sort(), 'justification ids are sorted')
+    for (const id of entry.criterionIds) {
+      assert.ok(receiptIds.includes(id), 'the registry cites an id the receipt does not carry: ' + id)
+      assert.ok(registryIds.has(id), 'justification id is not in the registry: ' + id)
+    }
   }
+
+  // The counts verified by hand: 3 ids in the MSR receipt, 2 in the SIGSOFT one.
+  assert.deepEqual(
+    manifest.sharedViaRegistryReceipts
+      .map(entry => [entry.file.split('/').pop(), entry.criterionIds.length])
+      .sort(),
+    [
+      ['msr-2027-technical-papers.2026-08-24.json', 3],
+      ['sigsoft-empirical-standards.2026-08-24.json', 2],
+    ],
+  )
 })

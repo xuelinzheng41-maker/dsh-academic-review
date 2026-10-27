@@ -21,6 +21,10 @@
     },
     "skillFileCount": 81,
     "sharedFileCount": 100,
+    "sharedFileCounts": {
+      "byScan": 98,
+      "byRegistryReceipt": 2
+    },
     "totalFileCount": 181
   },
   "skills": [
@@ -137,9 +141,22 @@
     "shared/style_calibration_protocol.md",
     "shared/templates/codex_audit_multifile_template.md"
   ],
-  "sharedCarriedOver": [
-    "shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json",
-    "shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json"
+  "sharedViaRegistryReceipts": [
+    {
+      "file": "shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json",
+      "criterionIds": [
+        "official.msr2027.technical.full.open-science",
+        "official.msr2027.technical.full.scope",
+        "official.msr2027.technical.full.validity"
+      ]
+    },
+    {
+      "file": "shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json",
+      "criterionIds": [
+        "field.sigsoft.empirical.general-essential",
+        "overlay.sigsoft.repository-mining.essential"
+      ]
+    }
   ],
   "files": {
     "academic-paper-reviewer/SKILL.md": "a00ff74bb9b00515df8dc359bcb97115282bb835f3a787f3862eaa5157b582c3",
