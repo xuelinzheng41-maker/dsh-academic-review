@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import {
   assertWorktreeClean,
+  computeSharedClosure,
   foldCrlf,
   repoBytes,
   resolveUpstreamCommit,
@@ -102,4 +103,129 @@ test('a plain directory is refused because repository bytes are unrecoverable', 
   const root = await mkdtemp(join(tmpdir(), 'vendor-source-plain-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   assert.throws(() => resolveUpstreamCommit(root), /not a git checkout/)
+})
+// --- shared/ closure computation -------------------------------------------
+//
+// The closure is derived, never hand-maintained: whatever the vendored trees
+// mention is followed, directories are expanded, siblings referenced from inside
+// shared/ are followed one level further, and a reference that does not exist
+// upstream is reported instead of being dropped on the floor.
+
+function fakeRepo(tree) {
+  const files = new Set(Object.keys(tree))
+  const dirs = new Set()
+  for (const file of files) {
+    const parts = file.split('/')
+    for (let i = 1; i < parts.length; i += 1) dirs.add(parts.slice(0, i).join('/'))
+  }
+  return {
+    typeOf: path => (files.has(path) ? 'file' : dirs.has(path) ? 'dir' : 'missing'),
+    filesUnder: dir => [...files].filter(file => file.startsWith(dir + '/')).sort(),
+    readText: path => tree[path],
+  }
+}
+
+function closureOf(tree, skillFiles = Object.keys(tree).filter(path => !path.startsWith('shared/'))) {
+  return computeSharedClosure({ skillFiles, ...fakeRepo(tree) })
+}
+
+test('the closure follows a reference made by any vendored skill', () => {
+  const closure = closureOf({
+    'academic-paper-reviewer/SKILL.md': 'see shared/shared-by-both.md and shared/reviewer-only.md',
+    'deep-research/SKILL.md': 'see shared/deep-research-only.md',
+    'shared/shared-by-both.md': 'common',
+    'shared/reviewer-only.md': 'only the reviewer needs this',
+    'shared/deep-research-only.md': 'only deep-research needs this',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/deep-research-only.md',
+    'shared/reviewer-only.md',
+    'shared/shared-by-both.md',
+  ])
+  assert.deepEqual(closure.missing, [])
+})
+
+test('the closure excludes a shared file nothing references', () => {
+  const closure = closureOf({
+    'deep-research/SKILL.md': 'see shared/used.md',
+    'shared/used.md': 'used',
+    'shared/orphan.md': 'nobody links to this',
+  })
+  assert.deepEqual(closure.sharedFiles, ['shared/used.md'])
+  assert.equal(closure.sharedFiles.includes('shared/orphan.md'), false)
+})
+
+test('a directory reference expands to the files in it, and a deeper reference is followed', () => {
+  const closure = closureOf({
+    'deep-research/SKILL.md': 'governed by shared/contracts/re_review/ and shared/protocol.md',
+    'shared/protocol.md': 'legacy machine forms live in shared/contracts/re_review/legacy/v1_0/verdict_record.schema.json',
+    'shared/contracts/re_review/input_manifest.schema.json': '{}',
+    'shared/contracts/re_review/verdict_record.schema.json': '{}',
+    'shared/contracts/re_review/legacy/v1_0/verdict_record.schema.json': '{}',
+    'shared/contracts/unrelated/other.schema.json': '{}',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/contracts/re_review/input_manifest.schema.json',
+    'shared/contracts/re_review/legacy/v1_0/verdict_record.schema.json',
+    'shared/contracts/re_review/verdict_record.schema.json',
+    'shared/protocol.md',
+  ])
+  // The directory is expanded recursively, so the nested legacy contract comes in
+  // with it and needs no separate expansion.
+  assert.deepEqual(closure.expandedDirs, [{ dir: 'shared/contracts/re_review', count: 3 }])
+  assert.equal(closure.sharedFiles.includes('shared/contracts/unrelated/other.schema.json'), false)
+})
+
+test('a shared file naming a sibling pulls that sibling in, relative to shared/ too', () => {
+  const closure = closureOf({
+    'deep-research/SKILL.md': 'see shared/references/a.md',
+    'shared/references/a.md': 'see b.md and review_criteria_sources/receipt.json',
+    'shared/references/b.md': 'sibling',
+    'shared/review_criteria_sources/receipt.json': '{}',
+    'shared/references/not-mentioned.md': 'unreferenced sibling',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/references/a.md',
+    'shared/references/b.md',
+    'shared/review_criteria_sources/receipt.json',
+  ])
+})
+
+test('template placeholders and bare directory names are not references', () => {
+  const closure = closureOf({
+    'deep-research/SKILL.md': [
+      'Load the template from shared/contracts/<domain>/<mode>.json.',
+      'Everything under shared/ is licensed CC BY-NC 4.0.',
+      'see shared/real.md',
+    ].join('\n'),
+    'shared/real.md': 'real',
+    'shared/contracts/reviewer/full.json': '{}',
+  })
+  assert.deepEqual(closure.sharedFiles, ['shared/real.md'])
+  assert.deepEqual(closure.missing, [])
+})
+
+test('a reference that does not exist upstream is reported, never silently dropped', () => {
+  const closure = closureOf({
+    'deep-research/SKILL.md': 'see shared/present.md and shared/typo-does-not-exist.md and shared/missing-dir/',
+    'shared/present.md': 'present',
+  })
+  assert.deepEqual(closure.sharedFiles, ['shared/present.md'])
+  assert.deepEqual(closure.missing, ['shared/missing-dir/', 'shared/typo-does-not-exist.md'])
+})
+
+test('the closure is idempotent and deterministic', () => {
+  const tree = {
+    'academic-paper-reviewer/SKILL.md': 'see shared/a.md',
+    'deep-research/SKILL.md': 'see shared/b.md and shared/contracts/x/',
+    'shared/a.md': 'see c.md',
+    'shared/b.md': 'b',
+    'shared/c.md': 'c',
+    'shared/contracts/x/one.schema.json': '{}',
+    'shared/contracts/x/two.schema.json': '{}',
+  }
+  const first = closureOf(tree)
+  const second = closureOf(tree)
+  assert.deepEqual(first, second)
+  assert.deepEqual(first.sharedFiles, [...first.sharedFiles].sort(), 'sorted')
 })

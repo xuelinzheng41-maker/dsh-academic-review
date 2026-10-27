@@ -1,77 +1,40 @@
 #!/usr/bin/env node
 /**
- * Vendor the upstream Academic Research Skills (ARS) reviewer skill into
- * `vendor/`, byte-identically, and record the SHA-256 of every vendored file in
+ * Vendor the upstream Academic Research Skills (ARS) skills into `vendor/`,
+ * byte-identically, and record the SHA-256 of every vendored file in
  * `vendor-manifest.json`.
  *
  * Usage:
  *   node scripts/vendor-upstream.mjs --upstream <path to an ARS checkout>
  *   node scripts/vendor-upstream.mjs --upstream <path> --check   # verify only
  *
- * Hard rules (docs/PORT_SPEC.md §1):
- * - The whole `academic-paper-reviewer/` tree is copied unmodified.
- * - Only the `shared/` files the reviewer tree actually references are copied
- *   (grep-verified list below).
- * - Nothing is edited after copying: no BOM stripping, no line-ending
- *   normalization, no frontmatter rewriting.
+ * Hard rules (docs/PORT_SPEC.md section 1):
+ * - Every skill in SKILLS is copied in full and unmodified.
+ * - The shared/ closure is COMPUTED from the vendored trees: every `shared/...`
+ *   path they mention, plus whatever those shared files mention themselves, until
+ *   nothing new turns up. There is no hand-maintained file list to rot.
+ * - Bytes come from the git object store of the upstream checkout
+ *   (`git cat-file blob <commit>:<path>`), never from the worktree: a checkout
+ *   with core.autocrlf=true rewrites LF to CRLF on disk, and pinning that would
+ *   pin this machine instead of upstream. Nothing is normalised before hashing.
+ * - The upstream checkout must be at UPSTREAM.commit; anything else is refused.
+ * - A referenced `shared/...` target that does not exist upstream fails the run.
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const vendorRoot = join(repoRoot, 'vendor')
 const manifestPath = join(repoRoot, 'vendor-manifest.json')
 
-/** Upstream skill tree vendored in full (28 files at commit 1ec249df). */
-const SKILL_DIR = 'academic-paper-reviewer'
+/** Skill trees vendored in full. Adding a skill is a one-line change here. */
+const SKILLS = ['academic-paper-reviewer', 'deep-research']
 
-/**
- * The `shared/` files referenced verbatim by the vendored reviewer tree, plus
- * the legacy re-review contracts the current re-review protocol points at.
- * Paths are upstream-relative so vendored links keep resolving.
- */
-const SHARED_FILES = [
-  'shared/ground_truth_isolation_pattern.md',
-  'shared/handoff_schemas.md',
-  'shared/mode_spectrum.md',
-  'shared/model_tiering.md',
-  'shared/cross_model_verification.md',
-  'shared/sprint_contract.schema.json',
-  'shared/references/routing_core.md',
-  'shared/references/intent_clarification_protocol.md',
-  'shared/references/review_criteria_consumer_protocol.md',
-  'shared/contracts/reviewer/full.json',
-  'shared/contracts/reviewer/methodology_focus.json',
-  'shared/contracts/reviewer/review_panel_provenance.schema.json',
-  'shared/contracts/reviewer/review_panel_provenance_carrier.schema.json',
-  'shared/contracts/reviewer/review_panel_provenance_input.schema.json',
-  'shared/contracts/revision/revision_roadmap.schema.json',
-  'shared/contracts/re_review/input_manifest.schema.json',
-  'shared/contracts/re_review/precommitment.schema.json',
-  'shared/contracts/re_review/traceability.schema.json',
-  'shared/contracts/re_review/verdict_record.schema.json',
-  'shared/contracts/re_review/legacy/v1_0/input_manifest.schema.json',
-  'shared/contracts/re_review/legacy/v1_0/precommitment.schema.json',
-  'shared/contracts/re_review/legacy/v1_0/traceability.schema.json',
-  'shared/contracts/re_review/legacy/v1_0/verdict_record.schema.json',
-  // Review-target criteria binding closure (#684): the consumer protocol above
-  // names these schemas, the registry, and the registry's source receipts.
-  'shared/contracts/review_target/constructive_review_findings.schema.json',
-  'shared/contracts/review_target/criteria_registry.schema.json',
-  'shared/contracts/review_target/review_criteria_binding_manifest.schema.json',
-  'shared/contracts/review_target/review_criteria_source_receipt.schema.json',
-  'shared/contracts/review_target/review_target_context.schema.json',
-  'shared/contracts/review_target/review_target_declaration.schema.json',
-  'shared/review_criteria_registry.json',
-  'shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json',
-  'shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json',
-]
-
-/** Attribution pinned by docs/PORT_SPEC.md §5. */
+/** Attribution pinned by docs/PORT_SPEC.md section 5. */
 export const UPSTREAM = {
   skill: 'academic-paper-reviewer',
   skillVersion: '1.11.1',
@@ -82,18 +45,30 @@ export const UPSTREAM = {
   license: 'CC BY-NC 4.0',
 }
 
+/** `shared/<path>` mentions, in markdown links, code spans and bare prose alike. */
+const SHARED_REF = /shared\/[A-Za-z0-9._\-/]+/g
+/** A reference that runs into a template placeholder (`shared/contracts/<d>/<m>.json`). */
+const PLACEHOLDER = /^[<{[[$|*]/
+/** Trailing punctuation that is never part of a path. */
+const TRAILING = /[.,);:'"\]}>*]+$/
+/** A filename-shaped token, resolved relative to its own file or to shared/. */
+const RELATIVE_REF = /[A-Za-z0-9._\-]+(?:\/[A-Za-z0-9._\-]+)*\.(?:md|json|ya?ml|txt)/g
+
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex')
 }
 
-async function listFiles(root, base = root) {
-  const out = []
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name)
-    if (entry.isDirectory()) out.push(...(await listFiles(path, base)))
-    else if (entry.isFile()) out.push(relative(base, path).split(sep).join('/'))
+function parseArgs(argv) {
+  let upstream
+  let check = false
+  for (let i = 0; i < argv.length; i += 1) {
+    // 'pnpm run <script> -- ...' forwards the separator itself on pnpm 11.
+    if (argv[i] === '--') continue
+    if (argv[i] === '--upstream') upstream = argv[++i]
+    else if (argv[i] === '--check') check = true
+    else throw new Error('unknown argument: ' + argv[i])
   }
-  return out.sort()
+  return { upstream, check }
 }
 
 /** Bytes exactly as the upstream REPOSITORY stores them, never a worktree copy. */
@@ -103,16 +78,6 @@ function repoBytes(upstreamRoot, relPath, commit) {
   } catch (error) {
     throw new Error('cannot read ' + relPath + ' at ' + commit + ' from ' + upstreamRoot + ': ' + (error?.message || error))
   }
-}
-
-/** The skill tree as committed upstream, not as this machine checked it out. */
-function skillFileList(upstreamRoot, commit) {
-  const listing = execFileSync(
-    'git',
-    ['-C', upstreamRoot, 'ls-tree', '-r', '--name-only', commit, '--', SKILL_DIR],
-    { encoding: 'utf8', maxBuffer: 1 << 27 },
-  )
-  return listing.split('\n').map(line => line.trim()).filter(line => line.length > 0)
 }
 
 function resolveUpstreamCommit(upstreamRoot) {
@@ -140,44 +105,124 @@ function resolveUpstreamCommit(upstreamRoot) {
   return head
 }
 
-/** Folding CRLF to LF, used only to recognise the git checkout filter. */
-function foldCrlf(buffer) {
-  return Buffer.from(buffer.toString('binary').replace(/\r\n/g, '\n'), 'binary')
+/**
+ * An index of the upstream commit: every path, so existence checks cost nothing
+ * and a missing reference can be reported precisely.
+ */
+function repoIndex(upstreamRoot, commit) {
+  const listing = execFileSync('git', ['-C', upstreamRoot, 'ls-tree', '-r', '--name-only', commit], {
+    encoding: 'utf8',
+    maxBuffer: 1 << 27,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const files = listing.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+  const fileSet = new Set(files)
+  const dirSet = new Set()
+  for (const file of files) {
+    const parts = file.split('/')
+    for (let i = 1; i < parts.length; i += 1) dirSet.add(parts.slice(0, i).join('/'))
+  }
+  const textCache = new Map()
+  return {
+    files: fileSet,
+    dirs: dirSet,
+    typeOf: path => (fileSet.has(path) ? 'file' : dirSet.has(path) ? 'dir' : 'missing'),
+    filesUnder: dir => files.filter(file => file.startsWith(dir + '/')),
+    filesUnderSkill: skill => files.filter(file => file.startsWith(skill + '/')),
+    readText: path => {
+      if (!textCache.has(path)) textCache.set(path, repoBytes(upstreamRoot, path, commit).toString('utf8'))
+      return textCache.get(path)
+    },
+  }
 }
 
 /**
- * Refuse to vendor a file whose worktree copy disagrees with the commit.
+ * Compute the shared/ closure of a set of skill trees.
  *
- * A CRLF/LF difference is exactly what core.autocrlf produces on checkout, and
- * it is why the repository bytes are read with git instead of from disk. Anything
- * else means the checkout was edited, and pinning it would silently vendor
- * something upstream never published.
+ * Every `shared/...` mention is followed: a file is vendored, a directory is
+ * expanded to the files it holds (the re-review and review-target contract
+ * families are referenced that way), and a mention that runs into a template
+ * placeholder is ignored. Files that are themselves inside shared/ may also name
+ * siblings by plain filename, so those are resolved relative to the file and to
+ * shared/ as well. Iteration continues until nothing new appears - there is one
+ * level of "legacy paths those files reference" in practice, but the fixpoint
+ * means a deeper chain cannot silently drop a file.
+ *
+ * Returns the closure plus everything it could not resolve, so the caller can
+ * fail loudly instead of writing a manifest with a hole in it.
  */
-function assertWorktreeClean(upstreamRoot, relPath, bytes) {
-  let onDisk
-  try {
-    onDisk = readFileSync(join(upstreamRoot, relPath))
-  } catch {
-    return { filtered: false }
+export function computeSharedClosure({ skillFiles, readText, typeOf, filesUnder, maxRounds = 8 }) {
+  const included = new Set()
+  const missing = new Set()
+  const expandedDirs = new Map()
+  const visited = new Set()
+  let queue = [...skillFiles]
+
+  for (let round = 0; queue.length > 0 && round < maxRounds; round += 1) {
+    const next = []
+    for (const file of queue) {
+      if (visited.has(file)) continue
+      visited.add(file)
+      const text = readText(file)
+
+      for (const match of text.matchAll(SHARED_REF)) {
+        const after = text.slice(match.index + match[0].length, match.index + match[0].length + 1)
+        if (PLACEHOLDER.test(after)) continue
+        const trimmed = match[0].replace(TRAILING, '')
+        const isDir = trimmed.endsWith('/')
+        const path = trimmed.replace(/\/+$/, '')
+        if (path === 'shared' || path === '') continue
+        const kind = typeOf(path)
+        if (kind === 'missing') {
+          missing.add(path + (isDir ? '/' : ''))
+          continue
+        }
+        if (kind === 'dir') {
+          if (expandedDirs.has(path)) continue
+          const held = filesUnder(path)
+          expandedDirs.set(path, held.length)
+          for (const held_file of held) {
+            if (included.has(held_file)) continue
+            included.add(held_file)
+            next.push(held_file)
+          }
+          continue
+        }
+        if (included.has(path)) continue
+        included.add(path)
+        next.push(path)
+      }
+
+      if (!file.startsWith('shared/')) continue
+      const ownDir = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''
+      for (const match of text.matchAll(RELATIVE_REF)) {
+        const reference = match[0].replace(TRAILING, '')
+        for (const base of [ownDir + '/', 'shared/']) {
+          const candidate = (base + reference).replace(/\/{2,}/g, '/')
+          if (typeOf(candidate) !== 'file' || included.has(candidate)) continue
+          included.add(candidate)
+          next.push(candidate)
+        }
+      }
+    }
+    queue = next
   }
-  if (onDisk.equals(bytes)) return { filtered: false }
-  if (foldCrlf(onDisk).equals(bytes)) return { filtered: true }
-  throw new Error(
-    'the worktree copy of ' + relPath + ' differs from the commit beyond line endings; commit or discard the local edits first',
-  )
+
+  return {
+    sharedFiles: [...included].sort(),
+    missing: [...missing].sort(),
+    expandedDirs: [...expandedDirs.entries()].map(([dir, count]) => ({ dir, count })).sort((a, b) => a.dir.localeCompare(b.dir)),
+  }
 }
 
-function parseArgs(argv) {
-  let upstream
-  let check = false
-  for (let i = 0; i < argv.length; i += 1) {
-    // 'pnpm run <script> -- ...' forwards the separator itself on pnpm 11.
-    if (argv[i] === '--') continue
-    if (argv[i] === '--upstream') upstream = argv[++i]
-    else if (argv[i] === '--check') check = true
-    else throw new Error('unknown argument: ' + argv[i])
+async function listFiles(root, base = root) {
+  const out = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isDirectory()) out.push(...(await listFiles(path, base)))
+    else if (entry.isFile()) out.push(path.slice(base.length + 1).split('\\').join('/'))
   }
-  return { upstream, check }
+  return out.sort()
 }
 
 async function verify() {
@@ -209,6 +254,14 @@ async function verify() {
   console.log('verify-vendor: ' + Object.keys(manifest.files).length + ' files byte-identical to vendor-manifest.json')
 }
 
+async function previousManifest() {
+  try {
+    return JSON.parse(await readFile(manifestPath, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
 async function vendor(upstream) {
   if (upstream === undefined) {
     console.error('usage: node scripts/vendor-upstream.mjs --upstream <ARS checkout> [--check]')
@@ -217,14 +270,45 @@ async function vendor(upstream) {
   }
   const upstreamRoot = resolve(upstream)
   const commit = resolveUpstreamCommit(upstreamRoot)
-  const entries = [...skillFileList(upstreamRoot, commit), ...SHARED_FILES].sort()
+  const index = repoIndex(upstreamRoot, commit)
 
+  const skillTrees = new Map()
+  for (const skill of SKILLS) {
+    const files = index.filesUnderSkill(skill)
+    if (files.length === 0) throw new Error('skill ' + skill + ' is not present at ' + commit + ' in ' + upstreamRoot)
+    skillTrees.set(skill, files)
+  }
+
+  const closure = computeSharedClosure({
+    skillFiles: [...skillTrees.values()].flat(),
+    readText: index.readText,
+    typeOf: index.typeOf,
+    filesUnder: index.filesUnder,
+  })
+  if (closure.missing.length > 0) {
+    throw new Error(
+      'the vendored trees reference ' + closure.missing.length + ' shared/ path(s) that do not exist at ' + commit + ':\n  ' +
+        closure.missing.join('\n  ') +
+        '\nA reference that cannot be resolved means the closure is wrong, so nothing was written.',
+    )
+  }
+
+  // Never unpin a file silently. Anything pinned by the previous manifest that the
+  // scan no longer reaches is carried over and reported, so dropping it stays a
+  // human decision instead of a side effect of a grep change.
+  const previous = await previousManifest()
+  const previouslyPinned = Array.isArray(previous?.sharedFiles) ? previous.sharedFiles : []
+  const scanned = new Set(closure.sharedFiles)
+  const carriedOver = previouslyPinned.filter(file => !scanned.has(file)).sort()
+  const sharedFiles = [...new Set([...closure.sharedFiles, ...carriedOver])].sort()
+
+  const entries = [...skillTrees.values()].flat().concat(sharedFiles).sort()
   const files = {}
   const filtered = []
   const bodies = []
   for (const relPath of entries) {
     const bytes = repoBytes(upstreamRoot, relPath, commit)
-    const { filtered: wasFiltered } = assertWorktreeClean(upstreamRoot, relPath, bytes)
+    const { filtered: wasFiltered } = assertWorktreeClean(upstreamRoot, relPath, bytes, index)
     if (wasFiltered) filtered.push(relPath)
     bodies.push([relPath, bytes])
     files[relPath] = sha256(bytes)
@@ -238,23 +322,68 @@ async function vendor(upstream) {
     await writeFile(target, bytes)
   }
 
-  const skillFiles = entries.filter(relPath => relPath.startsWith(SKILL_DIR + '/'))
+  const skillFileCounts = {}
+  for (const [skill, skillFiles] of skillTrees) skillFileCounts[skill] = skillFiles.length
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     upstream: UPSTREAM,
     vendored: {
-      skillDir: 'vendor/' + SKILL_DIR,
-      skillFileCount: skillFiles.length,
-      sharedFileCount: SHARED_FILES.length,
+      skillDir: 'vendor',
+      skills: SKILLS,
+      skillFileCounts,
+      skillFileCount: [...skillTrees.values()].reduce((sum, skillFiles) => sum + skillFiles.length, 0),
+      sharedFileCount: sharedFiles.length,
       totalFileCount: entries.length,
     },
-    sharedFiles: SHARED_FILES,
+    skills: SKILLS.map(skill => ({ name: skill, dir: 'vendor/' + skill, fileCount: skillFileCounts[skill] })),
+    sharedFiles,
+    sharedCarriedOver: carriedOver,
     files,
   }
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+
   console.log(
-    'vendored ' + skillFiles.length + ' skill files + ' + SHARED_FILES.length + ' shared files from ' + commit + ' (repository bytes)' +
-      (filtered.length > 0 ? '; ' + filtered.length + ' worktree cop' + (filtered.length === 1 ? 'y' : 'ies') + ' had filtered line endings and were read from git' : ''),
+    'vendored ' +
+      SKILLS.map(skill => skill + ': ' + skillFileCounts[skill] + ' files').join(' + ') +
+      ' + ' + sharedFiles.length + ' shared files = ' + entries.length + ' files from ' + commit + ' (repository bytes)',
+  )
+  console.log(
+    'shared closure: ' + closure.sharedFiles.length + ' scanned' +
+      (closure.expandedDirs.length > 0 ? ', ' + closure.expandedDirs.map(entry => entry.dir + ' (' + entry.count + ')').join(', ') : ''),
+  )
+  if (carriedOver.length > 0) {
+    console.warn(
+      'WARNING: ' + carriedOver.length + ' previously pinned shared file(s) are not referenced by any vendored file and were carried over:',
+    )
+    for (const file of carriedOver) console.warn('  ' + file)
+    console.warn('Remove them from vendor-manifest.json if they are no longer needed.')
+  }
+  if (filtered.length > 0) console.log(filtered.length + ' worktree copies had filtered line endings and were read from git')
+}
+
+export function foldCrlf(buffer) {
+  return Buffer.from(buffer.toString('binary').replace(/\r\n/g, '\n'), 'binary')
+}
+
+/**
+ * Refuse to vendor a file whose worktree copy disagrees with the commit.
+ *
+ * A CRLF/LF difference is exactly what core.autocrlf produces on checkout, and
+ * it is why the repository bytes are read with git instead of from disk. Anything
+ * else means the checkout was edited, and pinning it would silently vendor
+ * something upstream never published.
+ */
+function assertWorktreeClean(upstreamRoot, relPath, bytes, index) {
+  let onDisk
+  try {
+    onDisk = readFileSync(join(upstreamRoot, relPath))
+  } catch {
+    return { filtered: false }
+  }
+  if (onDisk.equals(bytes)) return { filtered: false }
+  if (foldCrlf(onDisk).equals(bytes)) return { filtered: true }
+  throw new Error(
+    'the worktree copy of ' + relPath + ' differs from the commit beyond line endings; commit or discard the local edits first',
   )
 }
 
@@ -264,7 +393,7 @@ async function main(argv) {
   return vendor(upstream)
 }
 
-export { SHARED_FILES, SKILL_DIR, foldCrlf, repoBytes, skillFileList, resolveUpstreamCommit, assertWorktreeClean, sha256, main }
+export { SKILLS, assertWorktreeClean, repoBytes, resolveUpstreamCommit, sha256, main }
 
 const invokedDirectly = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
 if (invokedDirectly) await main(process.argv.slice(2))
