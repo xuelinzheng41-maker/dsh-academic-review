@@ -256,6 +256,19 @@ export interface ReviewState {
     /** Non-fatal warnings raised during the run (e.g. oversized manuscript). */
     warnings: string[];
 }
+/**
+ * Workspace root behind one host agent: the configured override when present,
+ * else the agent's session cwd, else the process cwd.
+ *
+ * Slash commands resolve review state through this helper so a review opened
+ * from `/ars-review` lands in the exact directory `academic_review_*` tools
+ * and the read-only panel routes read.
+ *
+ * @param agent - the host agent, or any object exposing session.header.cwd.
+ * @param override - fixed workspace root from the plugin config.
+ * @returns absolute workspace path.
+ */
+export declare function workspaceOfAgent(agent: unknown, override?: string): string;
 /** Stable error codes surfaced to the model instead of raw stack traces. */
 export type ReviewErrorCode = 'review_not_found' | 'invalid_state' | 'invalid_mode' | 'invalid_seat_id' | 'invalid_report' | 'unsupported_format' | 'paper_unreadable' | 'paper_changed' | 'duplicate_submission' | 'panel_not_confirmed' | 'seats_incomplete' | 'da_adjudication_required' | 'state_conflict' | 'approval_required';
 /** Error carrying a machine-readable review failure code. */
@@ -437,6 +450,14 @@ export declare class ReviewStore {
      * @returns validated record.
      */
     read(reviewId: string): Promise<ReviewState>;
+    /**
+     * List every readable review under this store's root, newest first.
+     * @returns review ids paired with their last mutation timestamp.
+     */
+    list(): Promise<{
+        review_id: string;
+        updated_at: string;
+    }[]>;
     /**
      * Recompute the manuscript digest and fail when the bytes changed.
      * @param state - record whose paper block is pinned.

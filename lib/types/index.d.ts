@@ -8,7 +8,9 @@
  *    upstream skill text unmodified from vendor/academic-paper-reviewer;
  * 2. five review-state tools (ctx.tools): academic_review_create,
  *    academic_review_status, academic_review_confirm, academic_review_submit,
- *    academic_review_report.
+ *    academic_review_report;
+ * 3. two human slash commands (ctx.commands, registered lazily): /ars-review
+ *    and /ars-review-status, thin adapters over the same ReviewStore.
  *
  * State, schema validation, and every lifecycle guard live in ./state.ts;
  * the vendored tree is read-only input. Human checkpoints (panel confirmation,
@@ -25,7 +27,13 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 /** Cordis plugin name. */
 export declare const name = "academic-review";
-/** Required host services: the skill registry and the tool registry. */
+/**
+ * Required host services: the skill registry and the tool registry.
+ *
+ * The command registry is deliberately NOT here: the two slash commands are a
+ * convenience surface, so they attach lazily when `commands` is composed and a
+ * headless composition still mounts the tools and the skill.
+ */
 export declare const inject: string[];
 /** Plugin configuration. */
 export interface Config {
@@ -77,3 +85,5 @@ export { REVIEW_SEAT_METADATA } from './tools.ts';
 export { summarizeReview, REVIEWS_ROUTE_ROOT } from './web.ts';
 export type { ReviewSummary, SeatSummary } from './web.ts';
 export { REVIEW_SKILL_NAME, REVIEW_SKILL_RANK } from './skills.ts';
+export { REVIEW_COMMAND, REVIEW_COMMAND_HINT, REVIEW_STATUS_COMMAND, REVIEW_STATUS_COMMAND_HINT, registerAcademicReviewCommands, } from './commands.ts';
+export type { AcademicReviewCommandsConfig, ReviewCommandInput } from './commands.ts';

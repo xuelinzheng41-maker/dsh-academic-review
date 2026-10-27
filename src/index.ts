@@ -8,7 +8,9 @@
  *    upstream skill text unmodified from vendor/academic-paper-reviewer;
  * 2. five review-state tools (ctx.tools): academic_review_create,
  *    academic_review_status, academic_review_confirm, academic_review_submit,
- *    academic_review_report.
+ *    academic_review_report;
+ * 3. two human slash commands (ctx.commands, registered lazily): /ars-review
+ *    and /ars-review-status, thin adapters over the same ReviewStore.
  *
  * State, schema validation, and every lifecycle guard live in ./state.ts;
  * the vendored tree is read-only input. Human checkpoints (panel confirmation,
@@ -33,13 +35,20 @@ import {
   defaultResourceBasePath,
   registerReviewSkillProvider,
 } from './skills.ts'
+import { registerAcademicReviewCommands } from './commands.ts'
 import { registerAcademicReviewTools } from './tools.ts'
 import { registerAcademicReviewWebRoutes } from './web.ts'
 
 /** Cordis plugin name. */
 export const name = 'academic-review'
 
-/** Required host services: the skill registry and the tool registry. */
+/**
+ * Required host services: the skill registry and the tool registry.
+ *
+ * The command registry is deliberately NOT here: the two slash commands are a
+ * convenience surface, so they attach lazily when `commands` is composed and a
+ * headless composition still mounts the tools and the skill.
+ */
 export const inject = ['skills', 'tools']
 
 /** Plugin configuration. */
@@ -86,13 +95,18 @@ export function apply(ctx: Context, config: Config = {}): void {
     ? defaultResourceBasePath()
     : resolve(trimmed(config.resourceBasePath) as string)
   registerReviewSkillProvider(ctx, { providerName, resourceBasePath })
-  registerAcademicReviewTools(ctx, {
+  // One resolved binding feeds the tools and the slash commands, so both
+  // address exactly the same review root and the same state layer.
+  const reviewBinding = {
     stateDir,
     ...(trimmed(config.workspaceRoot) === undefined ? {} : { workspaceRoot: resolve(trimmed(config.workspaceRoot) as string) }),
     ...(config.maxPaperBytes === undefined ? {} : { maxPaperBytes: config.maxPaperBytes }),
     ...(trimmed(config.upstreamSkillVersion) === undefined ? {} : { upstreamSkillVersion: trimmed(config.upstreamSkillVersion) as string }),
     ...(trimmed(config.upstreamCommit) === undefined ? {} : { upstreamCommit: trimmed(config.upstreamCommit) as string }),
-  })
+  }
+  registerAcademicReviewTools(ctx, reviewBinding)
+  // /ars-review and /ars-review-status (no business logic of their own).
+  registerAcademicReviewCommands(ctx, reviewBinding)
   // Read-only panel data surface (three GET routes under /plugins/dsh-academic-review/reviews).
   registerAcademicReviewWebRoutes(ctx, { stateDir, ...(trimmed(config.workspaceRoot) === undefined ? {} : { workspaceRoot: resolve(trimmed(config.workspaceRoot) as string) }) })
   ctx.logger.info('academic-review: skill "' + REVIEW_SKILL_NAME + '" served from ' + resourceBasePath
@@ -120,3 +134,11 @@ export { REVIEW_SEAT_METADATA } from './tools.ts'
 export { summarizeReview, REVIEWS_ROUTE_ROOT } from './web.ts'
 export type { ReviewSummary, SeatSummary } from './web.ts'
 export { REVIEW_SKILL_NAME, REVIEW_SKILL_RANK } from './skills.ts'
+export {
+  REVIEW_COMMAND,
+  REVIEW_COMMAND_HINT,
+  REVIEW_STATUS_COMMAND,
+  REVIEW_STATUS_COMMAND_HINT,
+  registerAcademicReviewCommands,
+} from './commands.ts'
+export type { AcademicReviewCommandsConfig, ReviewCommandInput } from './commands.ts'

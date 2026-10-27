@@ -25,7 +25,7 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 
 /** Panel seats fixed by the Phase 1 port (docs/PORT_SPEC.md §2.1). */
@@ -338,6 +338,29 @@ export interface ReviewState {
   warnings: string[]
 }
 
+/** Character class a review id must satisfy before it is joined onto the review root. */
+const SAFE_REVIEW_ID = /^[A-Za-z0-9._-]+$/
+
+/**
+ * Workspace root behind one host agent: the configured override when present,
+ * else the agent's session cwd, else the process cwd.
+ *
+ * Slash commands resolve review state through this helper so a review opened
+ * from `/ars-review` lands in the exact directory `academic_review_*` tools
+ * and the read-only panel routes read.
+ *
+ * @param agent - the host agent, or any object exposing session.header.cwd.
+ * @param override - fixed workspace root from the plugin config.
+ * @returns absolute workspace path.
+ */
+export function workspaceOfAgent(agent: unknown, override?: string): string {
+  if (override !== undefined && override.trim() !== '') return resolve(override)
+  const candidate = agent as { session?: { header?: { cwd?: unknown } } } | undefined
+  const cwd = candidate?.session?.header?.cwd
+  if (typeof cwd === 'string' && cwd !== '') return resolve(cwd)
+  return process.cwd()
+}
+
 /** Stable error codes surfaced to the model instead of raw stack traces. */
 export type ReviewErrorCode =
   | 'review_not_found'
@@ -471,7 +494,7 @@ export function reviewRootOf(config: ReviewStoreConfig): string {
  * @returns absolute review directory path.
  */
 export function reviewDirOf(config: ReviewStoreConfig, reviewId: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(reviewId)) {
+  if (!SAFE_REVIEW_ID.test(reviewId)) {
     throw new ReviewError('review_not_found', 'invalid review id "' + reviewId + '"')
   }
   return join(reviewRootOf(config), reviewId)
@@ -1141,6 +1164,34 @@ export class ReviewStore {
       throw new ReviewError('invalid_state', 'review "' + reviewId + '" state.json is not valid JSON: ' + (error as Error).message)
     }
     return validateReviewState(value, reviewId)
+  }
+
+  /**
+   * List every readable review under this store's root, newest first.
+   * @returns review ids paired with their last mutation timestamp.
+   */
+  async list(): Promise<{ review_id: string; updated_at: string }[]> {
+    let names: string[] = []
+    try {
+      names = (await readdir(this.root, { withFileTypes: true }))
+        .filter(entry => entry.isDirectory() && SAFE_REVIEW_ID.test(entry.name))
+        .map(entry => entry.name)
+    } catch {
+      // A workspace with no review root yet simply has no reviews.
+      return []
+    }
+    const reviews: { review_id: string; updated_at: string }[] = []
+    for (const name of names) {
+      try {
+        const state = await this.read(name)
+        reviews.push({ review_id: state.review_id, updated_at: state.updated_at })
+      } catch {
+        // A directory that is not a valid review record is not addressable here.
+        continue
+      }
+    }
+    reviews.sort((left, right) => (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
+    return reviews
   }
 
   /**
