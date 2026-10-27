@@ -26,6 +26,10 @@
  * - repository-bytes: the on-disk size of a skill's SKILL.md;
  * - shared-scope: distinct missing shared/ targets and the number of sites naming them.
  *
+ * What this module does NOT do: pin a changelog. A release entry records something
+ * that already happened, so it stays true across a re-vendor; pinning it would turn a
+ * true sentence red and push someone to edit a record.
+ *
  * @module dsh-academic-review/tests/doc-quoted-numbers
  */
 
@@ -237,7 +241,4 @@ export function claimDrift(claim, measured) {
   return where + ' says ' + subject + ' is ' + quoted(claim)
     + ', but ' + MEASUREMENT_OF[claim.kind](claim) + ' measures ' + rendered(claim.kind, measured)
     + ' - update the document to the measured numbers, in every language'
-    + (claim.doc === 'CHANGELOG.md'
-      ? ' (CHANGELOG.md is a release record: if the size changed legitimately in a newer release, the old entry is history and this pin needs a deliberate decision, not a silent edit)'
-      : '')
 }

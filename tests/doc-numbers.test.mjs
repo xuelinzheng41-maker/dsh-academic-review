@@ -35,13 +35,22 @@ import {
 } from '../lib/references.js'
 import { defaultVendorBasePath, parseSkillDocument } from '../lib/skills.js'
 import { fileProductionSignals } from '../lib/write-policy.js'
-import { claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
+import { CLAIM_KINDS, claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorBasePath = defaultVendorBasePath()
 
-/** Every document that quotes a measurement in prose, English and Chinese alike. */
-const QUOTING_DOCS = ['README.md', 'README.zh-CN.md', join('docs', 'PORT_SPEC.md'), 'CHANGELOG.md']
+/**
+ * Every document that describes the CURRENT tree and quotes a measurement in prose.
+ *
+ * CHANGELOG.md is deliberately absent: a changelog entry records a release that
+ * already happened, so "0.3.0 shipped 65,335 bytes" stays true after the next
+ * re-vendor. Pinning it would turn a true sentence red on the first legitimate
+ * re-vendor, and the only remedy this mechanism offers is editing that sentence -
+ * a test must never push someone to falsify a record. Freshness belongs at
+ * release time (assert the NEWEST section then), not in a permanent pin.
+ */
+const QUOTING_DOCS = ['README.md', 'README.zh-CN.md', join('docs', 'PORT_SPEC.md')]
 
 /** fileProductionSignals() for one skill, measured from its vendored body. */
 async function measureFileProduction(skillName) {
@@ -191,27 +200,93 @@ test('the parser reads both languages and is not a rubber stamp in either', asyn
   assert.deepEqual(quotedClaims('它是唯一会写文件的技能。', 'README.zh-CN.md'), [])
 })
 
-test('the Chinese README is parsed as Chinese, not tolerated as a monolingual blind spot', async () => {
-  // The t25 hole, stated as an assertion: README.zh-CN.md quotes the same three
-  // measurements in Chinese, and a monolingual parser reported "quotes nothing"
-  // for it - which looked exactly like a document that had stopped quoting
-  // numbers, and left the bilingual pair free to disagree with itself.
-  const doc = 'README.zh-CN.md'
-  assert.ok(QUOTING_DOCS.includes(doc), doc + ' must be one of the parsed documents')
+/** The bilingual pair, and the language each document is written in. */
+const BILINGUAL = { 'README.md': 'English', 'README.zh-CN.md': 'Chinese' }
 
-  const claims = quotedClaims(await readFile(join(repoRoot, doc), 'utf8'), doc)
-  assert.ok(claims.length >= 3, doc + ' should quote all three kinds of measurement, saw ' + String(claims.length))
-  assert.deepEqual([...new Set(claims.map(claim => claim.language))], ['Chinese'],
-    doc + ' must be read by the Chinese clauses, never by an English-only pass')
+/** The numbers one claim asserts, as plain data: what the two languages must share. */
+function numbersOf(claim) {
+  if (claim.kind === 'file-production') return { writingVerbs: claim.writingVerbs, draftingVerbs: claim.draftingVerbs }
+  if (claim.kind === 'repository-bytes') return { bytes: claim.bytes }
+  return { distinct: claim.distinct, sites: claim.sites }
+}
 
-  // Each kind is present and each one is compared, so a Chinese number cannot be
-  // collected and then quietly left unchecked.
-  for (const kind of ['file-production', 'repository-bytes', 'shared-scope']) {
-    const fromKind = claims.filter(claim => claim.kind === kind)
-    assert.equal(fromKind.length, 1, doc + ' should state exactly one ' + kind + ' claim, saw ' + String(fromKind.length))
-    const claim = fromKind[0]
-    const drift = claimDrift(claim, await measure(claim))
-    assert.equal(drift, undefined, drift ?? '')
-    console.log('# ' + doc + ':' + String(claim.line) + ' ' + kind + ' (' + claim.skill + ') checked in Chinese')
+/** A claim as a comparable string, for "these two sentences say the same thing". */
+function projection(claim) {
+  return JSON.stringify({ skill: claim.skill ?? null, ...numbersOf(claim) })
+}
+
+/** A claim as prose, for a message that has to name what each side said. */
+function describeClaim(claim) {
+  const where = claim.doc + ':' + String(claim.line) + ' (' + claim.language + ')'
+  const subject = claim.kind === 'shared-scope' ? 'the shared/ scope' : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+  const numbers = claim.kind === 'file-production'
+    ? claim.writingVerbs + '/' + claim.draftingVerbs + ' (writing/drafting)'
+    : claim.kind === 'repository-bytes'
+      ? claim.bytes + ' repository bytes'
+      : claim.distinct + ' distinct references over ' + claim.sites + ' reference sites'
+  return where + ' says ' + subject + ' is ' + numbers
+}
+
+test('the English and Chinese READMEs tell the same story, or the disagreement is named', async (t) => {
+  // t26 asserted that README.zh-CN.md quotes one claim of each kind. That guard
+  // contradicted the module's own promise: the header says a document that stops
+  // quoting a number is skipped with a diagnostic, yet retiring a number from the
+  // Chinese README failed the suite and invited someone to edit a test to retire it
+  // from the documents. The failure that actually matters is not "fewer claims than
+  // yesterday" but THE TWO LANGUAGES DISAGREE. So this test compares the pair:
+  //   - one language quotes a measurement and the other does not -> fail, naming both;
+  //   - both quote it with different values                      -> fail, naming both;
+  //   - neither quotes it                                         -> skip it, loudly.
+  // Retiring a number from both READMEs therefore needs no edit here.
+  const claimsByDoc = {}
+  for (const doc of Object.keys(BILINGUAL)) {
+    claimsByDoc[doc] = quotedClaims(await readFile(join(repoRoot, doc), 'utf8'), doc)
+    // A document written in Chinese must be read by the Chinese clauses. If it were
+    // read by an English-only pass it would look exactly like a document that had
+    // stopped quoting numbers, and the pair could disagree with impunity.
+    if (claimsByDoc[doc].length > 0) {
+      assert.deepEqual([...new Set(claimsByDoc[doc].map(claim => claim.language))], [BILINGUAL[doc]],
+        doc + ' must be read as ' + BILINGUAL[doc] + ', never by another language\'s clauses')
+    }
   }
+
+  let compared = 0
+  const retired = []
+  for (const kind of CLAIM_KINDS) {
+    const sides = Object.keys(BILINGUAL).map(doc => ({
+      doc,
+      language: BILINGUAL[doc],
+      claims: claimsByDoc[doc].filter(claim => claim.kind === kind),
+    }))
+    const quoting = sides.filter(side => side.claims.length > 0)
+    if (quoting.length === 0) {
+      retired.push(kind)
+      console.log('# neither README quotes a ' + kind + ' any more; nothing for the two languages to disagree about')
+      continue
+    }
+    if (quoting.length === 1) {
+      const [only] = quoting
+      const silent = sides.find(side => side.claims.length === 0)
+      assert.fail('the two languages disagree about the ' + kind + ': ' + describeClaim(only.claims[0])
+        + ', but ' + silent.doc + ' (' + silent.language + ') quotes no ' + kind + ' at all'
+        + ' - a bilingual pair must not say it in one language only; quote it in both, or retire it from both')
+    }
+    const [first, second] = sides
+    assert.deepEqual(
+      [...second.claims.map(projection)].sort(),
+      [...first.claims.map(projection)].sort(),
+      'the two languages disagree about the ' + kind + ': ' + first.claims.map(describeClaim).join('; ')
+      + ' versus ' + second.claims.map(describeClaim).join('; ')
+      + ' - both documents quote this measurement, so both must say the same thing, and both must match the code')
+    compared += 1
+    console.log('# ' + first.doc + ' and ' + second.doc + ' agree about the ' + kind + ': '
+      + first.claims.map(describeClaim).join('; '))
+  }
+
+  if (compared === 0) {
+    t.skip('neither README quotes a measurement any more, so the two languages have nothing to disagree about')
+    return
+  }
+  console.log('# compared ' + String(compared) + ' measurement(s) across the bilingual pair'
+    + (retired.length > 0 ? '; retired from both: ' + retired.join(', ') : ''))
 })
