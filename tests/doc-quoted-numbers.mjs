@@ -39,6 +39,12 @@ const SKILL_TOKENS = [
   { token: 'academic-paper', skill: 'academic-paper' },
   { token: 'deep-research', skill: 'deep-research' },
   { token: 'the reviewer', skill: 'academic-paper-reviewer' },
+  // The fourth skill. Without this entry a claim about sr-screener was attributed
+  // to whichever skill was named last before it - in practice academic-paper, two
+  // paragraphs up - and the pinner then compared sr-screener's numbers with
+  // academic-paper's body. Longest first, so 'academic-paper-reviewer' still wins
+  // over its own prefix.
+  { token: 'sr-screener', skill: 'sr-screener' },
 ]
 
 /**
@@ -146,16 +152,54 @@ function lineOf(text, index) {
   return line
 }
 
-/** Nearest skill name before an index, or undefined if the sentence names none. */
+/** Nearest skill name before an index, or undefined if the text names none. */
 function skillBefore(text, index) {
   const haystack = text.slice(0, index).toLowerCase()
   let best
   for (const { token, skill } of SKILL_TOKENS) {
     const at = haystack.lastIndexOf(token)
     if (at === -1) continue
+    // Strictly greater, so on a tie the earlier (longer) token wins.
     if (best === undefined || at > best.at) best = { at, skill }
   }
   return best?.skill
+}
+
+/** Bounds of the sentence around an index: paragraph breaks and terminators end it. */
+function sentenceAround(text, index) {
+  const BREAK = /[.!?。！？]/u
+  let start = index
+  while (start > 0 && BREAK.test(text[start - 1]) === false && text.slice(start - 1, start) !== '\n') start -= 1
+  // A line break ends a clause but the sentence may continue on the next line, so
+  // only a blank line or a terminator followed by space truly ends it.
+  let end = index
+  while (end < text.length && BREAK.test(text[end]) === false && text.slice(end, end + 2) !== '\n\n') end += 1
+  return { start, end }
+}
+
+/**
+ * The skill a claim belongs to: the one named in the claim's OWN sentence.
+ *
+ * This is the fix for a misattribution that reached the release gate: the parser
+ * used to attribute every claim to the nearest skill name BEFORE it, anywhere in the
+ * document, so a sentence about the fourth skill was validated against the third
+ * skill's body two paragraphs earlier. A name anywhere in the claim's own sentence
+ * now decides the claim - before it or after it - which is what makes "33,843
+ * repository bytes for sr-screener" and "sr-screener's SKILL.md is 33,843 repository
+ * bytes" both attributable. Only when the sentence names no skill, or names more than
+ * one, does the nearest preceding name decide.
+ */
+function skillOfClaim(text, index) {
+  const haystack = text.slice(0, index).toLowerCase()
+  const { start, end } = sentenceAround(text, index)
+  const sentence = text.slice(start, end).toLowerCase()
+  const named = new Set()
+  for (const { token, skill } of SKILL_TOKENS) if (sentence.includes(token)) named.add(skill)
+  if (named.size === 1) return [...named][0]
+  // Several names in one sentence, or none: fall back to the nearest one before the
+  // claim, which is the rule that built the corpus so far.
+  void haystack
+  return skillBefore(text, index)
 }
 
 /** Byte sizes are quoted in prose: strip the thousands separators before comparing. */
@@ -186,7 +230,7 @@ export function quotedClaims(text, docName) {
         claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
       })
       if (definition.kind !== 'shared-scope') {
-        const skill = skillBefore(text, match.index)
+        const skill = skillOfClaim(text, match.index)
         if (skill === undefined) continue
         claim.skill = skill
       }

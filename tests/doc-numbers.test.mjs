@@ -14,6 +14,15 @@
  * tests/doc-quoted-numbers.mjs - same numeric tokens, language-specific separators -
  * and this file asserts that a Chinese document is read as Chinese, not tolerated.
  *
+ * t35: attribution is scoped to the CLAIM'S OWN SENTENCE, and the pair test compares
+ * per (measurement, subject) rather than per measurement. Until then a number quoted
+ * about sr-screener was attributed to the nearest skill named before it - in practice
+ * academic-paper, paragraphs earlier - so the fourth skill's counts were the only ones
+ * in the docs that nothing could pin, and the sentence was rephrased instead. A claim
+ * naming its skill anywhere in its own sentence can no longer fall through to a
+ * neighbour, and one language quoting sr-screener while the other does not is reported
+ * as exactly that.
+ *
  * Skip semantics are deliberate: a document that stops quoting a number is not a
  * bug, so it is skipped with a diagnostic instead of failing.
  *
@@ -253,34 +262,48 @@ test('the English and Chinese READMEs tell the same story, or the disagreement i
   let compared = 0
   const retired = []
   for (const kind of CLAIM_KINDS) {
-    const sides = Object.keys(BILINGUAL).map(doc => ({
-      doc,
-      language: BILINGUAL[doc],
-      claims: claimsByDoc[doc].filter(claim => claim.kind === kind),
-    }))
-    const quoting = sides.filter(side => side.claims.length > 0)
-    if (quoting.length === 0) {
+    // Compare per SUBJECT, not per kind. A kind-level comparison lets one skill's
+    // numbers stand in for another's: with four skills of the same shape, "both
+    // languages quote repository bytes" can be satisfied twice over while sr-screener
+    // is quoted in English only and academic-paper in both. The compound a bilingual
+    // pair must agree on is (measurement, subject) - the same unit the drift check
+    // uses when it measures a claim, so parity and correctness cannot disagree about
+    // what a claim is about.
+    const subjects = [...new Set(Object.keys(BILINGUAL).flatMap(doc => claimsByDoc[doc]
+      .filter(claim => claim.kind === kind)
+      .map(claim => claim.skill ?? null)))].sort((left, right) => String(left).localeCompare(String(right)))
+    if (subjects.length === 0) {
       retired.push(kind)
       console.log('# neither README quotes a ' + kind + ' any more; nothing for the two languages to disagree about')
       continue
     }
-    if (quoting.length === 1) {
-      const [only] = quoting
-      const silent = sides.find(side => side.claims.length === 0)
-      assert.fail('the two languages disagree about the ' + kind + ': ' + describeClaim(only.claims[0])
-        + ', but ' + silent.doc + ' (' + silent.language + ') quotes no ' + kind + ' at all'
-        + ' - a bilingual pair must not say it in one language only; quote it in both, or retire it from both')
+    for (const subject of subjects) {
+      const sides = Object.keys(BILINGUAL).map(doc => ({
+        doc,
+        language: BILINGUAL[doc],
+        claims: claimsByDoc[doc].filter(claim => claim.kind === kind && (claim.skill ?? null) === subject),
+      }))
+      const about = kind + (subject === null ? '' : ' (' + subject + ')')
+      const quoting = sides.filter(side => side.claims.length > 0)
+      if (quoting.length === 1) {
+        const [only] = quoting
+        const silent = sides.find(side => side.claims.length === 0)
+        assert.fail('the two languages disagree about the ' + about + ': ' + describeClaim(only.claims[0])
+          + ', but ' + silent.doc + ' (' + silent.language + ') quotes no ' + kind + ' for '
+          + (subject ?? 'the shared/ scope') + ' at all'
+          + ' - a bilingual pair must not say it in one language only; quote it in both, or retire it from both')
+      }
+      const [first, second] = sides
+      assert.deepEqual(
+        [...second.claims.map(projection)].sort(),
+        [...first.claims.map(projection)].sort(),
+        'the two languages disagree about the ' + about + ': ' + first.claims.map(describeClaim).join('; ')
+        + ' versus ' + second.claims.map(describeClaim).join('; ')
+        + ' - both documents quote this measurement, so both must say the same thing, and both must match the code')
+      compared += 1
+      console.log('# ' + first.doc + ' and ' + second.doc + ' agree about the ' + about + ': '
+        + first.claims.map(describeClaim).join('; '))
     }
-    const [first, second] = sides
-    assert.deepEqual(
-      [...second.claims.map(projection)].sort(),
-      [...first.claims.map(projection)].sort(),
-      'the two languages disagree about the ' + kind + ': ' + first.claims.map(describeClaim).join('; ')
-      + ' versus ' + second.claims.map(describeClaim).join('; ')
-      + ' - both documents quote this measurement, so both must say the same thing, and both must match the code')
-    compared += 1
-    console.log('# ' + first.doc + ' and ' + second.doc + ' agree about the ' + kind + ': '
-      + first.claims.map(describeClaim).join('; '))
   }
 
   if (compared === 0) {
@@ -289,4 +312,74 @@ test('the English and Chinese READMEs tell the same story, or the disagreement i
   }
   console.log('# compared ' + String(compared) + ' measurement(s) across the bilingual pair'
     + (retired.length > 0 ? '; retired from both: ' + retired.join(', ') : ''))
+})
+
+test('a number quoted about the fourth skill is measured against the fourth skill, never its neighbour', async (t) => {
+  // WHAT WENT WRONG (t35): the parser attributed every claim to the nearest skill name
+  // BEFORE it, anywhere in the document. Until this round the table had no entry for
+  // sr-screener, so a sentence quoting its numbers was attributed to academic-paper -
+  // the skill named two paragraphs earlier - and the pinner then compared sr-screener's
+  // counts with academic-paper's body (85/46) or sr-screener's SKILL.md size with
+  // academic-paper's (65,335). The claim it produced was never true; it merely failed
+  // in the wrong place, which is why docs-writer rephrased the sentence instead of
+  // pinning it, and why the fourth skill's counts became the only numbers in the docs
+  // that nothing pinned. Attribution is now scoped to the claim's own sentence, so a
+  // name in that sentence decides the claim whether it comes before or after the number.
+  const shapes = [
+    ['`sr-screener` qualifies the other way: 24 writing verbs and 3 drafting verbs in its own body.', 'sr-screener'],
+    ['24 writing verbs and 3 drafting verbs in its own body - that is `sr-screener`.', 'sr-screener'],
+    ['`sr-screener` ships 25 files and its `SKILL.md`, 33,843 repository bytes.', 'sr-screener'],
+    ['`sr-screener` 的 `SKILL.md`，仓库字节数 33,843）', 'sr-screener'],
+    ['`sr-screener` 其正文里有 24 个写作动词、3 个起草动词。', 'sr-screener'],
+    // Two names in ONE sentence: attribution falls back to the nearest one before the
+    // number, which is the rule that built the corpus, not a new one.
+    ['`academic-paper` drafts and `sr-screener` runs scripts; `academic-paper` quotes 85 writing verbs and 46 drafting verbs here.', 'academic-paper'],
+  ]
+  for (const [text, expected] of shapes) {
+    const [claim] = quotedClaims(text, 'README.md')
+    assert.ok(claim !== undefined, 'the parser must see a claim in: ' + text)
+    assert.equal(claim.skill, expected, 'attributed "' + text.slice(0, 60) + '" to ' + claim.skill)
+  }
+  console.log('# ' + String(shapes.length) + ' sr-screener/neighbour shapes all attributed to the skill the sentence names')
+
+  // The mutation, kept in the suite so it cannot rot: doctor a COPY of the real README
+  // (never the document) with one wrong sr-screener number and require the failure to
+  // name sr-screener and its own file. If attribution ever regresses, this assertion
+  // fails here rather than in a release.
+  const realReadme = await readFile(join(repoRoot, 'README.md'), 'utf8')
+  const doctored = realReadme + '\n`sr-screener` ships 25 files and its `SKILL.md`, 33,844 repository bytes.\n'
+  const claims = quotedClaims(doctored, 'README.md')
+  const srBytes = claims.find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
+  assert.ok(srBytes !== undefined, 'the doctored sentence must be a claim about sr-screener')
+  const srDrift = claimDrift(srBytes, await measure(srBytes))
+  assert.match(srDrift, /sr-screener/u, 'the failure must name sr-screener: ' + srDrift)
+  assert.match(srDrift, /vendor\/sr-screener\/SKILL\.md/u, 'the failure must name sr-screener\'s own file: ' + srDrift)
+  assert.match(srDrift, /33844/u)
+  assert.doesNotMatch(srDrift, /academic-paper/u, 'a sr-screener claim must never be validated against academic-paper: ' + srDrift)
+  console.log('# doctored sr-screener bytes -> ' + srDrift)
+
+  // ...and the same sentence with the measured number is clean, so the shape this
+  // reports to docs-writer is a shape that passes.
+  const corrected = realReadme + '\n`sr-screener` ships 25 files and its `SKILL.md`, 33,843 repository bytes.\n'
+  const correctedClaim = quotedClaims(corrected, 'README.md').find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
+  assert.equal(claimDrift(correctedClaim, await measure(correctedClaim)), undefined)
+
+  // Verb counts, same shape, same guarantee, English and Chinese.
+  const english = quotedClaims('`sr-screener` qualifies by running its scripts: 24 writing verbs and 4 drafting verbs in its own body.', 'README.md')[0]
+  const englishDrift = claimDrift(english, await measureFileProduction('sr-screener'))
+  assert.match(englishDrift, /says sr-screener is 24\/4 \(writing\/drafting\), but fileProductionSignals\(sr-screener\) measures 24\/3/u)
+  assert.doesNotMatch(englishDrift, /academic-paper/u)
+  const chinese = quotedClaims('`sr-screener` 其正文里有 24 个写作动词、4 个起草动词。', 'README.zh-CN.md')[0]
+  const chineseDrift = claimDrift(chinese, await measureFileProduction('sr-screener'))
+  assert.match(chineseDrift, /says sr-screener is 24\/4 \(writing\/drafting\), but fileProductionSignals\(sr-screener\) measures 24\/3/u)
+  console.log('# sr-screener verb counts, both languages: ' + englishDrift)
+
+  // The two producers must not be interchangeable: if the fourth skill's numbers were
+  // accepted against the third skill's body, this comparison would be the reason.
+  const paper = await measureFileProduction('academic-paper')
+  const screener = await measureFileProduction('sr-screener')
+  assert.notDeepEqual([paper.writingVerbs, paper.draftingVerbs], [screener.writingVerbs, screener.draftingVerbs],
+    'the two producers must not measure the same, or this test would pass for the wrong reason')
+  console.log('# the two producers differ as measured: academic-paper ' + paper.writingVerbs + '/' + paper.draftingVerbs
+    + ' versus sr-screener ' + screener.writingVerbs + '/' + screener.draftingVerbs)
 })
