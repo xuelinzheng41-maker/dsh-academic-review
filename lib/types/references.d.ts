@@ -22,6 +22,25 @@
  * normalizes to "academic-pipeline/x.md", which simply does not exist here and
  * is therefore reported as missing rather than silently followed.
  *
+ * THREE SCOPES, AND WHY THEY DIFFER (read this before changing a caller)
+ *
+ * 1. Own tree only (one skill's markdown): what {@link missingReferencesForSkill}
+ *    returns, and the only scope whose misses are allowed to change a served
+ *    body (src/skills.ts appends its port notice). It is the set the skill's own
+ *    instructions name, so a notice derived from it is attributable to that
+ *    skill alone.
+ * 2. Shared closure (own tree + the shared/ markdown it reaches, transitively):
+ *    what {@link missingReferencesByScope} reports as its `shared` scope. shared/
+ *    is reached by every served skill alike - measured on this tree, both
+ *    academic-paper-reviewer and deep-research reach 14 distinct missing targets
+ *    - so a body notice from this scope would fire identically on both skills and
+ *    would change the reviewer's served bytes. It is therefore metadata-only
+ *    (metadata.unavailableSharedReferences) in this round; a later round either
+ *    vendors those targets or phrases a shared-scope notice deliberately.
+ * 3. Whole vendored tree (skills + shared/): what tests/skill-references.test.mjs
+ *    asserts against the allowlisted out-of-port areas, so nothing in the tree
+ *    goes unreported even when it is not attributed to one skill.
+ *
  * @module dsh-academic-review/references
  */
 /** Markdown link with an inline destination and optional title. */
@@ -116,12 +135,12 @@ export declare function scanVendorReferences(options: {
 /**
  * The references one skill's own tree names that this package does not contain.
  *
- * Scope is the skill's own markdown tree, deliberately not the shared/ tree it
- * points into: shared/ is reached by every served skill alike, and a notice
- * derived from it would fire for all of them (the reviewer's served body must
- * stay byte-identical to the reviewed upstream text). Dangling references
- * inside shared/ are surfaced by tests/skill-references.test.mjs instead, which
- * walks the whole vendored tree - including shared/ - so nothing is unreported.
+ * This is reading 1 of the three scopes documented in the module header: the
+ * skill's own markdown tree, deliberately not the shared/ tree it points into.
+ * A body notice must be attributable to one skill, and shared/ is reached by
+ * every served skill alike (see {@link missingReferencesByScope}, reading 2,
+ * which reports those misses as metadata only). Nothing is left unreported:
+ * tests/skill-references.test.mjs walks the whole vendored tree (reading 3).
  *
  * @param options.vendorBasePath - absolute vendor directory.
  * @param options.skillName - vendored skill directory name.
@@ -131,3 +150,29 @@ export declare function missingReferencesForSkill(options: {
     vendorBasePath: string;
     skillName: string;
 }): Promise<MissingReference[]>;
+/** The two missing-reference scopes one skill can be reported against. */
+export interface SkillReferenceScopes {
+    /** Misses named by the skill's own markdown tree (the body-notice scope). */
+    readonly own: readonly MissingReference[];
+    /** Misses named by the shared/ markdown this skill reaches (metadata only). */
+    readonly shared: readonly MissingReference[];
+    /** Shared markdown files reached, vendor-relative POSIX paths, sorted. */
+    readonly sharedFiles: readonly string[];
+}
+/**
+ * Missing references for one skill, split into the own-tree scope and the
+ * shared/-closure scope (see the three-scope note in the module documentation).
+ *
+ * The shared scope walks only markdown the skill actually reaches: it starts
+ * from the shared/ files the skill's own tree names, then follows shared/ to
+ * shared/ references to a fixpoint, so a shared file nobody reaches is not
+ * attributed to any skill.
+ *
+ * @param options.vendorBasePath - absolute vendor directory.
+ * @param options.skillName - vendored skill directory name.
+ * @returns both scopes plus the shared files that were walked.
+ */
+export declare function missingReferencesByScope(options: {
+    vendorBasePath: string;
+    skillName: string;
+}): Promise<SkillReferenceScopes>;

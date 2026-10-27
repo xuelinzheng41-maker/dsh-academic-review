@@ -30,7 +30,7 @@
  *
  * @module dsh-academic-review/skills
  */
-import { type MissingReference } from './references.ts';
+import { type MissingReference, type SkillReferenceScopes } from './references.ts';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider, SkillProviderControl, SkillResourceBase } from '@deepseek-ai/dsh-skill';
 /** Instruction file inside every vendored skill directory. */
@@ -142,8 +142,8 @@ export declare class VendoredSkillsProvider implements SkillProvider {
     readonly rank: number;
     /** Registration lifecycle, borrowed from the registry. */
     private readonly control;
-    /** Per-skill missing-reference cache; the vendored tree is pinned per install. */
-    private readonly missingBySkill;
+    /** Per-skill reference-scope cache; the vendored tree is pinned per install. */
+    private readonly scopesBySkill;
     /** Lazily read repository pin, undefined when the manifest is unusable. */
     private manifest;
     constructor(config: ReviewSkillProviderConfig, control: SkillProviderControl, skillNames?: readonly string[]);
@@ -169,12 +169,28 @@ export declare class VendoredSkillsProvider implements SkillProvider {
      */
     get(candidate: SkillCandidate, options?: SkillLookupOptions): Promise<SkillDefinition | undefined>;
     /**
-     * References this skill's own tree names that this package does not contain.
+     * Both missing-reference scopes for one skill (see src/references.ts for why
+     * the body notice uses the own-tree scope alone).
      * Cached per provider instance: the vendored tree is pinned by SHA-256.
+     * @param skillName - served skill name.
+     * @returns own-tree misses, shared-closure misses, and the shared files walked.
+     */
+    referenceScopesOf(skillName: string): Promise<SkillReferenceScopes>;
+    /**
+     * References this skill's own tree names that this package does not contain.
+     * This is the body-notice scope only.
      * @param skillName - served skill name.
      * @returns distinct missing targets with their referencing files.
      */
     missingReferencesOf(skillName: string): Promise<readonly MissingReference[]>;
+    /**
+     * References the shared/ files this skill reaches name that this package does
+     * not contain. Metadata only: it is identical for every skill that reaches the
+     * same shared files, so it must never change a served body.
+     * @param skillName - served skill name.
+     * @returns distinct missing targets with their referencing files.
+     */
+    missingSharedReferencesOf(skillName: string): Promise<readonly MissingReference[]>;
     /** Map a candidate name back onto one served vendored skill. */
     private servedNameOf;
     /** Invocation-neutral fields shared by list() and get(). */
