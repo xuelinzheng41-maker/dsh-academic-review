@@ -46,17 +46,22 @@ export declare const DRAFTING_VERB: RegExp;
 /**
  * Thresholds for "this skill instructs the model to produce files".
  *
- * Calibrated against the three vendored skills as measured on 2026-10-27
- * (writing verbs / drafting verbs, on the parsed body):
- *   academic-paper          84 / 53   <- produces files
- *   academic-paper-reviewer 24 /  4   <- reviews, does not write
- *   deep-research           18 /  4   <- researches, does not write
- * Both thresholds sit in the wide gap (3.5x and 13x margins) instead of on a
- * knife edge, and BOTH must hold: a skill that merely says "write" a lot while
- * reviewing, or that says "draft" while describing someone else's draft, does
- * not qualify. A skill that produces files with other vocabulary would be
- * missed by the rule - which is why the table is explicit and reviewed by a
- * human, not generated.
+ * Both must hold: writing verbs AND drafting verbs. A skill that merely says
+ * "write" a lot while reviewing, or that mentions "draft" while describing
+ * somebody else's draft, does not qualify. The thresholds are set to sit in the
+ * wide gap between the skills that write files and the skills that only read
+ * them, rather than close to either side, so an upstream wording change does not
+ * flip a skill in or out.
+ *
+ * The measured counts are NOT recorded here on purpose: they are computed by
+ * {@link fileProductionSignals} and printed by tests/write-policy.test.mjs on
+ * every run. A number typed into a comment is a number that contradicts the code
+ * the next time the vendored body changes - which has already cost this round
+ * once. If the numbers move, the test output is the record, not this paragraph.
+ *
+ * A skill that produces files with different vocabulary would be missed by the
+ * rule - which is why the table is explicit and reviewed by a human, not
+ * generated.
  */
 export declare const FILE_PRODUCING_MIN_WRITING_VERBS = 40;
 /** Minimum drafting-verb mentions for {@link FILE_PRODUCING_MIN_WRITING_VERBS}. */

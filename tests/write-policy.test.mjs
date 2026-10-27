@@ -117,7 +117,7 @@ test('the table names exactly the vendored skills whose SKILL.md instructs writi
   }
 })
 
-test('every table entry carries a one-line justification', () => {
+test('every table entry carries a one-line justification with no typed measurements', () => {
   assert.ok(FILE_PRODUCING_SKILLS.length > 0)
   for (const entry of FILE_PRODUCING_SKILLS) {
     assert.equal(typeof entry.reason, 'string')
@@ -125,6 +125,18 @@ test('every table entry carries a one-line justification', () => {
     assert.equal(entry.reason.includes('\n'), false, entry.skill + ' reason must be one line')
     assert.ok(entry.reason.length <= 220, entry.skill + ' reason must stay one line at normal widths')
     assert.equal(fileProducingEntry(entry.skill)?.skill, entry.skill)
+
+    // A justification explains WHY the skill qualifies. It never quotes a count:
+    // a typed measurement contradicts the code the moment the vendored body or a
+    // threshold moves, and this exact defect has now cost the round twice.
+    assert.equal(/\d/u.test(entry.reason), false,
+      entry.skill + ' reason contains a number (' + JSON.stringify(entry.reason) + '); describe why it qualifies instead')
+    assert.equal(/\bverb|mention|occurrence|count\b/iu.test(entry.reason), false,
+      entry.skill + ' reason talks about measurements instead of the reason')
+    // ...and it does say why: this skill drafts documents and tells the model to persist them.
+    assert.match(entry.reason, /\.md/iu)
+    assert.match(entry.reason, /draft/iu)
+    assert.match(entry.reason, /persist|write/iu)
   }
   assert.equal(fileProducingEntry(REVIEW_SKILL_NAME), undefined)
   assert.equal(fileProducingEntry(DEEP_RESEARCH_SKILL_NAME), undefined)
@@ -278,4 +290,26 @@ test('the detector is not a rubber stamp (synthetic writer and reviewer bodies)'
   const fakeTable = [...FILE_PRODUCING_SKILLS.map(entry => entry.skill), 'deep-research'].sort()
   const detected = [...FILE_PRODUCING_SKILLS.map(entry => entry.skill)].sort()
   assert.notDeepEqual(fakeTable, detected, 'the bidirectional check must be able to fail')
+})
+
+test('no measurement is typed into the write-policy source (the live counts are printed, not stored)', async (t) => {
+  const source = await readFile(join(repoRoot, 'src', 'write-policy.ts'), 'utf8')
+  // The shape of the defect that has now cost two rounds: a count in prose.
+  assert.deepEqual(source.match(/\d+\s*(?:writing|drafting)\b/giu) ?? [], [],
+    'a measured verb count is typed into src/write-policy.ts; compute it with fileProductionSignals() instead')
+  assert.deepEqual(source.match(/\d+\s*"\.md"\s*mentions/giu) ?? [], [],
+    'a measured .md count is typed into src/write-policy.ts')
+  // Only the two threshold constants may be numeric in the module's prose-bearing parts.
+  const tableBlock = source.slice(source.indexOf('FILE_PRODUCING_SKILLS'), source.indexOf('Measurement of one skill body'))
+  assert.deepEqual(tableBlock.match(/\d/gu) ?? [], [], 'the table must carry no digits at all')
+
+  // The record of the measurements is the test output, recomputed on every run.
+  for (const skillName of ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME]) {
+    const signals = fileProductionSignals(await vendoredBody(skillName))
+    t.diagnostic(skillName + ': ' + signals.verdict)
+  }
+  const paper = fileProductionSignals(await vendoredBody('academic-paper'))
+  assert.equal(paper.producesFiles, true)
+  assert.ok(paper.writingVerbs >= FILE_PRODUCING_MIN_WRITING_VERBS)
+  assert.ok(paper.draftingVerbs >= FILE_PRODUCING_MIN_DRAFTING_VERBS)
 })
