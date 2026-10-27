@@ -8,6 +8,64 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.4.1] - 2026-10-28
+
+A hardening release. **No tool, route, state schema or served payload changed**: the
+five `academic_review_*` tools, their arguments, the review-state schema, the panel's
+routes and both slash commands are identical to 0.4.0, the four served skills are the
+same vendored bytes, and every served body is byte-for-byte what 0.4.0 served. There
+is nothing new to use, which is why neither README gained a feature paragraph: there
+is no feature. What changed is what the release gate can see.
+
+### Added — release invariants that survived an adversarial pass
+
+- **Four shapes the guards never parsed are parsed now**, each found by attacking the
+  guards rather than by a document failing: a **six-hex pin**, which the old pattern
+  missed because it required at least seven characters; an **uppercase hex pin**
+  (`1EC249DF`), so a wrong pin in capitals can no longer sit in a document
+  indefinitely; an **install line that avoids the word "add"**
+  (`dsh plugin install <repo>@0.3.9`), which would have handed a reader a different
+  release while the guard stayed green; and an **unbracketed CHANGELOG heading**
+  (`## 0.4.0 - 2026-10-27`), which the bracketed-only pattern did not see at all, so
+  a section for a release that never existed could have sat above the real one.
+- **An install instruction is now defined rather than guessed at:** a line that names
+  this package or repository **and** carries a package-manager command. Naming the
+  package stops the guard from parsing every sentence containing "install"; the
+  command shape stops it from parsing prose that merely mentions the package. The
+  deliberate unversioned line at `README.md:435` — `add <repo>`, which installs
+  whatever the default branch is — stays legal and is now asserted to remain **seen**
+  rather than merely tolerated: a widened matcher that stopped recognising it would
+  leave the documents reading correctly while the guard quietly stopped covering a
+  line it used to cover.
+- **Two rules that fell out of the CHANGELOG widening:** every versioned section must
+  carry a release date, because a heading without one is a draft rather than a
+  release note; and no two sections may claim the same version, because a duplicate
+  means one of them is a stale edit and whichever is read first decides what the file
+  says the release contains. The first section must also remain the shipped version
+  and the highest one, so an entry inserted below an older heading cannot leave the
+  file claiming the older release is current.
+- **The commit scan's two masks are proved narrow on every run**, in both directions
+  and in any environment: the review-id mask (`rev-YYYYMMDD-<hex>`, which this
+  plugin generates itself) and the sha256 mask (a digest quoted beside the word
+  "sha256") must not swallow the pinned commit, and must actually mask the shape
+  they claim to mask. Both are counted in the pass line, so a mask that stops masking
+  anything shows up as a zero instead of disappearing into silence.
+- **The fourteen upstream-only script sizes now have a mechanism test that needs no
+  clone.** The suite builds a throwaway repository, commits fourteen files of known
+  content, nudges one byte of one of them, and requires exactly one problem naming
+  that file and both values — so the check is proved able to fail on every machine,
+  not assumed to be. When `DSH_UPSTREAM_CLONE` names a clone of the pinned commit,
+  all fourteen are verified against that object store; when it is unset the run
+  **names every one of the fourteen** as unverified instead of printing a skip,
+  because a check that goes quiet where it cannot run is exactly how a documented
+  number becomes an assumed one.
+
+### Unchanged
+
+- The four served skills (1.11.1, 2.12.1, 3.3.1, 1.0.0) and their vendored bytes, the
+  five tools, the review-state schema, the panel, both slash commands, the shared
+  closure, and the CC BY-NC 4.0 terms. 0 of the 279 pins moved.
+
 ## [0.4.0] - 2026-10-27
 
 Fourth served skill, and the first whose usefulness depends on executing code it

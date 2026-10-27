@@ -17,9 +17,13 @@ on all 58 rows, the 44 vendored files and the 14 upstream-only scripts alike. To
 re-derive any row, `git cat-file -s <commit>:<path>` in the upstream clone, or
 `stat` the file under `vendor/`; the two must agree, because the pipeline reads
 the object store too. `tests/release-invariants.test.mjs` re-measures the 44
-vendored rows on every run, so that column cannot drift silently again; the 14
-upstream-only sizes are not in this package and are recorded here from the same
-object store.
+vendored rows on every run, so that column cannot drift silently again. The 14
+upstream-only sizes cannot be stat()ed from this package, so the suite reaches them
+in two steps rather than trusting them: on every run, with no clone and no
+environment variable, it builds a throwaway fixture repository and proves the check
+itself can fail; and when `DSH_UPSTREAM_CLONE` names a clone of the pinned commit
+the fourteen are compared against that object store, while without it the run
+NAMES all fourteen as unverified rather than reporting a skip.
 
 ## academic-paper-reviewer/ (28 files, all vendored unmodified)
 

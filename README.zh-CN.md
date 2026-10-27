@@ -338,8 +338,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-revie
 钉定的 tag 或发布 tarball 用法相同：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.4.0
-dsh plugin --profile <profile> add ./dsh-academic-review-0.4.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.4.1
+dsh plugin --profile <profile> add ./dsh-academic-review-0.4.1.tgz
 ```
 
 构建产物（`lib/`）是有意提交进仓库的，因此从 git 安装不需要构建步骤。bundle patch
