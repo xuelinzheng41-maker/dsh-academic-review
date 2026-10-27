@@ -46,6 +46,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Runs on both operating systems on purpose: the harness mounts the plugin
+      # and asserts the HTTP routes, so it is what catches host-semantics
+      # regressions - a Windows-only green would hide Linux path and line-ending
+      # failures, which is the exact defect class this pipeline was built for.
+      - name: E2E harness
+        run: pnpm test:e2e
+
       - name: Verify vendored upstream
         run: pnpm verify:vendor
 
