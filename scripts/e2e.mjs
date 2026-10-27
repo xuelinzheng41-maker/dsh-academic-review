@@ -45,6 +45,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,6 +62,8 @@ import {
   seatReport,
 } from '../tests/helpers.mjs'
 import { resolveRoute } from '../tests/host-prefix-matcher.mjs'
+import { PORT_NOTICE_BEGIN, PORT_NOTICE_END, parseSkillDocument } from '../lib/skills.js'
+import { WRITE_POLICY_BEGIN, renderWritePolicyBlock } from '../lib/write-policy.js'
 
 /** Repository root, so the harness reads the same manifests the package ships. */
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -73,8 +76,13 @@ const CREATED_AT = '2026-03-02T09:15:00+00:00'
 const REVIEW_ID_RE = /^rev-[0-9]{8}-[0-9a-f]{8}$/
 /** Timestamps the plugin assigns carry an explicit offset, never a bare Z. */
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
-/** The skills the plugin contract promises to serve, in vendored order. */
-const EXPECTED_SKILL_NAMES = ['academic-paper-reviewer', 'deep-research']
+/** The skills the plugin contract promises to serve, in discovery (alphabetical) order. */
+const EXPECTED_SKILL_NAMES = ['academic-paper', 'academic-paper-reviewer', 'deep-research']
+/** Version each skill's own frontmatter declares, pinned so a re-vendor is visible. */
+const EXPECTED_SKILL_VERSIONS = { 'academic-paper': '3.3.1', 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1' }
+/** The one non-markdown vendored file: 4844 B, sha256 of the upstream git object. */
+const TEX_TEMPLATE = 'academic-paper/templates/latex_article_template.tex'
+const TEX_TEMPLATE_SHA256 = '1f9112782a501b605d17ce644598cdd5e5ef250560198677266976038ccbc3c9'
 
 /** The five tools the plugin must expose. */
 const TOOL_NAMES = [
@@ -236,7 +244,7 @@ async function request(route, pathname, method = 'GET') {
 }
 
 /** Sorted tool names of a mounted plugin instance. */
-function deepResearchOnlyTools(mounted) {
+function narrowedToolNames(mounted) {
   return mounted.tools.schemas().map(schema => schema.name).sort()
 }
 
@@ -639,9 +647,9 @@ async function main() {
     const vendored = [...manifest.vendored.skills].sort()
     assert.deepEqual(advertised.map(skill => skill.name), vendored)
     for (const skill of advertised) assert.equal(skill.provider, 'academic-review')
-    // Both skills this round ships are asserted by name: an id-shaped catalog that
-    // lost a skill would still satisfy the manifest comparison above only if the
-    // manifest lost it too, so pin the two names the plugin contract promises.
+    // The three skills are asserted by name: an id-shaped catalog that lost a
+    // skill would still satisfy the manifest comparison above only if the
+    // manifest lost it too, so pin the names the plugin contract promises.
     for (const skillName of EXPECTED_SKILL_NAMES) {
       const candidate = advertised.find(skill => skill.name === skillName)
       assert.ok(candidate !== undefined, 'the mounted plugin must advertise ' + skillName)
@@ -654,12 +662,11 @@ async function main() {
       assert.equal(candidate.path, join(repoRoot, 'vendor', skillName, 'SKILL.md'))
       assert.ok((await stat(candidate.path)).size > 0, candidate.path + ' must exist and be non-empty')
     }
-    ok('plugin mounted; both vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
+    ok('plugin mounted; all three vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
 
     // Loading is the half that can dangle: the model follows SKILL.md and its
-    // agent/reference files. Both bodies must arrive complete and frontmatter-free,
+    // agent/reference files. Every body must arrive complete and frontmatter-free,
     // each reporting the version its own frontmatter declares.
-    const EXPECTED_SKILL_VERSIONS = { 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1' }
     let deliveredBytes = 0
     for (const skillName of EXPECTED_SKILL_NAMES) {
       const definition = await skills.get(skillName, { cwd: runWorkspace })
@@ -672,34 +679,94 @@ async function main() {
       assert.equal(definition.metadata.upstreamSkillVersion, EXPECTED_SKILL_VERSIONS[skillName])
       deliveredBytes += definition.content.length
     }
-    ok('both skills load through the registry (academic-paper-reviewer 1.11.1 + deep-research 2.12.1), '
-      + String(deliveredBytes) + ' body bytes, no frontmatter fence')
+    ok('all three skills load through the registry (academic-paper 3.3.1 + academic-paper-reviewer 1.11.1 '
+      + '+ deep-research 2.12.1), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
 
-    // deep-research is prompt-only: it must contribute ZERO tools. Grep the
-    // registered names and descriptions (a count would hide a swap) and prove it
-    // structurally by mounting the plugin again with ONLY deep-research selected -
-    // the tool catalog has to come out identical either way.
+    // deep-research and academic-paper are prompt-only in the tool sense: neither
+    // may contribute a tool. Grep the registered names and descriptions (a count
+    // would hide a swap) and prove it structurally by mounting the plugin again
+    // with only ONE skill selected - the catalog must come out identical either way.
     const catalog = tools.schemas()
     const offending = []
     for (const schema of catalog) {
       const haystack = schema.name + ' ' + String(schema.description ?? '')
-      // "research paradigm" is legitimate review-tool prose; a deep-research
-      // surface is what must never appear.
+      // "research paradigm" is legitimate review-tool prose; a deep-research or
+      // academic-paper surface is what must never appear.
       if (/^academic_review_(?:create|status|confirm|submit|report)$/u.test(schema.name) === false) offending.push('unexpected name ' + schema.name)
       if (/deep[ _-]?research/iu.test(haystack)) offending.push('deep-research mention in ' + schema.name)
-      if (/research_|_research|deep-research/iu.test(schema.name)) offending.push('research-shaped name ' + schema.name)
+      if (/academic[ _-]?paper/iu.test(haystack)) offending.push('academic-paper mention in ' + schema.name)
+      if (/research_|_research|deep-research|paper_/iu.test(schema.name)) offending.push('skill-shaped name ' + schema.name)
     }
-    assert.deepEqual(offending, [], 'a deep-research tool leaked onto the tool surface')
-    const deepResearchOnly = await mountReviewPlugin({
-      stateDir: STATE_DIR,
-      workspaceRoot: runWorkspace,
-      skills: ['deep-research'],
-    })
-    assert.deepEqual(deepResearchOnlyTools(deepResearchOnly), TOOL_NAMES, 'a deep-research-only mount must expose the same five tools')
-    const deepResearchSkills = (await deepResearchOnly.skills.list({ cwd: runWorkspace })).map(skill => skill.name)
-    assert.deepEqual(deepResearchSkills, ['deep-research'], 'the narrowed mount serves only deep-research')
-    ok('deep-research is prompt-only: a deep-research-only mount exposes the same five academic_review_* tools, '
-      + 'and no tool name or description mentions deep research')
+    assert.deepEqual(offending, [], 'a prompt-only skill leaked a tool onto the surface')
+    for (const narrowedSkill of ['deep-research', 'academic-paper']) {
+      const narrowed = await mountReviewPlugin({
+        stateDir: STATE_DIR,
+        workspaceRoot: runWorkspace,
+        skills: [narrowedSkill],
+      })
+      assert.deepEqual(narrowedToolNames(narrowed), TOOL_NAMES, 'a ' + narrowedSkill + '-only mount must expose the same five tools')
+      const narrowedSkills = (await narrowed.skills.list({ cwd: runWorkspace })).map(skill => skill.name)
+      assert.deepEqual(narrowedSkills, [narrowedSkill], 'the narrowed mount serves only ' + narrowedSkill)
+    }
+    ok('prompt-only skills add no tools: deep-research-only and academic-paper-only mounts each expose the same five '
+      + 'academic_review_* tools, and no tool name or description mentions either skill')
+
+    // The served payloads are the release artefact. Order matters as much as
+    // presence: the write-policy block is only a pre-emptive rule if it comes
+    // BEFORE the vendored body, and the port notice only reads as an addendum if it
+    // comes AFTER it. Byte counts are printed so any movement is visible in the log.
+    const payloadBytes = []
+    for (const skillName of EXPECTED_SKILL_NAMES) {
+      const definition = await skills.get(skillName, { cwd: runWorkspace })
+      assert.ok(definition !== undefined)
+      const vendored = parseSkillDocument(await readFile(join(repoRoot, 'vendor', skillName, 'SKILL.md'), 'utf8')).body
+      const content = definition.content
+      const bodyStart = content.indexOf(vendored)
+      assert.ok(bodyStart >= 0, skillName + ': the vendored body must be served verbatim')
+      const before = content.slice(0, bodyStart)
+      const after = content.slice(bodyStart + vendored.length)
+      payloadBytes.push(skillName + ' ' + String(Buffer.byteLength(content)) + ' = body '
+        + String(Buffer.byteLength(vendored)) + ' + head ' + String(Buffer.byteLength(before))
+        + ' + tail ' + String(Buffer.byteLength(after)))
+      if (skillName === 'academic-paper') {
+        // block first, then body, then notice - in that order, one each.
+        assert.equal(before.startsWith(WRITE_POLICY_BEGIN), true, 'the write-policy block must be the first thing read')
+        assert.equal(before.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block')
+        assert.equal(before, renderWritePolicyBlock(skillName), 'only the write-policy block may precede the body')
+        assert.equal(after.includes(WRITE_POLICY_BEGIN), false, 'policy A must never appear after the body')
+        assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the port notice must follow the body')
+        assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
+        assert.equal(after.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
+        assert.equal(Buffer.byteLength(content), 64978, 'the academic-paper payload moved')
+      } else if (skillName === 'deep-research') {
+        assert.equal(before, '', 'deep-research must carry nothing before the body')
+        assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'deep-research keeps its own append notice')
+        assert.equal(Buffer.byteLength(content), 51632, 'the deep-research payload moved')
+      } else {
+        // The reviewer is the canary: its payload is the vendored bytes, untouched.
+        assert.equal(before, '', 'the reviewer must carry no prepended text')
+        assert.equal(after, '', 'the reviewer must carry no appended text')
+        assert.equal(content, vendored, 'the reviewer body must stay byte-identical to the vendored text')
+        assert.equal(Buffer.byteLength(content), 47300, 'the reviewer payload moved')
+      }
+    }
+    for (const line of payloadBytes) console.log('      payload ' + line)
+    ok('served payloads keep order and bytes: academic-paper = block + body + notice, deep-research = body + notice, '
+      + 'reviewer = body only (canary 47300 B)')
+
+    // The one non-markdown vendored file has to be pinned, not assumed: a template
+    // that ships as the CRLF-converted worktree copy would be a different file.
+    const texPath = join(repoRoot, 'vendor', TEX_TEMPLATE)
+    const texBytes = await readFile(texPath)
+    const texDigest = createHash('sha256').update(texBytes).digest('hex')
+    const pkg = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'))
+    assert.equal(texBytes.length, 4844, 'the .tex must be the 4844-byte upstream object')
+    assert.equal(texDigest, TEX_TEMPLATE_SHA256, 'the .tex must be byte-identical to the upstream git object')
+    assert.equal(texDigest, manifest.files[TEX_TEMPLATE], 'the .tex digest must equal its manifest pin')
+    assert.equal(texBytes.includes(0x0d), false, 'the .tex carries CR, so something text-converted it')
+    assert.ok(pkg.files.includes('vendor'), 'package.json must ship the vendor directory')
+    ok('the .tex template ships: ' + TEX_TEMPLATE + ' ' + String(texBytes.length) + ' B, sha256 '
+      + texDigest.slice(0, 12) + '..., 0 CR, pinned in the manifest and inside the published vendor/')
 
     section('checkpoint 1: create -> attach (4 cards) -> confirm')
     const review = await runCheckpointOne(tools, runWorkspace, manuscript)
