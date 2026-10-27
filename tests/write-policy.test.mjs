@@ -18,6 +18,7 @@
  * not an interlock (writePolicyEnforced: false says so in metadata).
  */
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -47,10 +48,15 @@ import {
   fileProducingEntry,
   fileProductionSignals,
   packagedScriptsOf,
+  orchestrationSignals,
   qualifyFileProduction,
+  qualifyServedSet,
+  readableReferenceLines,
+  referencedSkillsIn,
   renderWritePolicyBlock,
   runsBundledScripts,
   scriptExecutionSignals,
+  slotsSkill,
   writePolicyMetadataOf,
 } from '../lib/write-policy.js'
 
@@ -117,12 +123,34 @@ async function serveAll(root) {
 }
 
 /** Qualify one vendored skill with the real detector. */
+/**
+ * Qualify every served skill in a tree together. The third instrument is a relation
+ * between skills, so it is measured over the set, never one body at a time: a body
+ * 'dispatches a producer' only relative to what else is served and measured.
+ */
+const qualificationCache = new Map()
+async function qualificationsOf(root = vendorRoot) {
+  const cached = qualificationCache.get(root)
+  if (cached !== undefined) return cached
+  const inputs = []
+  for (const name of discoverVendoredSkills(root)) {
+    inputs.push({
+      skillName: name,
+      body: await vendoredBody(name, root),
+      skillDirectory: join(root, name),
+    })
+  }
+  const measured = qualifyServedSet(inputs)
+  qualificationCache.set(root, measured)
+  return measured
+}
+
+/** One skill's qualification inside its own served set. */
 async function qualifies(skill, root = vendorRoot) {
-  return qualifyFileProduction({
-    skillName: skill,
-    body: await vendoredBody(skill, root),
-    skillDirectory: join(root, skill),
-  })
+  const all = await qualificationsOf(root)
+  const found = all.find(entry => entry.skill === skill)
+  if (found === undefined) throw new Error(skill + ' is not a served skill of ' + root)
+  return found
 }
 
 /** Build a throwaway vendor tree: one directory per skill, SKILL.md plus any files. */
@@ -308,6 +336,14 @@ test('served bytes: every skill is body + the one 684-byte block + its own notic
   }
   assert.equal(bytes(block), 684)
   assert.equal(bytes(renderWritePolicyBlock()), 684)
+  // Arity zero is part of the contract, not a detail: it is what makes it impossible to
+  // render a per-skill block, and it is exactly the sort of thing a change to how the
+  // metadata is justified could quietly break while every byte count still matched.
+  assert.equal(renderWritePolicyBlock.length, 0, 'the renderer takes no argument: the block cannot be selected')
+  // A hash, so 'the block is unchanged' is a check rather than a promise.
+  assert.equal(createHash('sha256').update(block, 'utf8').digest('hex'),
+    '80f7e2350bb9ba8f7605fd76235c6024f28d81722bc488a92fec8d7a3ff33f1d',
+    'the block text moved; if that was intended, re-measure and re-report it')
   // The reviewer's tree is clean and has no notice, so its payload is exactly the
   // block followed by its byte-identical body.
   const reviewer = await served(REVIEW_SKILL_NAME)
@@ -320,6 +356,7 @@ test('metadata: the rule is on every skill, the measured basis only where it was
   const measured = new Map([
     [PAPER_SKILL_NAME, 'prose-drafting'],
     [SCREENER_SKILL_NAME, 'bundled-script'],
+    [PIPELINE_SKILL_NAME, 'orchestration-closure'],
   ])
   for (const skill of SERVED_SKILLS) {
     const definition = await served(skill)
@@ -352,13 +389,13 @@ test('metadata: the rule is on every skill, the measured basis only where it was
       assert.equal(entry, undefined, skill + ' must not be in the record either')
     }
   }
-  // The orchestrator: policy keys present, no basis, because no instrument measured one.
+  // The orchestrator: policy keys on every skill, and its basis names the instrument that
+  // actually fired for it - the third one - never the prose instrument it did not earn.
   const pipeline = await served(PIPELINE_SKILL_NAME)
   assert.equal(pipeline.metadata.writePolicy, WRITE_POLICY_NEW_PATHS_ONLY)
   assert.equal(pipeline.metadata.writePolicyEnforced, false)
-  assert.equal('writePolicyBasis' in pipeline.metadata, false,
-    'academic-pipeline must not state a basis: nothing measured one')
-  assert.equal(fileProducingEntry(PIPELINE_SKILL_NAME), undefined)
+  assert.equal(pipeline.metadata.writePolicyBasis, 'orchestration-closure')
+  assert.equal(fileProducingEntry(PIPELINE_SKILL_NAME).basis, 'orchestration-closure')
 
   // The two producers state DIFFERENT instruments - the reason the key exists.
   assert.notEqual((await served(PAPER_SKILL_NAME)).metadata.writePolicyBasis,
@@ -449,71 +486,255 @@ test('the adversarial shapes no instrument detects are still served the block', 
   assert.equal(draftsDocuments(shellBody), false)
 })
 
-test('the record: every vendored producer is tabulated with its instrument (and nothing else is)', async (t) => {
-  // This test proves the RECORD matches the detector. It does not prove the detector
-  // is right, and it cannot: if the detector misses a skill, the record and the
-  // detector agree. Serving no longer depends on either.
-  const vendored = discoverVendoredSkills(vendorRoot)
-  const measured = []
-  for (const skill of vendored) {
-    const qualification = await qualifies(skill)
-    measured.push(qualification)
-    t.diagnostic(qualification.verdict)
-  }
+/**
+ * Problems with the record, for a given measurement. Empty means the two agree.
+ * Written as a reusable check because the suite must be able to show it FAILS: a
+ * record entry whose instrument stops firing has to be visible as an error, not as a
+ * line nobody reads.
+ */
+function recordProblems(measured, table = FILE_PRODUCING_SKILLS) {
+  const problems = []
   const detected = new Set(measured.filter(entry => entry.qualifies).map(entry => entry.skill))
-  const tabulated = new Set(FILE_PRODUCING_SKILLS.map(entry => entry.skill))
+  const tabulated = new Set(table.map(entry => entry.skill))
   for (const entry of measured) {
     if (!entry.qualifies) continue
-    assert.equal(tabulated.has(entry.skill), true,
-      entry.skill + ' is a demonstrated producer (' + entry.verdict + ') but is missing from FILE_PRODUCING_SKILLS')
+    if (!tabulated.has(entry.skill)) {
+      problems.push(entry.skill + ' is a demonstrated producer (' + entry.bases.join(' + ') + ') but is missing from FILE_PRODUCING_SKILLS')
+    }
   }
-  for (const entry of FILE_PRODUCING_SKILLS) {
-    assert.equal(vendored.includes(entry.skill), true, entry.skill + ' is not vendored')
-    const qualification = measured.find(item => item.skill === entry.skill)
-    assert.equal(qualification.qualifies, true,
-      'FILE_PRODUCING_SKILLS lists ' + entry.skill + ' but the detector no longer demonstrates it (' + qualification.verdict + ')')
-    assert.equal(qualification.bases.includes(entry.basis), true,
-      entry.skill + ' is recorded as ' + entry.basis + ' but the detector measured ' + JSON.stringify(qualification.bases))
+  for (const record of table) {
+    const qualification = measured.find(entry => entry.skill === record.skill)
+    if (qualification === undefined) {
+      problems.push('FILE_PRODUCING_SKILLS lists ' + record.skill + ', which is not served')
+      continue
+    }
+    if (!qualification.qualifies) {
+      problems.push('FILE_PRODUCING_SKILLS lists ' + record.skill + ' as ' + record.basis + ' but the detector demonstrates nothing (' + qualification.verdict + ')')
+      continue
+    }
+    if (!qualification.bases.includes(record.basis)) {
+      problems.push(record.skill + ' is recorded as ' + record.basis + ' but the detector measured ' + JSON.stringify(qualification.bases))
+    }
   }
-  assert.deepEqual([...tabulated].sort(), [...detected].sort())
+  if (problems.length === 0) {
+    const detectedSorted = [...detected].sort()
+    const tabulatedSorted = [...tabulated].sort()
+    if (JSON.stringify(detectedSorted) !== JSON.stringify(tabulatedSorted)) {
+      problems.push('detected ' + JSON.stringify(detectedSorted) + ' != tabulated ' + JSON.stringify(tabulatedSorted))
+    }
+  }
+  return problems
+}
+
+test('the record: every demonstrated producer is tabulated with the instrument that fired, and nothing else is', async (t) => {
+  // This test proves the RECORD matches the detectors. It does not prove the detectors
+  // are right, and it cannot: if an instrument misses a skill, the record and the
+  // detectors agree. Serving no longer depends on either.
+  const measured = await qualificationsOf()
+  for (const entry of measured) t.diagnostic(entry.verdict)
+  assert.deepEqual(recordProblems(measured), [], 'FILE_PRODUCING_SKILLS disagrees with the detectors')
+
   const bases = new Map(FILE_PRODUCING_SKILLS.map(entry => [entry.skill, entry.basis]))
   assert.equal(bases.get(PAPER_SKILL_NAME), 'prose-drafting')
   assert.equal(bases.get(SCREENER_SKILL_NAME), 'bundled-script')
+  assert.equal(bases.get(PIPELINE_SKILL_NAME), 'orchestration-closure')
+
+  // The reasons are different because the evidence is different, and each skill is
+  // recorded under the instrument that fired - not under everything true about it.
+  const paper = measured.find(entry => entry.skill === PAPER_SKILL_NAME)
+  assert.equal(paper.prose.draftsDocuments, true)
+  assert.equal(paper.orchestration.dispatchesProducer, false, 'academic-paper does not slot a measured producer')
   const screener = measured.find(entry => entry.skill === SCREENER_SKILL_NAME)
   assert.equal(screener.prose.draftsDocuments, false, 'sr-screener must NOT be recorded as a prose drafter')
   assert.equal(screener.scripts.writesViaScripts, true)
-  const paper = measured.find(entry => entry.skill === PAPER_SKILL_NAME)
-  assert.equal(paper.prose.draftsDocuments, true)
-  assert.equal(paper.scripts.writesViaScripts, false)
+  const pipeline = measured.find(entry => entry.skill === PIPELINE_SKILL_NAME)
+  assert.equal(pipeline.prose.draftsDocuments, false, 'the pipeline drafts no prose and the record must not imply it does')
+  assert.equal(pipeline.scripts.writesViaScripts, false)
+  assert.deepEqual(pipeline.bases, ['orchestration-closure'])
+  // The reviewer and deep-research reference other skills by name many times over and
+  // still slot none of them: mentioning a producer is not orchestrating one.
+  for (const name of [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME]) {
+    const entry = measured.find(item => item.skill === name)
+    assert.equal(entry.orchestration.servedMentions.length > 0, true,
+      name + ' is expected to NAME other served skills - that is what makes the narrow predicate worth having')
+    assert.deepEqual(entry.bases, [], name + ' dispatches no measured producer and must produce no basis')
+  }
 })
 
-test('the orchestrator is not a demonstrated producer, and is served anyway', async (t) => {
-  // academic-pipeline dispatches the writers rather than writing; the detector is asked
-  // and answers, rather than being asked until it agrees. Its verdict is reported here
-  // in full, because the interesting part is how close it is to the thresholds - and
-  // because a verdict that looks wrong is a documentation question, not a safety one:
-  // the block is attached to every skill, so nothing hangs on this answer.
+test('the third instrument is a check that can fail, in its own direction', () => {
+  // A record entry is a claim that an instrument fired. If the instrument stops
+  // firing - the body is reworded, a skill stops being served - the record must be
+  // reported as WRONG, not quietly tolerated. Proved on synthetic measurements, so the
+  // mechanism is shown to bite rather than asserted to.
+  const producer = {
+    skill: 'a-producer',
+    qualifies: true,
+    bases: ['orchestration-closure'],
+    prose: { draftsDocuments: false },
+    scripts: { writesViaScripts: false },
+    orchestration: { dispatchesProducer: true },
+  }
+  const silent = {
+    skill: 'a-producer',
+    qualifies: false,
+    bases: [],
+    prose: { draftsDocuments: false },
+    scripts: { writesViaScripts: false },
+    orchestration: { dispatchesProducer: false, verdict: 'dispatches no measured producer' },
+  }
+  const table = [{ skill: 'a-producer', basis: 'orchestration-closure', reason: 'synthetic' }]
+  assert.deepEqual(recordProblems([producer], table), [], 'the synthetic pair must be consistent')
+  assert.equal(recordProblems([silent], table).length, 1,
+    'an entry whose instrument no longer fires must be an error')
+  assert.match(recordProblems([silent], table)[0], /detector demonstrates nothing/u)
+  assert.equal(recordProblems([producer], []).length, 1,
+    'a qualified skill missing from the record must be an error')
+  // And the wrong-instrument direction: measured, but not by the recorded one.
+  const scripted = { ...producer, bases: ['bundled-script'] }
+  assert.match(recordProblems([scripted], table)[0], /recorded as orchestration-closure/u)
+})
+
+test('the orchestrator qualifies by the third instrument, and only by that one', async (t) => {
+  // The first two instruments are arithmetically right and factually misleading here: the
+  // pipeline drafts no prose and runs no script, and it is the skill that says 'run the
+  // paper skill'. So it is judged by the instrument that can actually see that, and the
+  // verdict is printed in full - the verb margins are the reason the third instrument
+  // exists rather than a reason to move a threshold.
   const qualification = await qualifies(PIPELINE_SKILL_NAME)
   t.diagnostic(qualification.verdict)
   assert.equal(qualification.prose.draftsDocuments, false, 'academic-pipeline must not be recorded as a prose drafter')
   assert.equal(qualification.scripts.writesViaScripts, false, 'academic-pipeline ships no script it is told to run')
-  assert.equal(qualification.qualifies, false)
-  assert.deepEqual(qualification.bases, [])
+  assert.deepEqual(qualification.bases, ['orchestration-closure'],
+    'the pipeline qualifies by orchestration and by nothing else')
+  assert.equal(qualification.orchestration.dispatchesProducer, true)
+  assert.deepEqual(qualification.orchestration.producerMentions, [PAPER_SKILL_NAME],
+    'the producer it slots is academic-paper; a skill naming itself or a non-producer must not appear here')
   // It ships no executable at all: its integrity stages name upstream root scripts this
-  // port deliberately does not vendor, so there is nothing inside its tree to resolve.
+  // port deliberately does not vendor, so there is nothing inside its own tree to resolve.
   assert.deepEqual(packagedScriptsOf(join(vendorRoot, PIPELINE_SKILL_NAME)), [])
   assert.equal(qualification.scripts.packagedInvocations, 0)
-  // The record agrees with the detector, and the both-directions test above enforces
-  // that: it is absent from the table because nothing demonstrated it, not because
-  // someone decided it does not write.
-  assert.equal(fileProducingEntry(PIPELINE_SKILL_NAME), undefined)
-  // And the consequence of an unconditional rule: it is served the block like the rest.
+  // And the block is not a reward for qualifying: it is served whatever the verdict.
   const definition = await served(PIPELINE_SKILL_NAME)
   assert.equal(definition.content.startsWith(renderWritePolicyBlock()), true,
-    'the orchestrator is served the block, whatever the detector says')
+    'the orchestrator is served the block, whatever the instruments say')
   assert.equal(definition.content.split(WRITE_POLICY_BEGIN).length, 2)
 })
 
+test('the orchestration instrument can fire: a stage table that gives a producer a slot', () => {
+  // A fixture, not a corpus reading: proof that the instrument is capable of firing at
+  // all, so that 'it did not fire' means something when it happens on a real body.
+  const stageTable = [
+    '# Orchestrator',
+    'Run the pipeline end to end.',
+    '',
+    '| Step | Stage | Skill | Mode | Output |',
+    '| --- | --- | --- | --- | --- |',
+    '| 1 | RESEARCH | `deep-research` | full | Corpus |',
+    '| 2 | WRITE | `academic-paper` | full | Draft |',
+  ].join('\n')
+  const signals = orchestrationSignals({
+    body: stageTable,
+    self: 'an-orchestrator',
+    servedSkills: ['an-orchestrator', 'deep-research', 'academic-paper'],
+    producerSkills: ['academic-paper'],
+  })
+  assert.equal(signals.dispatchesProducer, true, signals.verdict)
+  assert.deepEqual(signals.producerMentions, ['academic-paper'])
+  assert.deepEqual(signals.servedMentions, ['academic-paper', 'deep-research'])
+  // The directive form fires too, and it must be the line's own verb.
+  const directive = '# Orchestrator\n- Run `academic-paper` on the finished outline.\n'
+  assert.equal(orchestrationSignals({
+    body: directive, self: 'an-orchestrator',
+    servedSkills: ['an-orchestrator', 'academic-paper'], producerSkills: ['academic-paper'],
+  }).dispatchesProducer, true)
+  // The dispatch cell next to the skill's own cell is the third accepted shape.
+  const dispatchTable = [
+    '| Skill | Role |',
+    '| --- | --- |',
+    '| `academic-paper` | Dispatched (Stage 2 writing) |',
+  ].join('\n')
+  assert.equal(orchestrationSignals({
+    body: dispatchTable, self: 'an-orchestrator',
+    servedSkills: ['an-orchestrator', 'academic-paper'], producerSkills: ['academic-paper'],
+  }).dispatchesProducer, true)
+})
+
+test('the orchestration predicate is narrow: examples, quotations, self-references and routing rows are inert', () => {
+  const served = ['a-skill', 'academic-paper', 'sr-screener']
+  const producers = ['academic-paper', 'sr-screener']
+  const measure = body => orchestrationSignals({ body, self: 'a-skill', servedSkills: served, producerSkills: producers })
+
+  // A producer named inside a fenced code block is an example, not an order.
+  const fenced = ['# Skill', 'For reference, the pipeline runs:', '```', '| 2 | WRITE | `academic-paper` | full |', '- Run `sr-screener`.', '```', 'That is all.'].join('\n')
+  assert.equal(measure(fenced).dispatchesProducer, false, 'a fenced example must be inert')
+  // A quotation is somebody else's sentence.
+  const quoted = ['# Skill', '> | 2 | WRITE | `academic-paper` | full |', '> - Run `sr-screener`.'].join('\n')
+  assert.equal(measure(quoted).dispatchesProducer, false, 'a quotation must be inert')
+  // Naming yourself tells us nothing about what you dispatch.
+  const self = ['# Skill', '| 1 | STAGE | `a-skill` |', '- Run `a-skill`.'].join('\n')
+  assert.equal(measure(self).dispatchesProducer, false, 'a self-reference must not qualify')
+  // A name this package does not serve is inert, whatever it looks like.
+  const unserved = ['# Skill', '| 1 | WRITE | `some-other-paper-skill` |'].join('\n')
+  assert.equal(measure(unserved).dispatchesProducer, false)
+  // A ROUTING row - 'the user wants X, so point them at Y' - is not a dispatch, and
+  // this corpus is full of them. Neither is a boundary note phrased as prose.
+  const routing = ['# Skill', '| If the user asks for | Use |', '| --- | --- |', '| Writing a paper (not this) | `academic-paper` |', '| Need to write a paper | `academic-paper` |'].join('\n')
+  assert.equal(measure(routing).dispatchesProducer, false, 'routing rows must not count as dispatch')
+  // A stage word merely present in a row is not a slot for the name in that row.
+  const borrowedPhase = ['| **Upstream: academic-paper -> a-skill** | Receives the paper and enters Phase 0 |'].join('\n')
+  assert.equal(measure(borrowedPhase).dispatchesProducer, false, 'the phase belongs to the row subject, not to academic-paper')
+  // Prose that merely contains a producer's name.
+  assert.equal(measure('An academic-paper draft is reviewed here; the sr-screener workbook arrives alongside.').dispatchesProducer, false)
+  // And the same bodies the other way: the reference is still recorded as a mention.
+  assert.deepEqual(measure(routing).servedMentions, ['academic-paper'])
+})
+
+test('closure is one step, and that is a choice the suite pins', () => {
+  // A names B, B names C, C is a measured producer. Transitivity would qualify A on the
+  // strength of a claim nobody made about A, and would spread as the graph grows. So the
+  // instrument closes over MEASURED producers only, and A stays out.
+  const chain = ['# A', '| 1 | STAGE | `b-orchestrator` |'].join('\n')
+  const mid = ['# B', '| 2 | WRITE | `academic-paper` | full |'].join('\n')
+  const qualified = qualifyServedSet([
+    { skillName: 'a-skill', body: chain, skillDirectory: '/tmp/a' },
+    { skillName: 'b-orchestrator', body: mid, skillDirectory: '/tmp/b' },
+    { skillName: 'academic-paper', body: '# C\n' + Array.from({ length: 60 }, () => 'Write the draft.').join('\n'), skillDirectory: '/tmp/c' },
+  ])
+  const a = qualified.find(entry => entry.skill === 'a-skill')
+  const b = qualified.find(entry => entry.skill === 'b-orchestrator')
+  assert.equal(b.orchestration.dispatchesProducer, true, 'the middle skill slots the producer')
+  assert.equal(a.orchestration.dispatchesProducer, false,
+    'a skill naming an orchestrator must NOT inherit the orchestrator label: closure is one step')
+  assert.deepEqual(a.orchestration.servedMentions, ['b-orchestrator'])
+  assert.equal(a.qualifies, false)
+})
+
+test('one basis per skill: metadata records the instrument that fired, never a summary', async () => {
+  // The invariant, stated and asserted for all five: a skill carries at most one
+  // writePolicyBasis. The pipeline's basis is orchestration, and its served metadata must
+  // not imply it drafted prose - nor carry a second basis to explain the verb near-miss.
+  const measured = await qualificationsOf()
+  const instruments = new Set(['prose-drafting', 'bundled-script', 'orchestration-closure'])
+  for (const name of SERVED_SKILLS) {
+    const definition = await served(name)
+    const basis = definition.metadata.writePolicyBasis
+    if (basis === undefined) continue
+    assert.equal(typeof basis, 'string', name + ': one basis, one value')
+    assert.equal(instruments.has(basis), true, name + ': ' + String(basis) + ' is not an instrument')
+    const entry = fileProducingEntry(name)
+    assert.notEqual(entry, undefined, name + ' states a basis with no record entry')
+    assert.equal(basis, entry.basis)
+    const qualification = measured.find(item => item.skill === name)
+    assert.equal(qualification.bases.includes(basis), true, name + ': the stated basis is not one that fired')
+  }
+  const pipeline = await served(PIPELINE_SKILL_NAME)
+  assert.equal(pipeline.metadata.writePolicyBasis, 'orchestration-closure')
+  assert.notEqual(pipeline.metadata.writePolicyBasis, 'prose-drafting',
+    'the pipeline drafted no prose and must not say it did')
+  // The near-miss counts are printed by the suite and stored nowhere.
+  const record = FILE_PRODUCING_SKILLS.find(entry => entry.skill === PIPELINE_SKILL_NAME)
+  assert.doesNotMatch(record.reason, /\d/u, 'the reason must not carry a measurement')
+})
 test('every record entry carries a one-line justification with no typed measurements', () => {
   assert.ok(FILE_PRODUCING_SKILLS.length >= 2)
   for (const entry of FILE_PRODUCING_SKILLS) {
@@ -626,8 +847,15 @@ test('no measurement is typed into the write-policy source (counts are printed, 
   const source = await readFile(join(repoRoot, 'src', 'write-policy.ts'), 'utf8')
   assert.deepEqual(source.match(/\d+\s*(?:writing|drafting)\b/giu) ?? [], [],
     'a measured verb count is typed into src/write-policy.ts; compute it with fileProductionSignals() instead')
-  const tableBlock = source.slice(source.indexOf('FILE_PRODUCING_SKILLS: readonly'), source.indexOf('Measurement of one skill body'))
+  // The slice is the table literal itself. It used to run to the prose section, which was
+  // fine while nothing sat in between; the instruments now do, and a lint that swallowed
+  // them would be measuring the wrong text.
+  const tableStart = source.indexOf('export const FILE_PRODUCING_SKILLS')
+  const tableEnd = source.indexOf('\n]\n', tableStart)
+  assert.ok(tableStart >= 0 && tableEnd > tableStart, 'the record literal moved; fix this lint')
+  const tableBlock = source.slice(tableStart, tableEnd)
   assert.deepEqual(tableBlock.match(/\d/gu) ?? [], [], 'the record must carry no digits at all')
+  assert.ok(tableBlock.includes('orchestration-closure'), 'the lint must be reading the record, not an empty slice')
   // The record is documentation: no serving-path comment may call it a precondition.
   assert.deepEqual(source.match(/(?:carries? (?:the )?polic\w+ because|qualifies for the block|only file-producing skills (?:get|carry))/giu) ?? [], [],
     'the record no longer gates serving, so no comment may describe it as a precondition')

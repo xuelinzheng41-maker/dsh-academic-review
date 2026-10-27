@@ -54,8 +54,8 @@
  * which vendored skills are DEMONSTRATED file producers, and by which
  * instrument - and a reader deserves that answer next to the rule. It decides
  * nothing about serving: no skill is denied the block for being absent from the
- * table, and {@link renderWritePolicyBlock} does not consult it. Two instruments
- * are measured, because reality has two shapes:
+ * table, and {@link renderWritePolicyBlock} does not consult it. Three instruments
+ * are measured, because reality has three shapes:
  *
  * 1. PROSE DRAFTING ({@link draftsDocuments}): writing verbs at or above
  *    {@link FILE_PRODUCING_MIN_WRITING_VERBS} AND drafting verbs at or above
@@ -66,6 +66,19 @@
  *    actually ships inside THAT SKILL'S OWN directory, and (c) carries an
  *    argument through which the program is told to write something. All three on
  *    the same line, and (b) is checked against the disk, not against the text.
+ * 3. ORCHESTRATION CLOSURE ({@link orchestrationSignals}): the body gives a skill
+ *    this package SERVES, and that instruments one and two MEASURED as a producer,
+ *    a slot it can be dispatched from - the line's own verb is the dispatch, or a
+ *    stage table places it. A name this package does not serve is inert, a skill
+ *    naming itself does not qualify, and a body that merely mentions a producer
+ *    ('| Need to write a paper (not review) | academic-paper |') is routing the
+ *    user elsewhere, which is not orchestration.
+ *
+ * ONE BASIS PER SKILL, AND IT NAMES THE INSTRUMENT THAT FIRED. The bases are not a
+ * summary: a skill that qualified by orchestration did NOT draft prose, and the record
+ * must not imply it did. The pipeline's verb counts are printed by the suite and
+ * stored nowhere, because a measurement typed into this file rots the first time a
+ * vendored body moves.
  *
  * What the detector records, and what it is known to miss:
  * - ACADEMIC-PAPER-REVIEWER is a demonstration of the limit, not a licence to
@@ -81,25 +94,39 @@
  * - The three qa-gate shapes above are recorded as UNPROVEN, not as
  *   non-producers. Absence from this table means "we could not show it writes",
  *   never "it does not write".
- * - ACADEMIC-PIPELINE is the case that keeps this honest as documentation: an
- *   orchestrator that dispatches the drafting and reviewing skills, it lands just
- *   under both thresholds and ships no executable of its own - its integrity stages
- *   name upstream root scripts this port deliberately does not vendor - so no
- *   instrument demonstrates it and the record leaves it out. That verdict is close
- *   enough to the line to be worth stating plainly, and it changes nothing that
- *   matters: the block is attached to every skill, so a verdict a reader might argue
- *   with cannot cost a producer its policy. The threshold is not tuned to make the
- *   answer tidier in either direction; the measurement is reported by the suite on
- *   every run.
+ * - ACADEMIC-PIPELINE is the reason the third instrument exists. It drafts no prose
+ *   and ships no executable, so the first two instruments are silent about it - and
+ *   arithmetically right while being factually misleading, because it is the skill that
+ *   says "run the drafting skill", and that skill is a measured producer. Its silence
+ *   under those instruments was also a coincidence of margin, not a property: a small
+ *   edit to that body would have moved it across a threshold and the record would have
+ *   changed meaning with nobody noticing. Orchestration makes its status structural.
+ *   What it costs: nothing. The block is attached to every skill, so this verdict adds
+ *   a reason to a record and gates no one.
+ * - THE THIRD INSTRUMENT IS ONE STEP, BY CHOICE. If A dispatches B and B dispatches a
+ *   measured producer, A does NOT qualify. Closure over closure would let "run the
+ *   pipeline" inherit every label further down the chain - a claim no instrument made
+ *   about the body in hand - and it would spread as the graph grows. The suite pins the
+ *   choice with a chain fixture rather than leaving it to be discovered.
+ * - ITS BLIND SPOT, SAID OUT LOUD: it sees a dispatch expressed as a name. It is blind
+ *   to an orchestrator that dispatches by ROLE or DESCRIPTION rather than by skill name
+ *   ("hand the draft to the writing stage", "run the paper workflow"), to a dispatch
+ *   written in a language or notation the markers do not cover, and - deliberately - to
+ *   a dispatch shown inside a fenced example or a quotation, which is why the predicate
+ *   masks those lines before it reads anything. A human reading the body catches all of
+ *   those; this instrument catches the shape it can prove.
  *
  * THE TABLE IS STILL CHECKED IN BOTH DIRECTIONS, AND STILL CANNOT PROVE THE RULE
  *
- * tests/write-policy.test.mjs fails when a vendored skill the detector calls a
- * producer is missing from the table, and when the table lists a skill the
- * detector no longer calls a producer - so the documentation cannot rot in either
- * direction. That test is worth keeping precisely because it is weak: it proves
- * the record matches the detector, and the adversarial fixtures in the same suite
- * demonstrate why the detector cannot be trusted with the serving decision.
+ * tests/write-policy.test.mjs fails when a vendored skill the detectors call a
+ * producer is missing from the table; when the table lists a skill no instrument
+ * demonstrates any more; and when the instrument under which a skill is recorded
+ * stops firing even though some other one still does. That is the per-basis version
+ * of the same failure, and it is checked for every basis, not just the first two -
+ * so the documentation cannot rot in any direction. The test is worth keeping
+ * precisely because it is weak: it proves the record matches the detectors, and the
+ * adversarial fixtures in the same suite demonstrate why the detectors cannot be
+ * trusted with the serving decision.
  * * @module dsh-academic-review/write-policy
  */
 
@@ -160,7 +187,7 @@ export const SELF_DIRECTORY_PREFIX = /^\$(?:S|SKILL|SKILL_DIR|DIR|SCRIPT_DIR)\//
 export const EXECUTABLE_EXTENSION = /\.(?:py|mjs|cjs|js|sh|ps1)$/iu
 
 /** Why a skill produces files. Exactly one is recorded per table entry. */
-export type FileProductionBasis = 'prose-drafting' | 'bundled-script'
+export type FileProductionBasis = 'prose-drafting' | 'bundled-script' | 'orchestration-closure'
 
 /** One skill demonstrated to produce files, and how that was demonstrated. */
 export interface FileProducingSkill {
@@ -177,9 +204,17 @@ export interface FileProducingSkill {
  * demonstrated it. This is documentation, not a precondition: every served skill
  * carries policy A whether or not it appears here, and nothing in the serving path
  * consults this list. A skill absent from it is unproven, not proven harmless.
- * Keep it in sync with {@link qualifyFileProduction}: tests/write-policy.test.mjs
- * fails in both directions if it drifts, and listens to what that test can and
- * cannot prove (see the module header).
+ * Keep it in sync with {@link qualifyServedSet}: tests/write-policy.test.mjs fails in
+ * both directions for EVERY basis - a qualified skill missing from the record, a
+ * recorded skill whose instrument no longer fires, and a recorded basis the detector
+ * did not measure - and listens to what that test can and cannot prove (see the module
+ * header).
+ *
+ * ONE BASIS PER SKILL, ALWAYS. `basis` names the instrument that fired, not a summary
+ * of the skill. A skill that qualified by orchestration did NOT draft prose, and this
+ * field must never imply it did: the pipeline's near-miss verb counts are reported by
+ * the suite and stay out of the record, because they are numbers, and a number typed
+ * into this file rots the moment a vendored body moves.
  */
 export const FILE_PRODUCING_SKILLS: readonly FileProducingSkill[] = [
   {
@@ -197,7 +232,200 @@ export const FILE_PRODUCING_SKILLS: readonly FileProducingSkill[] = [
     reason: 'It instructs the model to execute its own shipped Python scripts with an output argument, '
       + 'so screening logs, PRISMA counts, the workbook and the corpus handoff land wherever those commands say.',
   },
+  {
+    skill: 'academic-pipeline',
+    basis: 'orchestration-closure',
+    // One basis per skill, and it is the instrument that fired - NOT a summary of
+    // everything true about the body. The pipeline drafts nothing itself; what it does
+    // is dispatch a skill that does, so the reason says that and nothing else.
+    reason: 'It dispatches the drafting skill this package serves rather than drafting itself, '
+      + 'so the writes it causes are the writes its stages instruct.',
+  },
 ]
+
+/**
+ * Lines the orchestration instrument refuses to read: fenced code blocks and
+ * quotations. A producer named inside a fence is an example, not a dispatch; a
+ * producer named in a quotation is somebody else's sentence. Both are skipped
+ * before any reference predicate runs, and tests/write-policy.test.mjs pins that.
+ */
+export const SKILL_REFERENCE_FENCE = /^\s{0,3}(?:```|~~~)/u
+/** A quotation line - a line beginning with '>' - is not this skill speaking. */
+export const SKILL_REFERENCE_QUOTE = /^\s{0,3}>/u
+/**
+ * Marker of a directive line: the line's OWN verb is a dispatch. Line-initial on
+ * purpose - a dispatch verb in the middle of a sentence usually describes somebody
+ * else's dispatch ('the orchestrator ... dispatches X'), which is exactly the voice
+ * every routing paragraph in this corpus uses.
+ */
+export const DIRECTIVE_DISPATCH = /^\s*(?:[-*+]\s+|\d+\.\s+|\*\*)?(?:dispatch|invoke|run|call|hand off to|delegate to|start|enter)\b/iu
+/**
+ * A stage slot: the row says which stage, phase or step it is. A markdown table row
+ * with an ordinal first cell, or any row that names a stage, counts; a routing row
+ * ('| Need to write a paper (not review) | academic-paper |') does not, and that is
+ * the difference between assigning a producer a stage and pointing the user elsewhere.
+ */
+export const STAGE_SLOT = /\b(?:stage|phase|step)\b/iu
+/** First cell of a stage table is an ordinal: '| 2 |', '| **3'** |'. */
+export const STAGE_ORDINAL_CELL = /^\s*\|\s*\*{0,2}\s*\d/u
+
+/** Measurement of one skill body against the orchestration instrument. */
+export interface OrchestrationSignals {
+  /** Served skills this body references directly, sorted, excluding itself. */
+  readonly servedMentions: readonly string[]
+  /** Those of them that instruments one and two measured as producers. */
+  readonly producerMentions: readonly string[]
+  /** Whether it gives at least one measured producer a stage or a directive slot. */
+  readonly dispatchesProducer: boolean
+  /** Human-readable reason for the verdict, for test failure messages. */
+  readonly verdict: string
+}
+
+/**
+ * The lines of a body this instrument is allowed to read: fenced code blocks and
+ * quotations are dropped, because a name inside them is an example, not an order.
+ * @param body - the vendored body (frontmatter already stripped).
+ * @returns the readable lines, in order.
+ */
+export function readableReferenceLines(body: string): string[] {
+  const out: string[] = []
+  let fenced = false
+  for (const line of body.split('\n')) {
+    if (SKILL_REFERENCE_FENCE.test(line)) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    if (SKILL_REFERENCE_QUOTE.test(line)) continue
+    out.push(line)
+  }
+  return out
+}
+
+/**
+ * Served skills one line references AS SKILLS.
+ *
+ * A reference is a syntactic marker, not a word that happens to be there: an inline
+ * code span or bold token whose text is the name or a path containing it
+ * ('skills/academic-paper', 'vendor/sr-screener/SKILL.md'), a name the line binds to
+ * the literal word skill/stage/phase, or a name a dispatch verb on that line points at.
+ * Prose like 'an academic-paper draft' matches none of them.
+ * @param line - one readable line.
+ * @param candidates - served skill names to look for.
+ * @returns the names referenced on that line, in candidate order.
+ */
+export function referencedSkillsIn(line: string, candidates: readonly string[]): string[] {
+  const found = new Set<string>()
+  for (const match of line.matchAll(/`([^`\n]+)`|\*\*([^*\n]+)\*\*/gu)) {
+    const token = (match[1] ?? match[2] ?? '').trim().replace(/[.,;:!?)]+$/u, '')
+    const segments = token.split('/')
+    for (const name of candidates) {
+      if (token === name || segments.includes(name)) found.add(name)
+    }
+  }
+  for (const name of candidates) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const dispatched = new RegExp(DIRECTIVE_DISPATCH.source + '[\\s\\S]*' + escaped + '(?:`|\\*\\*)?\\b', 'iu')
+    const labelled = new RegExp(
+      '(?:\\bskill\\s+(?:`|\\*\\*)?' + escaped + '\\b|`' + escaped + '`\\s+(?:skill|sub-?skill|stage|phase)\\b)',
+      'iu',
+    )
+    if (dispatched.test(line) || labelled.test(line)) found.add(name)
+  }
+  return [...found]
+}
+
+/**
+ * Cells of a markdown table row, without the outer pipes.
+ * @param line - a line that starts with '|'.
+ * @returns the cell texts, trimmed.
+ */
+export function tableCellsOf(line: string): string[] {
+  return line.trim().replace(/^\|/u, '').replace(/\|$/u, '').split('|').map(cell => cell.trim())
+}
+
+/**
+ * Whether one line gives ONE named skill a slot: the line's own verb dispatches it, or
+ * a stage table places it.
+ *
+ * The binding matters, and it is the reason this is not a word hunt: a stage word
+ * anywhere in the row is not evidence. '| **Upstream: academic-paper -> reviewer** |
+ * Receives the paper ... enters Phase 0 |' mentions a producer and a phase and means
+ * neither that the reviewer runs it nor that it owns a stage - the phase belongs to
+ * the reviewer itself. So the slot must be bound to the skill: an ordinal first cell
+ * ('| 2 | WRITE | academic-paper |'), or the cell straight after the skill's own cell
+ * carrying the dispatch ('| academic-paper | Dispatched (writing stages) |').
+ * @param line - one readable line.
+ * @param name - the served skill name to look for.
+ * @returns whether the line slots that skill.
+ */
+export function slotsSkill(line: string, name: string): boolean {
+  const referenced = referencedSkillsIn(line, [name]).length > 0
+  if (!referenced) return false
+  if (DIRECTIVE_DISPATCH.test(line)) return true
+  if (!/^\s*\|/u.test(line)) return false
+  const cells = tableCellsOf(line)
+  const index = cells.findIndex(cell => referencedSkillsIn(cell, [name]).length > 0)
+  if (index < 0) return false
+  if (STAGE_ORDINAL_CELL.test(line)) return true
+  const slot = cells[index + 1] ?? ''
+  return /(?:dispatch|dispatched|stage|phase|step)\b/iu.test(slot)
+}
+
+/**
+ * Measure whether a body DISPATCHES a skill that instruments one and two measured as a
+ * file producer (the orchestration instrument).
+ *
+ * Why the predicate is structure, not grammar: every routing paragraph and boundary
+ * note in this corpus says things like 'the orchestrator dispatches academic-paper' or
+ * '| Need to write a paper (not review) | academic-paper |' - true sentences that are
+ * not this body dispatching anything. So evidence must be one of two shapes the body
+ * cannot accidentally wear: a directive line whose own verb is the dispatch, or a
+ * stage-table row that gives the skill a stage slot. Fenced code and quotations are
+ * excluded first, because an example is not an order.
+ *
+ * NON-TRANSITIVE, DELIBERATELY: a body qualifies only when it slots a producer that was
+ * MEASURED, never one that is itself only an orchestrator. Transitivity would let 'run
+ * the pipeline' inherit the labels of everything further down the chain, spreading a
+ * claim no instrument made about the body in hand. One step, measured evidence, and the
+ * tests assert the choice with a chain fixture.
+ *
+ * A skill naming itself does not qualify: a body referring to its own name has told us
+ * nothing about what it dispatches.
+ * @param input.body - the vendored body (frontmatter already stripped).
+ * @param input.self - the served name of the body being measured.
+ * @param input.servedSkills - every skill this package serves; an unserved name is inert.
+ * @param input.producerSkills - served skills instruments one and two measured as producers.
+ * @returns the mentions and the verdict.
+ */
+export function orchestrationSignals(input: {
+  body: string
+  self: string
+  servedSkills: readonly string[]
+  producerSkills: readonly string[]
+}): OrchestrationSignals {
+  const candidates = input.servedSkills.filter(name => name !== input.self)
+  const mentioned = new Set<string>()
+  const slotted = new Set<string>()
+  for (const line of readableReferenceLines(input.body)) {
+    const referenced = referencedSkillsIn(line, candidates)
+    if (referenced.length === 0) continue
+    for (const name of referenced) mentioned.add(name)
+    for (const name of referenced) if (slotsSkill(line, name)) slotted.add(name)
+  }
+  const servedMentions = [...mentioned].sort()
+  const producerMentions = [...slotted].filter(name => input.producerSkills.includes(name)).sort()
+  return {
+    servedMentions,
+    producerMentions,
+    dispatchesProducer: producerMentions.length > 0,
+    verdict: String(servedMentions.length) + ' served skill reference(s)'
+      + (servedMentions.length > 0 ? ': ' + servedMentions.join(', ') : '')
+      + '; ' + String(producerMentions.length) + ' dispatched in a stage or directive slot'
+      + (producerMentions.length > 0 ? ': ' + producerMentions.join(', ') : '')
+      + ' -> ' + (producerMentions.length > 0 ? 'dispatches a producer' : 'dispatches no measured producer'),
+  }
+}
 
 /** Measurement of one skill body against the prose-drafting rule. */
 export interface FileProductionSignals {
@@ -225,7 +453,7 @@ export interface ScriptExecutionSignals {
   readonly verdict: string
 }
 
-/** Full qualification result for one skill, both instruments. */
+/** Full qualification result for one skill, all three instruments. */
 export interface FileProductionQualification {
   /** Served skill name. */
   readonly skill: string
@@ -237,6 +465,8 @@ export interface FileProductionQualification {
   readonly prose: FileProductionSignals
   /** The bundled-script measurement. */
   readonly scripts: ScriptExecutionSignals
+  /** The orchestration measurement (empty when no served set was supplied). */
+  readonly orchestration: OrchestrationSignals
   /** One-line summary for test output. */
   readonly verdict: string
 }
@@ -364,21 +594,84 @@ export function qualifyFileProduction(input: {
   skillName: string
   body: string
   skillDirectory: string
+  /** Every served skill name; omit to measure without the orchestration instrument. */
+  servedSkills?: readonly string[]
+  /** Served skills measured as producers by instruments one and two. */
+  producerSkills?: readonly string[]
 }): FileProductionQualification {
   const prose = fileProductionSignals(input.body)
   const scripts = scriptExecutionSignals(input.body, input.skillDirectory)
+  const orchestration = orchestrationSignals({
+    body: input.body,
+    self: input.skillName,
+    servedSkills: input.servedSkills ?? [],
+    producerSkills: input.producerSkills ?? [],
+  })
   const bases: FileProductionBasis[] = []
   if (prose.draftsDocuments) bases.push('prose-drafting')
   if (scripts.writesViaScripts) bases.push('bundled-script')
+  if (orchestration.dispatchesProducer) bases.push('orchestration-closure')
   return {
     skill: input.skillName,
     qualifies: bases.length > 0,
     bases,
     prose,
     scripts,
-    verdict: input.skillName + ': ' + prose.verdict + '; ' + scripts.verdict
+    orchestration,
+    verdict: input.skillName + ': ' + prose.verdict + '; ' + scripts.verdict + '; ' + orchestration.verdict
       + ' -> ' + (bases.length > 0 ? 'produces files (' + bases.join(' + ') + ')' : 'does not produce files'),
   }
+}
+
+/**
+ * Qualify a whole served set, in the two passes the orchestration instrument needs.
+ *
+ * Pass one measures each body on its own (prose, scripts) and collects the skills those
+ * two instruments demonstrated. Pass two measures orchestration against THAT set, which
+ * is what makes the instrument non-transitive: an orchestrator does not become a
+ * producer for the purpose of qualifying somebody else, so a chain of "run the
+ * pipeline" mentions cannot carry a label down from a skill far away that nobody
+ * measured in the body at hand.
+ * @param skills - every served skill, with its body and directory.
+ * @returns one qualification per input, in input order.
+ */
+export function qualifyServedSet(skills: ReadonlyArray<{
+  skillName: string
+  body: string
+  skillDirectory: string
+}>): FileProductionQualification[] {
+  const measured = skills.map(skill => ({
+    skill,
+    prose: fileProductionSignals(skill.body),
+    scripts: scriptExecutionSignals(skill.body, skill.skillDirectory),
+  }))
+  const producerSkills = measured
+    .filter(entry => entry.prose.draftsDocuments || entry.scripts.writesViaScripts)
+    .map(entry => entry.skill.skillName)
+  const servedSkills = skills.map(skill => skill.skillName)
+  return measured.map(entry => {
+    const orchestration = orchestrationSignals({
+      body: entry.skill.body,
+      self: entry.skill.skillName,
+      servedSkills,
+      producerSkills,
+    })
+    const bases: FileProductionBasis[] = []
+    if (entry.prose.draftsDocuments) bases.push('prose-drafting')
+    if (entry.scripts.writesViaScripts) bases.push('bundled-script')
+    if (orchestration.dispatchesProducer) bases.push('orchestration-closure')
+    return {
+      skill: entry.skill.skillName,
+      qualifies: bases.length > 0,
+      bases,
+      prose: entry.prose,
+      scripts: entry.scripts,
+      orchestration,
+      verdict: entry.skill.skillName + ': ' + entry.prose.verdict + '; ' + entry.scripts.verdict
+        + '; ' + orchestration.verdict
+        + ' -> ' + (bases.length > 0 ? 'produces files (' + bases.join(' + ') + ')' : 'does not produce files'),
+    }
+  })
 }
 
 /**
