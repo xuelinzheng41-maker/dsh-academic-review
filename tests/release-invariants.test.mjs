@@ -23,6 +23,14 @@
  * owner, and tolerating a half-written document to keep the gate green would defeat the
  * purpose of the invariant.
  *
+ * The general form of every defect this round found, and the reason each test above says
+ * what it covers: A GREEN LINE THAT IMPLIES MORE COVERAGE THAN IT HAS IS THE SAME DEFECT AS
+ * A STALE PIN. A pin quoting worktree bytes, a table measured on a CRLF checkout, a basis
+ * paragraph that miscounts its own rows, a detector agreeing with a table that shares its
+ * blind spot - in each case the report was confident and the measurement was not there. So
+ * where this suite cannot measure something, it says so in the pass line rather than
+ * leaving the reader to infer that green means everything was checked.
+ *
  * @module dsh-academic-review/tests/release-invariants
  */
 
@@ -414,6 +422,9 @@ test('docs/UPSTREAM_INVENTORY.md is recomputed: header counts and every quoted b
     doc + ' basis says ' + String(statedTotal) + ' rows but splits them into '
     + String(statedVendored) + ' + ' + String(statedScripts))
 
+  // The reach is printed, not implied. Fourteen rows in this file are quoted from the object
+  // store and cannot be stat()ed from this package; a pass line that let a reader believe
+  // otherwise would be the same defect as a stale pin, one layer out.
   console.log('# inventory: ' + String(rowsBySection.length) + ' claimed tree(s) recount to their rows and their trees; '
     + String(measured) + ' of ' + String(statedTotal) + ' byte rows measured here ('
     + String(rowsBySection.reduce((total, section) => total + section.rows.length, 0)) + ' table + '
