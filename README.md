@@ -141,8 +141,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-revie
 A pinned tag or the release tarball works the same way:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.1.0
-dsh plugin --profile <profile> add ./dsh-academic-review-0.1.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.1.1
+dsh plugin --profile <profile> add ./dsh-academic-review-0.1.1.tgz
 ```
 
 The build output (`lib/`) is committed on purpose, so a git install needs no
