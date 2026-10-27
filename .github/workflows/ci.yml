@@ -58,3 +58,39 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # Guards what we actually publish. Every row above runs against the working tree,
+  # which cannot see the tarball at all: a files entry or an .npmignore can drop
+  # vendor/, lib/ or a SKILL.md and every test still passes, because the tests read
+  # the tree and not the package. One ubuntu runner is enough - packing is
+  # platform-independent, and the risk being guarded is the tarball's CONTENTS.
+  package:
+    name: Pack and smoke-install (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The smoke script asserts on lib/, so the build has to happen first.
+      - name: Build
+        run: pnpm build
+
+      - name: Pack, install and verify the shipped tarball
+        # Deliberately unmasked: a tarball that cannot install, or that installs
+        # without the vendored tree, is a release blocker.
+        run: node scripts/pack-smoke.mjs

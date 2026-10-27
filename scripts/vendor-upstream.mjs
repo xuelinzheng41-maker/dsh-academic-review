@@ -281,33 +281,51 @@ async function listFiles(root, base = root) {
   return out.sort()
 }
 
-async function verify() {
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-  let bad = 0
+/**
+ * Verify a vendored tree against a manifest.
+ *
+ * Exported because the packaged-tarball smoke test has to run exactly this check
+ * against the INSTALLED copy: the working tree passing proves nothing about what
+ * the files field and .npmignore actually put inside the tarball.
+ *
+ * @param input - vendorRoot and manifestPath to check (defaults are the repo's).
+ * @returns the pinned file count plus every problem found, so callers choose how to report.
+ */
+export async function verifyVendorTree({ vendorRoot: vendorBase, manifestPath: manifestFile }) {
+  const manifest = JSON.parse(await readFile(manifestFile, 'utf8'))
+  const problems = []
   for (const [file, expected] of Object.entries(manifest.files)) {
     let actual
     try {
-      actual = sha256(await readFile(join(vendorRoot, file)))
+      actual = sha256(await readFile(join(vendorBase, file)))
     } catch {
       actual = 'missing'
     }
-    if (actual !== expected) {
-      bad += 1
-      console.error('MISMATCH ' + file + ': expected ' + expected + ', got ' + actual)
-    }
+    if (actual !== expected) problems.push({ kind: 'mismatch', file, detail: 'expected ' + expected + ', got ' + actual })
   }
-  const present = await listFiles(vendorRoot)
-  const extra = present.filter(file => manifest.files[file] === undefined)
-  for (const file of extra) {
-    bad += 1
-    console.error('UNEXPECTED ' + file + ' (not in vendor-manifest.json)')
+  let present = []
+  try {
+    present = await listFiles(vendorBase)
+  } catch {
+    problems.push({ kind: 'missing-tree', file: vendorBase, detail: 'the vendored tree is not there at all' })
   }
-  if (bad > 0) {
-    console.error('verify-vendor: ' + bad + ' problem(s)')
+  for (const file of present) {
+    if (manifest.files[file] === undefined) problems.push({ kind: 'unexpected', file, detail: 'not in vendor-manifest.json' })
+  }
+  return { fileCount: Object.keys(manifest.files).length, problems }
+}
+
+async function verify() {
+  const { fileCount, problems } = await verifyVendorTree({ vendorRoot, manifestPath })
+  for (const problem of problems) {
+    console.error((problem.kind === 'mismatch' ? 'MISMATCH ' : 'UNEXPECTED ') + problem.file + ': ' + problem.detail)
+  }
+  if (problems.length > 0) {
+    console.error('verify-vendor: ' + problems.length + ' problem(s)')
     process.exitCode = 1
     return
   }
-  console.log('verify-vendor: ' + Object.keys(manifest.files).length + ' files byte-identical to vendor-manifest.json')
+  console.log('verify-vendor: ' + fileCount + ' files byte-identical to vendor-manifest.json')
 }
 
 async function previousManifest() {
