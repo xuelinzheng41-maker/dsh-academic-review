@@ -243,6 +243,12 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   // remain are the upstream areas this port still does not ship.
   assert.ok(reviewerShared.includes('academic-pipeline/references/plagiarism_detection_protocol.md'), reviewerShared.join(', '))
   assert.ok(reviewerShared.includes('scripts/adapters/'), reviewerShared.join(', '))
+  // ...and the negative half, which is the proof the vendoring actually worked: the
+  // reference that used to dangle under academic-paper/ must no longer be reported.
+  // Without this, a disclosure that regressed to the old 14-target list would still
+  // satisfy every assertion above.
+  assert.equal(reviewerShared.includes('academic-paper/references/abstract_writing_guide.md'), false,
+    'academic-paper is vendored, so this reference must have stopped being reported: ' + reviewerShared.join(', '))
 
   // deep-research carries BOTH lists separately: one own-tree miss and the shared set.
   assert.deepEqual(research.metadata.unavailableReferences, ['academic-pipeline/references/literature_corpus_consumers.md'])
