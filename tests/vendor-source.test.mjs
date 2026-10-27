@@ -370,3 +370,59 @@ test('a missing upstream target stops the run instead of being skipped', () => {
   // A complete closure is not an error, so the guard cannot fire on a healthy tree.
   assert.equal(assertClosureComplete(closureOf({ 'academic-paper/SKILL.md': 'see shared/x.md', 'shared/x.md': 'x' }), 'deadbeef'), undefined)
 })
+
+test('a fourth skill adds its own references without disturbing the others', () => {
+  const closure = closureOf({
+    'academic-paper-reviewer/SKILL.md': 'see shared/reviewer-only.md',
+    'deep-research/SKILL.md': 'see shared/research-only.md',
+    'academic-paper/SKILL.md': 'see shared/paper-only.md',
+    'sr-screener/SKILL.md': 'see shared/screener-only.md and shared/reviewer-only.md',
+    'shared/reviewer-only.md': 'reviewer',
+    'shared/research-only.md': 'research',
+    'shared/paper-only.md': 'paper',
+    'shared/screener-only.md': 'screener',
+    'shared/nobody.md': 'still unreferenced',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/paper-only.md',
+    'shared/research-only.md',
+    'shared/reviewer-only.md',
+    'shared/screener-only.md',
+  ])
+  assert.deepEqual(closure.missing, [])
+})
+
+test('the closure follows a reference whatever the file extension is', () => {
+  // sr-screener ships python, javascript and json payloads and its instructions
+  // point at shared/ contracts and protocols without caring about the suffix.
+  const closure = closureOf({
+    'sr-screener/SKILL.md': [
+      'run: python scripts/prepare_records.py --inputs exports/ --work sr_work',
+      'the passport contract is shared/contracts/passport/literature_corpus_entry.schema.json',
+      'follow shared/model_tiering.md and shared/ground_truth_isolation_pattern.md',
+      'python files are not references: scripts/srlib.py stays in the skill tree',
+    ].join('\n'),
+    'shared/contracts/passport/literature_corpus_entry.schema.json': '{}',
+    'shared/model_tiering.md': 'tiers',
+    'shared/ground_truth_isolation_pattern.md': 'isolation',
+    'shared/unreferenced.py': 'print("nobody links here")',
+  })
+  assert.deepEqual(closure.sharedFiles, [
+    'shared/contracts/passport/literature_corpus_entry.schema.json',
+    'shared/ground_truth_isolation_pattern.md',
+    'shared/model_tiering.md',
+  ])
+  assert.deepEqual(closure.missing, [])
+  assert.equal(closure.sharedFiles.includes('shared/unreferenced.py'), false)
+})
+
+test('adding a fourth skill does not weaken the missing-target guard', () => {
+  const closure = closureOf({
+    'academic-paper/SKILL.md': 'see shared/present.md',
+    'sr-screener/SKILL.md': 'see shared/absent_from_upstream.json and shared/present.md',
+    'shared/present.md': 'present',
+  })
+  assert.deepEqual(closure.missing, ['shared/absent_from_upstream.json'])
+  assert.throws(() => assertClosureComplete(closure, 'cafebabe'), /shared\/absent_from_upstream\.json/)
+  assert.throws(() => assertClosureComplete(closure, 'cafebabe'), /nothing was written/)
+})

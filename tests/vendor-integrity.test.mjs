@@ -13,10 +13,15 @@ import { criterionIds } from '../scripts/vendor-upstream.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
-const EXPECTED_SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper']
-const EXPECTED_SKILL_FILE_COUNTS = { 'academic-paper-reviewer': 28, 'deep-research': 53, 'academic-paper': 63 }
-// Counted from the upstream git objects: 144 skill files + 110 shared files.
-const EXPECTED_TOTAL_FILES = 254
+const EXPECTED_SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper', 'sr-screener']
+const EXPECTED_SKILL_FILE_COUNTS = {
+  'academic-paper-reviewer': 28,
+  'deep-research': 53,
+  'academic-paper': 63,
+  'sr-screener': 25,
+}
+// Counted from the upstream git objects: 169 skill files + 110 shared files.
+const EXPECTED_TOTAL_FILES = 279
 // The closure is derived, but its SIZE is pinned here on purpose: a rule change
 // that quietly stops following part of the tree has to be a deliberate edit.
 const EXPECTED_SHARED_COUNTS = { total: 110, byScan: 108, byRegistryReceipt: 2 }
@@ -29,7 +34,7 @@ test('vendor-manifest.json pins the upstream identity and the vendored skills', 
   assert.equal(manifest.upstream.license, 'CC BY-NC 4.0')
   assert.deepEqual(manifest.vendored.skills, EXPECTED_SKILLS)
   assert.deepEqual(manifest.vendored.skillFileCounts, EXPECTED_SKILL_FILE_COUNTS)
-  assert.equal(manifest.vendored.skillFileCount, 28 + 53 + 63)
+  assert.equal(manifest.vendored.skillFileCount, 28 + 53 + 63 + 25)
   assert.equal(manifest.vendored.sharedFileCount, manifest.sharedFiles.length)
   assert.equal(manifest.vendored.sharedFileCount, EXPECTED_SHARED_COUNTS.total)
   assert.deepEqual(manifest.vendored.sharedFileCounts, {
@@ -231,4 +236,44 @@ test('the registry receipts are unreachable by the path scan, so the receipt rul
   }
   // byScan must therefore be exactly the scan set, with the receipts added on top.
   assert.equal(manifest.vendored.sharedFileCounts.byScan + receipts.length, manifest.sharedFiles.length)
+})
+
+// --- extension-agnostic vendoring -------------------------------------------
+//
+// sr-screener is the first vendored skill that ships executable payload: six
+// Python scripts, two workflow templates in JavaScript and two JSON documents.
+// Nothing in the pipeline may be markdown-only, so every non-markdown file in the
+// package is checked here against its pin, and its line endings are checked where
+// the format is text at all.
+
+/** Extensions whose bytes are text, so a CR would be a conversion artefact. */
+const TEXT_EXTENSIONS = new Set(['.json', '.py', '.js', '.tpl', '.yaml', '.yml', '.tex', '.txt'])
+
+test('the vendor step is extension-agnostic: every payload file is pinned and converted by nothing', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const names = Object.keys(manifest.files)
+  const payload = names.filter(name => !name.endsWith('.md'))
+  assert.ok(payload.length >= 89, 'expected at least 89 non-markdown files, got ' + payload.length)
+  // The fourth skill contributes exactly its ten payload files.
+  const srPayload = payload.filter(name => name.startsWith('sr-screener/'))
+  assert.deepEqual(srPayload.sort(), [
+    'sr-screener/examples/example_config_dta.json',
+    'sr-screener/scripts/build_outputs.py',
+    'sr-screener/scripts/build_workflow.py',
+    'sr-screener/scripts/merge_decisions.py',
+    'sr-screener/scripts/prepare_fulltext.py',
+    'sr-screener/scripts/prepare_records.py',
+    'sr-screener/scripts/srlib.py',
+    'sr-screener/templates/screening_config.template.json',
+    'sr-screener/templates/workflows/ft_screening.template.js',
+    'sr-screener/templates/workflows/ta_screening.template.js',
+  ])
+  for (const name of payload) {
+    const bytes = await readFile(join(repoRoot, 'vendor', name))
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.files[name], 'digest drift in ' + name)
+    assert.ok(bytes.length > 0, name + ' ships empty')
+    if (TEXT_EXTENSIONS.has(name.slice(name.lastIndexOf('.')))) {
+      assert.equal(bytes.includes(0x0d), false, name + ' carries CR, so something text-converted it')
+    }
+  }
 })

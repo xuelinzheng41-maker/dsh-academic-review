@@ -62,13 +62,16 @@ const vendorDir = join(repoRoot, 'vendor')
 /** The third vendored skill: the one that instructs the model to write files. */
 const PAPER_SKILL_NAME = 'academic-paper'
 
+/** The fourth vendored skill: the first one that ships executable payload. */
+const SCREENER_SKILL_NAME = 'sr-screener'
+
 /**
  * The served catalog, pinned by hand. vendor-integrity.test.mjs pins the same
  * set against the manifest; this file pins it against the provider, because a
  * test that merely iterates whatever happens to be vendored proves less than one
  * that states what it expects to find.
  */
-const EXPECTED_SERVED_SKILLS = ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME]
+const EXPECTED_SERVED_SKILLS = ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME]
 
 /**
  * Upstream areas a vendored file may name without the target being vendored
@@ -262,15 +265,20 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
     + String(distinctOutOfPortTargets.length) + ' distinct targets across '
     + String(outOfPortAreas.length) + ' unvendored upstream areas)')
 
-  // The walk covers both skills and the shared tree the skills read.
+  // The walk covers every skill and the shared tree the skills read.
   assert.deepEqual(
     [...new Set(scan.files.map(name => name.split('/')[0]))].sort(),
-    [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, PAPER_SKILL_NAME, 'shared'].sort(),
+    [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, PAPER_SKILL_NAME, SCREENER_SKILL_NAME, 'shared'].sort(),
     'the walk must cover every vendored area',
   )
   // Pin the markdown counts per tree rather than comparing them to "whatever is
   // there": the tree is pinned by SHA-256, so these numbers are facts.
-  const MARKDOWN_PER_SKILL = { [REVIEW_SKILL_NAME]: 28, [DEEP_RESEARCH_SKILL_NAME]: 53, [PAPER_SKILL_NAME]: 62 }
+  const MARKDOWN_PER_SKILL = {
+    [REVIEW_SKILL_NAME]: 28,
+    [DEEP_RESEARCH_SKILL_NAME]: 53,
+    [PAPER_SKILL_NAME]: 62,
+    [SCREENER_SKILL_NAME]: 15,
+  }
   for (const [skillName, expected] of Object.entries(MARKDOWN_PER_SKILL)) {
     assert.equal(
       scan.files.filter(name => name.startsWith(skillName + '/')).length,
@@ -278,11 +286,21 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
       'every ' + skillName + ' markdown file must be scanned',
     )
   }
-  // academic-paper is the tree with the one non-markdown file, so its manifest
-  // total is exactly one more than its markdown count.
-  const paperTotal = manifest.skills.find(skill => skill.name === PAPER_SKILL_NAME).fileCount
-  assert.equal(paperTotal - MARKDOWN_PER_SKILL[PAPER_SKILL_NAME], 1, 'the .tex is the only non-markdown file in academic-paper')
-  // A hand-pinned catalog: the vendored set is three skills, not "however many".
+  // Every tree's manifest total is its markdown count plus its payload count, and
+  // the payloads are pinned here by hand: academic-paper ships one .tex, sr-screener
+  // ships six .py, two .js and two .json. Nothing is special-cased by extension.
+  const PAYLOAD_PER_SKILL = {
+    [REVIEW_SKILL_NAME]: 0,
+    [DEEP_RESEARCH_SKILL_NAME]: 0,
+    [PAPER_SKILL_NAME]: 1,
+    [SCREENER_SKILL_NAME]: 10,
+  }
+  for (const [skillName, payload] of Object.entries(PAYLOAD_PER_SKILL)) {
+    const total = manifest.skills.find(skill => skill.name === skillName).fileCount
+    assert.equal(total - MARKDOWN_PER_SKILL[skillName], payload,
+      skillName + ' must ship ' + String(payload) + ' non-markdown file(s)')
+  }
+  // A hand-pinned catalog: the vendored set is four skills, not "however many".
   assert.deepEqual([...manifest.vendored.skills].sort(), [...EXPECTED_SERVED_SKILLS].sort())
   assert.ok(scan.files.length >= 170, 'expected the whole vendored tree, got ' + String(scan.files.length) + ' markdown files')
   assert.ok(scan.references >= 400, 'expected at least 400 references, got ' + String(scan.references))

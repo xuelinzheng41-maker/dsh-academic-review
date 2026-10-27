@@ -32,7 +32,7 @@ const vendorRoot = join(repoRoot, 'vendor')
 const manifestPath = join(repoRoot, 'vendor-manifest.json')
 
 /** Skill trees vendored in full. Adding a skill is a one-line change here. */
-const SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper']
+const SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper', 'sr-screener']
 
 /** Attribution pinned by docs/PORT_SPEC.md section 5. */
 export const UPSTREAM = {

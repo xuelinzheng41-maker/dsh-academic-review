@@ -14,20 +14,22 @@
     "skills": [
       "academic-paper-reviewer",
       "deep-research",
-      "academic-paper"
+      "academic-paper",
+      "sr-screener"
     ],
     "skillFileCounts": {
       "academic-paper-reviewer": 28,
       "deep-research": 53,
-      "academic-paper": 63
+      "academic-paper": 63,
+      "sr-screener": 25
     },
-    "skillFileCount": 144,
+    "skillFileCount": 169,
     "sharedFileCount": 110,
     "sharedFileCounts": {
       "byScan": 108,
       "byRegistryReceipt": 2
     },
-    "totalFileCount": 254
+    "totalFileCount": 279
   },
   "skills": [
     {
@@ -44,6 +46,11 @@
       "name": "academic-paper",
       "dir": "vendor/academic-paper",
       "fileCount": 63
+    },
+    {
+      "name": "sr-screener",
+      "dir": "vendor/sr-screener",
+      "fileCount": 25
     }
   ],
   "sharedFiles": [
@@ -429,6 +436,31 @@
     "shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json": "39fc4b2476c1ee5a28b27647f8eeca7010030fc1f7c8648d168b1d34c28c525e",
     "shared/sprint_contract.schema.json": "e9f544926f543ccf8fd351a2db85e2e25f67e8913ae20a400a223c5f44db0f64",
     "shared/style_calibration_protocol.md": "4adc5eaa10b9776f4343767b7db4ebe23e4fa3a5c00a7547ab507bccc2129301",
-    "shared/templates/codex_audit_multifile_template.md": "f3b2ad57d8c22c10582d76210877b50504c2d4a96a71986197b702e258ffae5c"
+    "shared/templates/codex_audit_multifile_template.md": "f3b2ad57d8c22c10582d76210877b50504c2d4a96a71986197b702e258ffae5c",
+    "sr-screener/SKILL.md": "b737e314865c0d26cbfc2721a2e7a2df430a0687be950636329cb6ad52cd15f0",
+    "sr-screener/agents/protocol_architect_agent.md": "99dd7482340eb18094cfebdfd8ca60bdf2922ba90911a6a3340b8b1315f1fb2c",
+    "sr-screener/agents/qc_auditor_agent.md": "913010222ea9ca8718068280b2e4946d229c257634977f758ed2f0ff9f8565c7",
+    "sr-screener/agents/reporter_agent.md": "53ad1bbdbb5b9de5c1e9d56a358dbcc243714ffe1a1dfb334eec5b67c365141c",
+    "sr-screener/agents/screening_reviewer_agent.md": "e5307f24461a46a6b74da80343529668946efa94733932919bda4f0ac456c22c",
+    "sr-screener/examples/example_config_dta.json": "bc8e6726dfc882007340d1aeb60fbf04def08122dfa814d351abda78c27c6bf1",
+    "sr-screener/examples/example_protocol_dta.md": "cf2c91c821aa65d1e55e8ac4bc64fff9bb5b290183f823c4d0e8e9701d9d4f77",
+    "sr-screener/examples/quick_screen_example.md": "e29bc96910157d22812eae77a74891b643bd8ef4a684342761ba9293d29d6bb5",
+    "sr-screener/references/decision_rules.md": "c22b5e31a2bb5866d943c6cee2bf10292f303c2fe2418f451bd37d6e4996964e",
+    "sr-screener/references/failure_paths.md": "9b6cf9d0cdf4d65463b6fc5f4641dc87629627661f18a35f4b7de450158c6efa",
+    "sr-screener/references/orchestration.md": "bcc2fe7f8d3aa0d486449a81b02d33ae5b2ebefc41e74633f60c78375c99712f",
+    "sr-screener/references/protocol_template.md": "4a7035f5ee963089db89aa287717429807a8e9866a34325653ecd744355c2cf7",
+    "sr-screener/references/quality_control.md": "9207281e9b105ab503d7fbae272943b4d34c6583a19b2fb80242de8afc854ae6",
+    "sr-screener/references/reporting_and_handoff.md": "8c6120722ad91418f29e1f17642b1459843f3e427f3a621cf93da57f7c7d1c23",
+    "sr-screener/references/reviewer_roles.md": "fd432c6ed2872d7e08b6406d8a2315a3ebd649541e9b49d265ab2a4e433233e7",
+    "sr-screener/scripts/build_outputs.py": "0cd8b13fd00fa1d0943f0a02c4937dae151a40e100df7b6c65c0c9090ecaf57a",
+    "sr-screener/scripts/build_workflow.py": "b83f4453cfaa5cc94a4efc6039b0278b0f61008a8d3f2ea2f031341b29d9604c",
+    "sr-screener/scripts/merge_decisions.py": "1b2cce83f8adcad4e49201c4825eb9d23d2fb2b5c949957118063ff3ea028df6",
+    "sr-screener/scripts/prepare_fulltext.py": "1a5bb786ee934fb7ec600014d7befaad270e7c55445c43945b1f2aef9bd3bb22",
+    "sr-screener/scripts/prepare_records.py": "c348fef94297f2fc9b4dcfb8796c27218d87f4f66e6f4c6d9fdfff421d02a577",
+    "sr-screener/scripts/srlib.py": "6db3670e8e2b5e4e4d9f4e89e598bef261abcbf93015e19e6a931a1505d05712",
+    "sr-screener/templates/prompts.md": "6b8258314e3972a4bc06504b3163faf346312b8a12175816efa4289a76d13f6d",
+    "sr-screener/templates/screening_config.template.json": "993a73afc230051afa05d0b3e2b6c91a57c0de9779fbcf62a9fd7c1a5efada17",
+    "sr-screener/templates/workflows/ft_screening.template.js": "e803f8e08d7a98efe624d7bf0a6e230e8a5664cdaf55156463bda13f3a747fc3",
+    "sr-screener/templates/workflows/ta_screening.template.js": "bb140f4cbbe03d2e6651588b8c87ddea8061fdf96a8652bb2701bf5459ba12c4"
   }
 }

@@ -254,7 +254,7 @@ test('policy A does not add a tool: the plugin still registers exactly five', as
   // academic-paper is served as a skill only: no academic_paper_* tool exists.
   assert.equal(tools.schemas().some(schema => schema.name.includes('paper') && !schema.name.startsWith('academic_review_')), false)
   const summaries = await skills.list({ cwd: root })
-  assert.deepEqual(summaries.map(summary => summary.name).sort(), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME].sort())
+  assert.deepEqual(summaries.map(summary => summary.name).sort(), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, 'sr-screener'].sort())
   const definition = await skills.get(PAPER_SKILL_NAME, { cwd: root })
   assert.ok(definition !== undefined)
   assert.equal(definition.metadata.writePolicy, WRITE_POLICY_NEW_PATHS_ONLY)

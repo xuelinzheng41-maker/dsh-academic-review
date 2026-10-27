@@ -49,7 +49,7 @@ test('applying the plugin registers five tools and every vendored skill', async 
   ])
 
   const summaries = await skills.list({ cwd: space.root })
-  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper', 'academic-paper-reviewer', 'deep-research'])
+  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper', 'academic-paper-reviewer', 'deep-research', 'sr-screener'])
   // Every resource base is an absolute directory under the packaged vendor tree.
   for (const summary of summaries) {
     assert.equal(summary.provider, 'academic-review')

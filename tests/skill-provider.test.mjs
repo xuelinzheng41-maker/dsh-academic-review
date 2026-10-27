@@ -31,6 +31,8 @@ const vendorBase = defaultVendorBasePath()
 
 /** The third vendored skill (P3-2). Discovery order is alphabetical. */
 const PAPER_SKILL_NAME = 'academic-paper'
+/** Fourth vendored skill: the first that ships executable payload. */
+const SCREENER_SKILL_NAME = 'sr-screener'
 
 /** Registration control stand-in; the provider only reads it passively. */
 function control() {
@@ -53,7 +55,7 @@ async function candidateFor(skillName, config = {}) {
 
 test('discovery lists every vendored skill and skips the shared tree', async () => {
   const discovered = discoverVendoredSkills(vendorBase)
-  assert.deepEqual(discovered, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(discovered, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME])
   assert.equal(discovered.includes('shared'), false)
   for (const name of discovered) {
     assert.equal(existsSync(join(vendorBase, name, 'SKILL.md')), true, name + ' has no SKILL.md')
@@ -62,7 +64,7 @@ test('discovery lists every vendored skill and skips the shared tree', async () 
 
 test('the provider advertises every vendored skill with an absolute resource base', async () => {
   const candidates = await provider().list()
-  assert.deepEqual(candidates.map(item => item.name), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(candidates.map(item => item.name), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME])
   for (const candidate of candidates) {
     assert.equal(candidate.provider, 'academic-review')
     assert.equal(candidate.source, REVIEW_SKILL_SOURCE)
@@ -154,15 +156,15 @@ test('a narrowed configuration serves only the named skill', async () => {
   assert.deepEqual(resolveSkillSelection(vendorBase, [DEEP_RESEARCH_SKILL_NAME, REVIEW_SKILL_NAME]),
     [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
   // An empty selection means "everything vendored".
-  assert.deepEqual(resolveSkillSelection(vendorBase, []), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+  assert.deepEqual(resolveSkillSelection(vendorBase, []), [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME])
 })
 
 test('an unknown skill name is refused with a clear message', async () => {
   assert.throws(() => resolveSkillSelection(vendorBase, ['no-such-skill']), error => {
     assert.equal(error instanceof UnknownSkillSelectionError, true)
     assert.match(error.message, /unknown vendored skill "no-such-skill"/u)
-    assert.match(error.message, /available skills are academic-paper, academic-paper-reviewer, deep-research/u)
-    assert.deepEqual(error.available, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME])
+    assert.match(error.message, /available skills are academic-paper, academic-paper-reviewer, deep-research, sr-screener/u)
+    assert.deepEqual(error.available, [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME])
     return true
   })
   // A vendor directory with nothing vendored is also a loud failure, not an empty catalog.
