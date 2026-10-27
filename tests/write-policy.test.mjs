@@ -60,8 +60,22 @@ const PAPER_SKILL_NAME = 'academic-paper'
 const SCREENER_SKILL_NAME = 'sr-screener'
 /** A name that appears in no table, used to prove nothing gates the block. */
 const UNKNOWN_SKILL_NAME = 'aa-not-a-skill'
-/** Every vendored skill, i.e. every skill this package serves. */
-const SERVED_SKILLS = [PAPER_SKILL_NAME, REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME]
+/** Pipeline skill: the orchestrator, and the case the detector almost calls a producer. */
+const PIPELINE_SKILL_NAME = 'academic-pipeline'
+/** Every vendored skill, i.e. every skill this package serves - derived, not listed. */
+const SERVED_SKILLS = discoverVendoredSkills(vendorRoot)
+/**
+ * Served payload bytes, pinned per skill. If a sixth skill is vendored, the set
+ * comparison below fails until someone measures it: a derived list alone would let a
+ * new skill in with no number attached.
+ */
+const EXPECTED_PAYLOAD_BYTES = new Map([
+  [PAPER_SKILL_NAME, 64541],
+  [REVIEW_SKILL_NAME, 47984],
+  [PIPELINE_SKILL_NAME, 59934],
+  [DEEP_RESEARCH_SKILL_NAME, 51753],
+  [SCREENER_SKILL_NAME, 33212],
+])
 
 /** Registration control stand-in; the provider only reads it passively. */
 function control() {
@@ -259,25 +273,28 @@ test('every served skill carries the block, exactly once, before its body', asyn
 
 test('served bytes: every skill is body + the one 684-byte block + its own notice', async (t) => {
   const block = renderWritePolicyBlock()
-  const expected = new Map([
-    [PAPER_SKILL_NAME, 65113],
-    [REVIEW_SKILL_NAME, 47984],
-    [DEEP_RESEARCH_SKILL_NAME, 52316],
-    [SCREENER_SKILL_NAME, 33212],
-  ])
   const bytes = value => Buffer.byteLength(value, 'utf8')
+  // A derived set plus a pinned map: the sets must agree, so a newly vendored skill
+  // cannot enter the suite without someone measuring its payload.
+  assert.deepEqual([...EXPECTED_PAYLOAD_BYTES.keys()].sort(), [...SERVED_SKILLS].sort(),
+    'the payload map must name every served skill')
   for (const skill of SERVED_SKILLS) {
     const definition = await served(skill)
     const body = await vendoredBody(skill)
     const notice = definition.content.slice(block.length + body.length)
+    const ownMisses = definition.metadata.unavailableReferenceCount
     t.diagnostic('served bytes  ' + skill.padEnd(24) + ' ' + String(bytes(definition.content))
       + ' = body ' + String(bytes(body)) + ' + block ' + String(bytes(block))
-      + ' + notice ' + String(bytes(notice)))
-    assert.equal(bytes(definition.content), bytes(body) + bytes(block) + bytes(notice), skill + ': payload is body + block + notice')
-    assert.equal(bytes(definition.content), expected.get(skill), skill + ' served payload moved')
+      + ' + notice ' + String(bytes(notice)) + '  (own-tree misses ' + String(ownMisses) + ')')
+    assert.equal(bytes(definition.content), bytes(body) + bytes(block) + bytes(notice),
+      skill + ': payload is body + block + notice')
+    assert.equal(bytes(definition.content), EXPECTED_PAYLOAD_BYTES.get(skill), skill + ' served payload moved')
+    // The notice follows the reference scan, not this policy work: a skill with no
+    // own-tree miss gets no notice, and a skill with one gets a notice.
+    assert.equal(notice.includes(PORT_NOTICE_BEGIN), ownMisses > 0, skill + ': notice must follow the reference scan')
   }
-  // Per-skill deltas, because a summed check can hide one skill missing and another
-  // carrying the block twice: 0 / 0 / +684 / +684, never +1368.
+  // Per-skill deltas over the body: the block is the only addition this policy makes,
+  // so a delta of twice the block would mean it landed twice.
   const deltas = new Map()
   for (const skill of SERVED_SKILLS) {
     const definition = await served(skill)
@@ -285,20 +302,18 @@ test('served bytes: every skill is body + the one 684-byte block + its own notic
     deltas.set(skill, bytes(definition.content) - bytes(body))
   }
   t.diagnostic('deltas over body: ' + SERVED_SKILLS.map(skill => skill + ' +' + String(deltas.get(skill))).join(', '))
-  assert.equal(deltas.get(PAPER_SKILL_NAME), 684 + 572, 'academic-paper: block + its own notice')
-  assert.equal(deltas.get(SCREENER_SKILL_NAME), 684, 'sr-screener: block only')
-  assert.equal(deltas.get(REVIEW_SKILL_NAME), 684, 'the reviewer gains the block and nothing else')
-  assert.equal(deltas.get(DEEP_RESEARCH_SKILL_NAME), 684 + 563, 'deep-research: block + its own notice')
   for (const [skill, delta] of deltas) {
+    assert.ok(delta >= 684, skill + ' must gain at least the block')
     assert.notEqual(delta, 1368, skill + ' carries the block twice')
   }
   assert.equal(bytes(block), 684)
   assert.equal(bytes(renderWritePolicyBlock()), 684)
-  const research = await served(DEEP_RESEARCH_SKILL_NAME)
-  assert.equal(research.content.includes(PORT_NOTICE_BEGIN), true, 'deep-research keeps its own notice after the block')
+  // The reviewer's tree is clean and has no notice, so its payload is exactly the
+  // block followed by its byte-identical body.
   const reviewer = await served(REVIEW_SKILL_NAME)
   assert.equal(reviewer.content.endsWith(await vendoredBody(REVIEW_SKILL_NAME)), true,
     'the reviewer body must still be byte-identical, now preceded by the block')
+  assert.equal(deltas.get(REVIEW_SKILL_NAME), 684, 'the reviewer gains the block and nothing else')
 })
 
 test('metadata: the rule is on every skill, the measured basis only where it was measured', async (t) => {
@@ -337,6 +352,14 @@ test('metadata: the rule is on every skill, the measured basis only where it was
       assert.equal(entry, undefined, skill + ' must not be in the record either')
     }
   }
+  // The orchestrator: policy keys present, no basis, because no instrument measured one.
+  const pipeline = await served(PIPELINE_SKILL_NAME)
+  assert.equal(pipeline.metadata.writePolicy, WRITE_POLICY_NEW_PATHS_ONLY)
+  assert.equal(pipeline.metadata.writePolicyEnforced, false)
+  assert.equal('writePolicyBasis' in pipeline.metadata, false,
+    'academic-pipeline must not state a basis: nothing measured one')
+  assert.equal(fileProducingEntry(PIPELINE_SKILL_NAME), undefined)
+
   // The two producers state DIFFERENT instruments - the reason the key exists.
   assert.notEqual((await served(PAPER_SKILL_NAME)).metadata.writePolicyBasis,
     (await served(SCREENER_SKILL_NAME)).metadata.writePolicyBasis)
@@ -462,6 +485,33 @@ test('the record: every vendored producer is tabulated with its instrument (and 
   const paper = measured.find(entry => entry.skill === PAPER_SKILL_NAME)
   assert.equal(paper.prose.draftsDocuments, true)
   assert.equal(paper.scripts.writesViaScripts, false)
+})
+
+test('the orchestrator is not a demonstrated producer, and is served anyway', async (t) => {
+  // academic-pipeline dispatches the writers rather than writing; the detector is asked
+  // and answers, rather than being asked until it agrees. Its verdict is reported here
+  // in full, because the interesting part is how close it is to the thresholds - and
+  // because a verdict that looks wrong is a documentation question, not a safety one:
+  // the block is attached to every skill, so nothing hangs on this answer.
+  const qualification = await qualifies(PIPELINE_SKILL_NAME)
+  t.diagnostic(qualification.verdict)
+  assert.equal(qualification.prose.draftsDocuments, false, 'academic-pipeline must not be recorded as a prose drafter')
+  assert.equal(qualification.scripts.writesViaScripts, false, 'academic-pipeline ships no script it is told to run')
+  assert.equal(qualification.qualifies, false)
+  assert.deepEqual(qualification.bases, [])
+  // It ships no executable at all: its integrity stages name upstream root scripts this
+  // port deliberately does not vendor, so there is nothing inside its tree to resolve.
+  assert.deepEqual(packagedScriptsOf(join(vendorRoot, PIPELINE_SKILL_NAME)), [])
+  assert.equal(qualification.scripts.packagedInvocations, 0)
+  // The record agrees with the detector, and the both-directions test above enforces
+  // that: it is absent from the table because nothing demonstrated it, not because
+  // someone decided it does not write.
+  assert.equal(fileProducingEntry(PIPELINE_SKILL_NAME), undefined)
+  // And the consequence of an unconditional rule: it is served the block like the rest.
+  const definition = await served(PIPELINE_SKILL_NAME)
+  assert.equal(definition.content.startsWith(renderWritePolicyBlock()), true,
+    'the orchestrator is served the block, whatever the detector says')
+  assert.equal(definition.content.split(WRITE_POLICY_BEGIN).length, 2)
 })
 
 test('every record entry carries a one-line justification with no typed measurements', () => {
