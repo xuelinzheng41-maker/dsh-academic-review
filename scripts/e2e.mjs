@@ -33,7 +33,11 @@
  *   ever lands in the repository;
  * - there is no network access and no model call anywhere: globalThis.fetch is
  *   trapped and must stay at zero calls, and the only code driven is the five
- *   review tools through the real cordis tool registry.
+ *   review tools plus the read-only skill provider of the real cordis registries.
+ *
+ * Both vendored skills are asserted here as well: the mounted provider must
+ * advertise academic-paper-reviewer AND deep-research with absolute resource
+ * bases, and both bodies must load complete and frontmatter-free.
  *
  * Exit code: 0 when every check passes, 1 otherwise (the failure is printed).
  *
@@ -69,6 +73,9 @@ const CREATED_AT = '2026-03-02T09:15:00+00:00'
 const REVIEW_ID_RE = /^rev-[0-9]{8}-[0-9a-f]{8}$/
 /** Timestamps the plugin assigns carry an explicit offset, never a bare Z. */
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
+/** The skills the plugin contract promises to serve, in vendored order. */
+const EXPECTED_SKILL_NAMES = ['academic-paper-reviewer', 'deep-research']
+
 /** The five tools the plugin must expose. */
 const TOOL_NAMES = [
   'academic_review_confirm',
@@ -226,6 +233,11 @@ async function request(route, pathname, method = 'GET') {
   }
   await route.handler({ method, url: pathname }, res)
   return { status, body, json: () => JSON.parse(body) }
+}
+
+/** Sorted tool names of a mounted plugin instance. */
+function deepResearchOnlyTools(mounted) {
+  return mounted.tools.schemas().map(schema => schema.name).sort()
 }
 
 /** Resolve the review directory so every on-disk assertion reads one place. */
@@ -621,13 +633,73 @@ async function main() {
     ok('plugin mounted on a real cordis Context; tool surface is exactly the five academic_review_* tools')
     const advertised = await skills.list({ cwd: runWorkspace })
     // Discovery is a directory scan over vendor/, so the advertised surface follows
-    // vendor-manifest.json. Compare against the manifest instead of hard-coding one
-    // skill name: vendoring another skill must not silently change what is served.
+    // vendor-manifest.json. Compare against the manifest instead of hard-coding the
+    // catalog: vendoring another skill must not silently change what is served.
     const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
     const vendored = [...manifest.vendored.skills].sort()
     assert.deepEqual(advertised.map(skill => skill.name), vendored)
     for (const skill of advertised) assert.equal(skill.provider, 'academic-review')
-    ok('plugin mounted; skill provider advertises every vendored skill (' + vendored.join(', ') + ')')
+    // Both skills this round ships are asserted by name: an id-shaped catalog that
+    // lost a skill would still satisfy the manifest comparison above only if the
+    // manifest lost it too, so pin the two names the plugin contract promises.
+    for (const skillName of EXPECTED_SKILL_NAMES) {
+      const candidate = advertised.find(skill => skill.name === skillName)
+      assert.ok(candidate !== undefined, 'the mounted plugin must advertise ' + skillName)
+      assert.equal(candidate.provider, 'academic-review')
+      assert.equal(candidate.source, 'bundled')
+      assert.ok(typeof candidate.description === 'string' && candidate.description.trim().length > 100,
+        skillName + ' must carry its own upstream description')
+      assert.equal(candidate.resourceBase.kind, 'directory')
+      assert.equal(candidate.resourceBase.path, join(repoRoot, 'vendor', skillName))
+      assert.equal(candidate.path, join(repoRoot, 'vendor', skillName, 'SKILL.md'))
+      assert.ok((await stat(candidate.path)).size > 0, candidate.path + ' must exist and be non-empty')
+    }
+    ok('plugin mounted; both vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
+
+    // Loading is the half that can dangle: the model follows SKILL.md and its
+    // agent/reference files. Both bodies must arrive complete and frontmatter-free,
+    // each reporting the version its own frontmatter declares.
+    const EXPECTED_SKILL_VERSIONS = { 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1' }
+    let deliveredBytes = 0
+    for (const skillName of EXPECTED_SKILL_NAMES) {
+      const definition = await skills.get(skillName, { cwd: runWorkspace })
+      assert.ok(definition !== undefined, skillName + ' must load through the mounted registry')
+      assert.equal(definition.name, skillName)
+      assert.ok(typeof definition.description === 'string' && definition.description.trim().length > 0,
+        skillName + ' must be served with a non-empty description')
+      assert.equal(definition.content.startsWith('---'), false, skillName + ' body must not start with the frontmatter fence')
+      assert.ok(definition.content.length > 1000, skillName + ' body looks truncated')
+      assert.equal(definition.metadata.upstreamSkillVersion, EXPECTED_SKILL_VERSIONS[skillName])
+      deliveredBytes += definition.content.length
+    }
+    ok('both skills load through the registry (academic-paper-reviewer 1.11.1 + deep-research 2.12.1), '
+      + String(deliveredBytes) + ' body bytes, no frontmatter fence')
+
+    // deep-research is prompt-only: it must contribute ZERO tools. Grep the
+    // registered names and descriptions (a count would hide a swap) and prove it
+    // structurally by mounting the plugin again with ONLY deep-research selected -
+    // the tool catalog has to come out identical either way.
+    const catalog = tools.schemas()
+    const offending = []
+    for (const schema of catalog) {
+      const haystack = schema.name + ' ' + String(schema.description ?? '')
+      // "research paradigm" is legitimate review-tool prose; a deep-research
+      // surface is what must never appear.
+      if (/^academic_review_(?:create|status|confirm|submit|report)$/u.test(schema.name) === false) offending.push('unexpected name ' + schema.name)
+      if (/deep[ _-]?research/iu.test(haystack)) offending.push('deep-research mention in ' + schema.name)
+      if (/research_|_research|deep-research/iu.test(schema.name)) offending.push('research-shaped name ' + schema.name)
+    }
+    assert.deepEqual(offending, [], 'a deep-research tool leaked onto the tool surface')
+    const deepResearchOnly = await mountReviewPlugin({
+      stateDir: STATE_DIR,
+      workspaceRoot: runWorkspace,
+      skills: ['deep-research'],
+    })
+    assert.deepEqual(deepResearchOnlyTools(deepResearchOnly), TOOL_NAMES, 'a deep-research-only mount must expose the same five tools')
+    const deepResearchSkills = (await deepResearchOnly.skills.list({ cwd: runWorkspace })).map(skill => skill.name)
+    assert.deepEqual(deepResearchSkills, ['deep-research'], 'the narrowed mount serves only deep-research')
+    ok('deep-research is prompt-only: a deep-research-only mount exposes the same five academic_review_* tools, '
+      + 'and no tool name or description mentions deep research')
 
     section('checkpoint 1: create -> attach (4 cards) -> confirm')
     const review = await runCheckpointOne(tools, runWorkspace, manuscript)
@@ -648,7 +720,7 @@ async function main() {
     section('determinism and isolation')
     assert.equal(networkAttempts, 0, 'the harness must never touch the network')
     ok('no network call was attempted (globalThis.fetch trapped, 0 calls)')
-    ok('no model client exists in this process: only the five review tools ran')
+    ok('no model client exists in this process: only the five review tools and the read-only skill provider ran')
     ok('no review state entered the repository (everything lives under the temp root)')
   } finally {
     if (root !== undefined) {
