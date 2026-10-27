@@ -593,3 +593,85 @@ test('the walk reads markdown only, and the payload really would be misread if i
     + ' payload files; ' + String(carriers.length) + ' payload files carry ' + String(wouldBe)
     + ' reference-shaped string(s) (' + String(wouldBeDangling) + ' of them would dangle), so the exclusion is load-bearing')
 })
+
+/**
+ * Every shared/ target one skill tree reaches: the paths its own markdown names,
+ * plus the ones the shared/ markdown it opens names in turn, to a fixpoint. Built on
+ * the provider's scanner primitives (referencesIn / normalizeReference /
+ * resolveReference / existsInside), so this is the same notion of "a reference" that
+ * the walk above and the port notice use - only the union is mine.
+ */
+async function sharedReachOf(skillName) {
+  const files = (await walkFiles(join(vendorDir, skillName)))
+    .filter(name => name.endsWith('.md'))
+    .map(name => skillName + '/' + name)
+  const reach = new Set()
+  const queue = [...files]
+  const walked = new Set()
+  while (queue.length > 0) {
+    const file = queue.shift()
+    if (walked.has(file)) continue
+    walked.add(file)
+    let text
+    try {
+      text = await readFile(join(vendorDir, file), 'utf8')
+    } catch {
+      continue
+    }
+    for (const reference of referencesIn(file, text)) {
+      const raw = normalizeReference(reference.raw)
+      if (raw === '' || PLACEHOLDER.test(raw)) continue
+      const target = resolveReference(file, raw, reference.kind)
+      if (target.startsWith('shared/') === false) continue
+      if ((await existsInsideVendor(target)) === false) continue
+      reach.add(target)
+      if (target.endsWith('.md') && walked.has(target) === false) queue.push(target)
+    }
+  }
+  return reach
+}
+
+test('the fourth skill adds no shared file to the closure, computed rather than assumed', async () => {
+  // WHAT THE PROSE CLAIMS: "shared did not change - sr-screener names shared/ paths
+  // that were already in the closure". That is a claim about a DIFFERENCE BETWEEN TWO
+  // COMPUTED SETS, so it is asserted as one. A constant would not do the job: the
+  // shared size is already pinned as 110 elsewhere, so a regression from 108 to 109
+  // fails those pins while saying nothing about which tree caused it. Worse, a
+  // resolver that lacks bare-filename-relative resolution counts 106 where the
+  // official one counts 108 - the absolute number is resolver-dependent, the
+  // differential is not, which is exactly why this comparison is the right shape.
+  const olderTrees = [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, PAPER_SKILL_NAME]
+  const threeReach = new Set()
+  for (const skill of olderTrees) for (const target of await sharedReachOf(skill)) threeReach.add(target)
+  const screenerReach = await sharedReachOf(SCREENER_SKILL_NAME)
+  const fourReach = new Set([...threeReach, ...screenerReach])
+
+  const threeSorted = [...threeReach].sort()
+  const fourSorted = [...fourReach].sort()
+  assert.deepEqual(fourSorted, threeSorted,
+    'adding ' + SCREENER_SKILL_NAME + ' must not add a shared/ target to the closure; it added '
+    + fourSorted.filter(target => threeReach.has(target) === false).join(', '))
+  assert.equal(fourReach.size - threeReach.size, 0, 'the closure differential must be zero')
+
+  // The five paths sr-screener is documented to name, each a member of the closure.
+  const SCREENER_SHARED_REFS = [
+    'shared/ground_truth_isolation_pattern.md',
+    'shared/references/routing_core.md',
+    'shared/references/intent_clarification_protocol.md',
+    'shared/contracts/passport/literature_corpus_entry.schema.json',
+    'shared/model_tiering.md',
+  ]
+  for (const target of SCREENER_SHARED_REFS) {
+    assert.equal(screenerReach.has(target), true, SCREENER_SKILL_NAME + ' is documented to name ' + target + ' but does not')
+    assert.equal(threeReach.has(target), true, target + ' must already have been in the closure before the fourth skill arrived')
+  }
+  // ...and the general form of the same claim: everything the fourth tree reaches was
+  // already reachable, not just the five paths in the documentation.
+  assert.deepEqual([...screenerReach].filter(target => threeReach.has(target) === false).sort(), [],
+    'sr-screener reaches a shared/ target the older trees did not')
+
+  console.log('# shared closure: ' + String(threeReach.size) + ' distinct shared/ targets reached by the three older trees, '
+    + String(fourReach.size) + ' by all four, differential ' + String(fourReach.size - threeReach.size)
+    + '; ' + SCREENER_SKILL_NAME + ' reaches ' + String(screenerReach.size)
+    + ', every one already in the closure, and all five documented paths are members')
+})
