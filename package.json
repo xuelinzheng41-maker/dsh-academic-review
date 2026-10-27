@@ -1,8 +1,8 @@
 {
   "name": "dsh-academic-review",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
-  "description": "Unofficial DSH port of Academic Research Skills' academic-paper-reviewer: a 5-seat journal peer-review panel driven by review-state tools (Phase 1: reviewer only).",
+  "description": "Unofficial DSH port of Academic Research Skills: a 5-seat journal peer-review panel driven by review-state tools, plus the deep-research skill served prompt-only.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

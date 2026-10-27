@@ -2,20 +2,26 @@
 
 [![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
 
-> **Phase 1 scope:** this port covers **one** ARS skill — `academic-paper-reviewer`.
-> `deep-research`, `academic-paper`, `academic-pipeline` and `sr-screener` are **not**
-> part of this release. Input is `.md` / `.tex` / `.txt` only: there is no PDF
-> parsing and no OCR. The plugin never rewrites your manuscript.
+> **Scope:** this port serves **two** ARS skills — `academic-paper-reviewer`
+> and `deep-research` — and only the reviewer has tools, review state and a GUI
+> panel; `deep-research` is served as a prompt-only skill. `academic-paper`,
+> `academic-pipeline` and `sr-screener` are **not** part of this release. Reviewer
+> input is `.md` / `.tex` / `.txt` only: there is no PDF parsing and no OCR.
+> No skill ever rewrites your manuscript (see [Write policy A](#write-policy-a--new-paths-only)).
 
-An **unofficial DSH port** of the Academic Research Skills (ARS) skill
-`academic-paper-reviewer` for DeepSeek Harness, Phase 1 (reviewer only).
+An **unofficial DSH port** of the Academic Research Skills (ARS) skills
+`academic-paper-reviewer` and `deep-research` for DeepSeek Harness.
 It is not affiliated with, sponsored by, or endorsed by the upstream author or
 project.
 
-The plugin serves the vendored upstream reviewer skill through a DSH skill
-provider and adds the review-state tools a 5-seat peer-review panel needs: an
-immutable per-seat report store, manuscript SHA-256 pinning, and the two human
-checkpoints the upstream protocol requires.
+The plugin serves both vendored upstream skills through one DSH skill provider.
+Only the reviewer is wired to plugin code: the review-state tools a 5-seat
+peer-review panel needs (an immutable per-seat report store, manuscript SHA-256
+pinning, and the two human checkpoints the upstream protocol requires), plus the
+read-only panel and two slash commands. `deep-research` is served **as-is, with
+no tools, no state and no GUI** — it runs on the host's own `web_search` /
+`web_fetch` and file tools, so its output quality is bounded by what those host
+tools can actually reach.
 
 ## Attribution and license
 
@@ -32,30 +38,51 @@ checkpoints the upstream protocol requires.
 - See [`LICENSE`](LICENSE) for the full license text that covers this entire
   repository.
 
-## What Phase 1 provides
+## What this plugin provides
 
-- **Skill provider**: `academic-paper-reviewer` (upstream name, unmodified body)
-  with `resourceBase = <package>/vendor/academic-paper-reviewer`.
-- **Tools** (every state transition is validated in `src/state.ts`):
+### Skills served (two)
 
-  | Tool | Purpose |
-  | --- | --- |
-  | `academic_review_create` | Pin a manuscript (.md/.tex/.txt only), record its SHA-256, open the review directory and the panel seats. |
-  | `academic_review_status` | Status, per-seat state, advisory decision, advisory checks, pending checkpoint. |
-  | `academic_review_confirm` | Human checkpoint 1: `action=attach` stores the field analysis (discipline, paradigm, methodology, tier, maturity + the reviewer configuration cards) and moves `created` -> `awaiting_panel_confirmation`; `action=confirm` records the user's approval and moves -> `in_review`. The only path that makes seats submittable. |
-  | `academic_review_submit` | Commit one seat report; refused before the panel checkpoint, for an unknown seat, or twice for the same seat. |
-  | `academic_review_report` | Synthesize `editorial_decision.md` and `revision_roadmap.md`; `approve: true` closes the review only after the user approves and every Devil's Advocate CRITICAL finding is adjudicated. |
+Both trees are vendored unmodified under `vendor/` from the pinned ARS commit
+`1ec249df98728682dfbbdfb940a658338bfd6f80`, and both keep their upstream names.
+The version column is the `metadata.version` in each vendored `SKILL.md`
+frontmatter, read at load time — not a number typed into the plugin.
 
-- **GUI panel**: an **Academic Review** tab in the DSH sidebar-right pane shows
-  every review in the workspace — review id, paper name, mode, a seat table
-  (`eic`, `methodology`, `domain`, `perspective`, `da`, plus the editorial
-  synthesizer row) with per-seat status chips
-  (`pending | dispatched | submitted | failed`), findings counts by severity,
-  last update, and a pending-checkpoint badge. From the panel you can open the
-  editorial decision letter once the report is ready. The panel is strictly
-  read-only: it is served by three authenticated GET routes
-  (`/plugins/dsh-academic-review/reviews`,
-  `/reviews/<id>`, `/reviews/<id>/report`) and performs no mutations.
+| Skill | Upstream version | What this plugin adds | Resource base |
+| --- | --- | --- | --- |
+| `academic-paper-reviewer` | **1.11.1** (SKILL.md `last_updated` 2026-08-15) | The five `academic_review_*` tools, the review state directory, the read-only GUI panel, and `/ars-review` + `/ars-review-status`. | `vendor/academic-paper-reviewer` |
+| `deep-research` | **2.12.1** (SKILL.md `last_updated` 2026-08-15) | Nothing but service: the upstream body is loaded verbatim. No tools, no state, no GUI, no slash command. | `vendor/deep-research` |
+
+`deep-research` is a 13-agent research pipeline that expects web search, page
+fetching and file tools. This plugin supplies none of them and intercepts
+nothing: whatever `web_search` / `web_fetch` / file tools your DSH host already
+gives the session are the only means it has to look things up. **Its output
+quality is therefore bounded by those host tools** — with no network access the
+skill can still reason, but it cannot verify sources.
+
+### Tools
+
+Every state transition is validated in `src/state.ts`.
+
+| Tool | Purpose |
+| --- | --- |
+| `academic_review_create` | Pin a manuscript (.md/.tex/.txt only), record its SHA-256, open the review directory and the panel seats. |
+| `academic_review_status` | Status, per-seat state, advisory decision, advisory checks, pending checkpoint. |
+| `academic_review_confirm` | Human checkpoint 1: `action=attach` stores the field analysis (discipline, paradigm, methodology, tier, maturity + the reviewer configuration cards) and moves `created` -> `awaiting_panel_confirmation`; `action=confirm` records the user's approval and moves -> `in_review`. The only path that makes seats submittable. |
+| `academic_review_submit` | Commit one seat report; refused before the panel checkpoint, for an unknown seat, or twice for the same seat. |
+| `academic_review_report` | Synthesize `editorial_decision.md` and `revision_roadmap.md`; `approve: true` closes the review only after the user approves and every Devil's Advocate CRITICAL finding is adjudicated. |
+
+### GUI panel
+
+An **Academic Review** tab in the DSH sidebar-right pane shows
+every review in the workspace — review id, paper name, mode, a seat table
+(`eic`, `methodology`, `domain`, `perspective`, `da`, plus the editorial
+synthesizer row) with per-seat status chips
+(`pending | dispatched | submitted | failed`), findings counts by severity,
+last update, and a pending-checkpoint badge. From the panel you can open the
+editorial decision letter once the report is ready. The panel is strictly
+read-only: it is served by three authenticated GET routes
+(`/plugins/dsh-academic-review/reviews`,
+`/reviews/<id>`, `/reviews/<id>/report`) and performs no mutations.
 
 ### Review modes
 
@@ -65,11 +92,13 @@ checkpoints the upstream protocol requires.
 | `quick` | Compressed panel pass | A fast sanity pass before submission or after minor edits. |
 | `methodology-focus` | Methodology seat emphasized | You want the methods/statistics scrutinized hardest. |
 
-Out of scope for Phase 1: `deep-research`, `academic-pipeline`, and the
-`re-review` / `guided` / `calibration` modes (refused explicitly, with no
-silent fallback).
+Out of scope for this release: the `academic-paper`, `academic-pipeline` and
+`sr-screener` skills, and the `re-review` / `guided` / `calibration` review
+modes (refused explicitly, with no silent fallback).
 
-- **Review state layout** under the session workspace:
+### Review state layout
+
+Under the session workspace:
 
 ```
 .academic-review/<review_id>/state.json
@@ -79,20 +108,49 @@ silent fallback).
 .academic-review/<review_id>/revision_roadmap.md
 ```
 
-- **Guarantees**: the manuscript is never written to; every tool call re-verifies
-  the pinned SHA-256 (`paper_changed` on drift); a finding without an evidence
-  quote plus location is refused; a seat may not claim peer-output visibility;
-  PDF input is rejected rather than parsed.
+### Guarantees
+
+The manuscript is never written to; every tool call re-verifies
+the pinned SHA-256 (`paper_changed` on drift); a finding without an evidence
+quote plus location is refused; a seat may not claim peer-output visibility;
+PDF input is rejected rather than parsed.
 
 ### Hard limits
 
 - **Input formats**: `.md`, `.tex`, and `.txt` only. PDF is **not** parsed —
   `academic_review_create` rejects it outright. Convert first if needed.
 - **Read-only manuscript**: the plugin never writes to the paper under review.
-- **Phase 1 is reviewer-only**: no deep-research, no pipeline integration, and
-  no re-review/guided/calibration modes in this release.
+- **Tooling is reviewer-only**: `deep-research` is served as a prompt-only
+  skill (no tools, no state, no GUI); there is no pipeline integration, and no
+  re-review/guided/calibration review modes in this release.
 - **Two human checkpoints**: before the panel starts and before the final
   editorial decision closes the review.
+
+## Write policy A — new paths only
+
+**This is a hard product rule, not a default, and no configuration, mode or
+prompt can relax it.**
+
+1. **Any file a skill produces is written to a new path.** A review writes
+   `state.json`, `seats/<seat_id>.json`, `seats/<seat_id>.md`,
+   `editorial_decision.md` and `revision_roadmap.md` under
+   `<workspace>/.academic-review/<review_id>/`, and the review id is generated
+   fresh for every run — so a new review never lands on top of an existing
+   directory or file. Output documents are created, never appended to someone
+   else's file.
+2. **The manuscript is never overwritten, moved or deleted.** Not by a tool, not
+   by a slash command, not by the panel, not by a seat and not by the editorial
+   synthesizer. The plugin only ever reads it (it may hash it, to pin the bytes).
+3. **`deep-research` follows the same rule.** That skill has no write tool of
+   its own; anything a run produces (a report, notes, a bibliography) must go to
+   a new path, and everything it reads stays read-only.
+4. **Drift is reported, never repaired.** If the manuscript's bytes change
+   mid-review the plugin refuses with `paper_changed` and asks you to open a new
+   review. It does not restore, rewrite, re-save or "fix" your file — the only
+   copy it holds is the SHA-256 it pinned.
+
+Consequence: deleting the whole `.academic-review/` directory loses review
+history and touches nothing of yours. That is the intended trade.
 
 ## Commands
 
@@ -120,7 +178,8 @@ the skill.
   dispatched, what it receives and returns, and the DA CRITICAL adjudication
   and checkpoint rules.
 - [`docs/UPSTREAM_INVENTORY.md`](docs/UPSTREAM_INVENTORY.md) — file-by-file
-  inventory of the vendored upstream tree.
+  inventory of the vendored `academic-paper-reviewer` tree (the `deep-research`
+  tree is inventoried by `vendor-manifest.json`).
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — verification records:
   how vendored bytes, tool behavior, and the UI were validated.
 - [`docs/COMMANDS.md`](docs/COMMANDS.md) — the two slash commands: argument
@@ -150,9 +209,12 @@ build step. The bundle patch `cordis.patch.yml` inserts one plugin row
 (`id: academic-review`, `name: dsh-academic-review`) configured with
 `stateDir: .academic-review`.
 
-After installing, the session gains five `academic_review_*` tools and the
-`academic-paper-reviewer` skill (see `docs/PORT_SPEC.md`). A review writes to
-`<workspace>/.academic-review/<review_id>/`.
+After installing, the session gains five `academic_review_*` tools and **two**
+skills — `academic-paper-reviewer` and `deep-research` (see
+`docs/PORT_SPEC.md`). A review writes to
+`<workspace>/.academic-review/<review_id>/` and nowhere else. The provider can be
+narrowed with the plugin's `skills: [...]` config (default: every vendored
+skill); an unknown name fails the mount and lists the skills that do exist.
 
 > **License note:** the `LICENSE` file is the verbatim CC BY-NC 4.0 legalcode.
 > GitHub's license detector reports it as `NOASSERTION`/`Other` for that text,
@@ -181,6 +243,26 @@ The vendored tree is byte-identical to upstream and is checked against
 `pnpm verify:vendor`.
 
 ## Upgrade
+
+### 0.1.1 → 0.2.0
+
+0.2.0 serves a second skill. Nothing about an existing review changes: the five
+tools, their arguments, the review-state schema and the panel routes are
+untouched, so `.academic-review/` directories written by 0.1.1 keep loading.
+
+- **New:** the vendored `deep-research` skill (upstream 2.12.1) is advertised
+  next to the reviewer. It adds no tool; it uses the session's own
+  `web_search` / `web_fetch` and file tools.
+- **Vendoring:** `vendor-manifest.json` is now schemaVersion 2 (skills list,
+  per-skill and total file counts, a computed `sharedFiles` list, and the same
+  per-file SHA-256 map). 181 vendored files total.
+- **Unchanged:** the reviewer skill (1.11.1), five tools, review state, panel,
+  slash commands, and the CC BY-NC 4.0 terms.
+- **Rule reinforced:** [Write policy A](#write-policy-a--new-paths-only) — new
+  paths only; the manuscript is never overwritten, moved or deleted.
+
+To upgrade, replace the package with the 0.2.0 build from the same source and
+restart the session, exactly as below.
 
 ### 0.1.0 → 0.1.1
 

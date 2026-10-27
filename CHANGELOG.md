@@ -8,6 +8,54 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.2.0] - 2026-10-27
+
+Second served skill. The five review tools, their arguments, the review-state
+schema and the panel routes are **unchanged**, so reviews written by 0.1.1 keep
+loading.
+
+### Added
+
+- The vendored **`deep-research`** skill (upstream 2.12.1, SKILL.md
+  `last_updated` 2026-08-15) is advertised next to the reviewer, from the same
+  pinned commit (`1ec249df…`). It is served prompt-only: no tool, no review
+  state, no panel, no slash command. It runs on the host's own `web_search` /
+  `web_fetch` and file tools, so its output quality is bounded by what those
+  host tools can reach.
+- `vendor/deep-research/` (53 files), vendored whole and byte-identical.
+- **Port notice.** When a served skill's own instructions name a file
+  this port does not ship, the served text says so and forbids fabricating it:
+  `deep-research/agents/bibliography_agent.md` points at
+  `academic-pipeline/references/literature_corpus_consumers.md`, which is not
+  vendored. Skill metadata additionally lists `shared/` references that are
+  unavailable here (`unavailableReferences`, `unavailableSharedReferences`).
+
+### Changed
+
+- `vendor-manifest.json` is **schemaVersion 2**: `skills` list with per-skill
+  file counts, `sharedFiles` (computed), `sharedViaRegistryReceipts`, and the
+  unchanged per-file SHA-256 map — 181 vendored files in total (28 reviewer +
+  53 deep-research + 100 shared).
+- The vendoring script carries one `SKILLS` list and **computes** the `shared/`
+  closure by scanning every vendored file, instead of keeping a hand-maintained
+  list; a missing target aborts the run before anything is written. Two
+  `shared/review_criteria_sources/*.json` files are vendored by registry
+  receipt because no vendored Markdown names them.
+- The skill provider serves **N** skills: discovery is a directory scan
+  (`vendor/<skill>/SKILL.md`), each skill gets its own absolute resource base
+  and its own frontmatter metadata, and the plugin config accepts `skills` to
+  narrow the set (an unknown name fails the mount and lists the available ones).
+  `src/index.ts` still mounts the five tools and both slash commands once.
+- README and `docs/PORT_SPEC.md` document the two served skills, the new
+  manifest schema and the computed closure.
+
+### Note
+
+- **Write policy A — new paths only** is documented as a hard product rule, not
+  a default: every file a skill produces goes to a new path, and the manuscript
+  is never overwritten, moved or deleted. Manuscript drift is reported
+  (`paper_changed`), never repaired.
+
 ## [0.1.1] - 2026-10-27
 
 Round 2 hardening. No review-state schema change: existing reviews under
