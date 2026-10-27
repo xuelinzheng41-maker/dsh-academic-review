@@ -1,5 +1,7 @@
 # dsh-academic-review
 
+[![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
+
 > **Phase 1 scope:** this port covers **one** ARS skill — `academic-paper-reviewer`.
 > `deep-research`, `academic-paper`, `academic-pipeline` and `sr-screener` are **not**
 > part of this release. Input is `.md` / `.tex` / `.txt` only: there is no PDF

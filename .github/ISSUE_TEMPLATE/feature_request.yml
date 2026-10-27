@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a capability or improvement for dsh-academic-review.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Phase 1 of this port covers **only** the ARS `academic-paper-reviewer`
+        skill (reviewer seat). Requests for `deep-research`, `academic-paper`,
+        `academic-pipeline` or `sr-screener` are out of scope for this release —
+        please say explicitly if your request needs one of them.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can you not do today, and why does it matter?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The behaviour you would like to see. API or UI sketch welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, or other designs you rejected.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - reviewer seat / review-state tools
+        - panel UI (right sidebar)
+        - slash commands
+        - skill provider / vendored upstream
+        - build, tests or CI
+        - docs
+        - other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This request fits the Phase 1 scope described above (or I have explained why it does not).
+          required: true
+        - label: I searched existing issues and discussions first.
+          required: true
