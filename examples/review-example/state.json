@@ -1,0 +1,437 @@
+{
+  "schema_version": "1",
+  "review_id": "rev-20261027-9e9ab217",
+  "created_at": "2026-10-27T11:24:02+08:00",
+  "updated_at": "2026-10-27T11:26:22+08:00",
+  "mode": "full",
+  "paper": {
+    "path": "D:\\Deepseek\\.t4-e2e-workspace\\sample-paper.md",
+    "sha256": "cc2e5cb07d0f662c94bf5922425b8516e898e44e0bbec1ca70740805f0c279ca",
+    "bytes": 2001,
+    "format": "md"
+  },
+  "upstream_skill_version": "1.11.1",
+  "upstream_commit": "1ec249df98728682dfbbdfb940a658338bfd6f80",
+  "status": "report_ready",
+  "field_analysis": {
+    "analyst_run_at": "2026-10-27T03:24:57.211Z",
+    "primary_discipline": "Machine learning",
+    "secondary_disciplines": [
+      "Granular computing"
+    ],
+    "research_paradigm": "Empirical",
+    "methodology_type": "Quantitative benchmark study",
+    "target_journal_tier": "Q1",
+    "paper_maturity": "Draft before submission",
+    "configuration_cards": [
+      {
+        "seat": "eic",
+        "identity": "Q1 ML journal editor",
+        "expertise": "Editorial fit and scope",
+        "focus": "Claim-evidence balance and journal fit"
+      },
+      {
+        "seat": "methodology",
+        "identity": "Empirical ML methodologist",
+        "expertise": "Evaluation protocols and statistics",
+        "focus": "Seeds, baselines, and significance"
+      },
+      {
+        "seat": "domain",
+        "identity": "Granular computing researcher",
+        "expertise": "Rough sets and granular balls",
+        "focus": "Positioning against prior granular-ball work"
+      },
+      {
+        "seat": "perspective",
+        "identity": "Industry ML practitioner",
+        "expertise": "Deployment and robustness",
+        "focus": "Practical applicability and noise assumptions"
+      }
+    ]
+  },
+  "panel": {
+    "seats": [
+      {
+        "seat_id": "eic",
+        "role_marker": "EIC",
+        "agent_file": "academic-paper-reviewer/agents/eic_agent.md",
+        "status": "submitted",
+        "dispatched_at": "2026-10-27T11:24:57+08:00",
+        "submitted_at": "2026-10-27T11:26:14+08:00",
+        "configuration_card": 1,
+        "report": {
+          "schema_version": "1",
+          "review_id": "rev-20261027-9e9ab217",
+          "seat_id": "eic",
+          "role": "EIC",
+          "created_at": "2026-10-27T09:41:00+00:00",
+          "submitted_at": "2026-10-27T11:26:14+08:00",
+          "verdict": "major_revision",
+          "confidence": 0.72,
+          "summary": "Journal-Fit (EIC) seat. The topic — noise-aware adaptive granular-ball simplification — is within JMLR's scope and the framing is clear, but what is submitted is a four-page sketch rather than a research article: a single mechanism, two baselines, three datasets of which one is private, and no theory, complexity, or variance analysis. As a submission to the stated target venue it is not yet reviewable on quality; the contribution claim outruns what the paper demonstrates.",
+          "findings": [
+            {
+              "id": "eic-F1",
+              "severity": "major",
+              "title": "Headline benchmark claim conflicts with the evaluation actually described",
+              "detail": "The introduction claims a 3.1-point average gain 'across three public benchmarks', but the experiments section names only two public benchmarks plus a private sensor set. Either the claim or the evaluation description is wrong, and in either case a numerate reader cannot reproduce the headline number from the paper. This must be reconciled and the private dataset's provenance, size, and licensing stated.",
+              "evidence": [
+                {
+                  "quote": "by 3.1 points on average across three public benchmarks.",
+                  "location": "Section 1 Introduction"
+                },
+                {
+                  "quote": "We evaluate on three benchmarks (MNIST-rot, USPS-rot, and a private sensor",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            },
+            {
+              "id": "eic-F2",
+              "severity": "major",
+              "title": "Novelty claim is asserted, not established, and the contribution is thin for the target venue",
+              "detail": "The paper's entire novelty argument is one sentence dismissing all prior radius selection as global or per-dataset. No prior method is named, compared against, or cited for that claim, and the empirical section contains no adaptive-radius competitor. For JMLR the delta over existing granular-ball and noise-robust simplification work needs to be demonstrated, not asserted.",
+              "evidence": [
+                {
+                  "quote": "Prior studies fixed the ball radius globally or tuned it per dataset, which either",
+                  "location": "Section 2 Related Work"
+                }
+              ]
+            },
+            {
+              "id": "eic-F3",
+              "severity": "minor",
+              "title": "Manuscript is at draft-sketch length with no analysis section",
+              "detail": "There is no complexity or runtime analysis, no ablation of the mechanism's two components (splitting and merging), no figures, and no discussion section. The target venue expects a full article. I would not send this to referees in its present form, and the author should decide whether the contribution supports a full submission or a short note.",
+              "evidence": [
+                {
+                  "quote": "**Target venue:** Journal of Machine Learning Research (draft)",
+                  "location": "Title page"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "model": "cn:deepseek-v4.1-flash",
+            "peerOutputVisible": false,
+            "contextFresh": true,
+            "humanOperator": "qa-verifier"
+          }
+        }
+      },
+      {
+        "seat_id": "methodology",
+        "role_marker": "R1",
+        "agent_file": "academic-paper-reviewer/agents/methodology_reviewer_agent.md",
+        "status": "submitted",
+        "dispatched_at": "2026-10-27T11:24:57+08:00",
+        "submitted_at": "2026-10-27T11:26:14+08:00",
+        "configuration_card": 2,
+        "report": {
+          "schema_version": "1",
+          "review_id": "rev-20261027-9e9ab217",
+          "seat_id": "methodology",
+          "role": "R1",
+          "created_at": "2026-10-27T09:44:00+00:00",
+          "submitted_at": "2026-10-27T11:26:14+08:00",
+          "verdict": "major_revision",
+          "confidence": 0.82,
+          "summary": "Methodology seat (R1). The experimental design cannot support the reported effect sizes. Each of the three headline deltas rests on a single random seed with no repetition, confidence interval, or significance test; the two hyperparameters that govern the method's behaviour (impurity threshold, data-dependent radius cap) are never given values; and the baseline set omits every modern competitor. The iterative refinement is stopped by an arbitrary constant. As it stands the numbers are point observations, not measurements.",
+          "findings": [
+            {
+              "id": "methodology-F1",
+              "severity": "critical",
+              "title": "Single-seed evaluation with no variance estimate; reported gains are not distinguishable from seed noise",
+              "detail": "All three reported improvements (3.1, 2.6, 2.6 points) come from one run per dataset. No standard deviation, confidence interval, or paired test is reported, and the number of seeds is stated as one. On datasets of this kind, seed-to-seed variation in k-NN accuracy is routinely of the same order as the reported deltas, so the central quantitative claim is unsupported until the authors report at least 5-10 seeds per configuration with means, standard deviations, and paired significance tests against each baseline.",
+              "evidence": [
+                {
+                  "quote": "USPS-rot, and from 70.0 to 72.6 on the sensor set. Each result uses a single",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            },
+            {
+              "id": "methodology-F2",
+              "severity": "major",
+              "title": "Fixed iteration budget of 10 is an unjustified stopping constant with no convergence or sensitivity analysis",
+              "detail": "The refinement loop terminates after a hard-coded ten iterations regardless of dataset, scale, or whether the split/merge process has converged. No convergence plot, no sensitivity sweep over the budget, and no criterion for choosing 10 are given, so the reader cannot tell whether the reported accuracy is at, before, or past the method's optimum. Report the effect of the budget on accuracy and ball count, and justify or replace the constant with a convergence criterion.",
+              "evidence": [
+                {
+                  "quote": "The stopping rule uses a fixed iteration budget of 10.",
+                  "location": "Section 3 Method"
+                }
+              ]
+            },
+            {
+              "id": "methodology-F3",
+              "severity": "major",
+              "title": "Baseline set is too weak to isolate the claimed mechanism",
+              "detail": "Only k-NN and a fixed-radius granular-ball baseline are compared. There is no noise-aware or robust-classification baseline, no prototype/data-reduction baseline matched for the same compression ratio, and no ablation separating the effect of radius adaptation from the effect of simply reducing the training set. Without a compression-matched control the authors cannot attribute the gain to adaptivity rather than to fewer, cleaner training points.",
+              "evidence": [
+                {
+                  "quote": "The baselines are k-NN and a fixed-radius granular-ball baseline.",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            },
+            {
+              "id": "methodology-F4",
+              "severity": "minor",
+              "title": "Core hyperparameters and the noise estimator are never specified",
+              "detail": "The radius is defined as a maximum distance 'capped at a data-dependent maximum', and splitting depends on an impurity threshold, but neither the cap rule, the threshold value, nor how the local noise estimate is computed is ever stated. The method as written is not reimplementable: give explicit formulas, chosen values, and the procedure for estimating local noise.",
+              "evidence": [
+                {
+                  "quote": "We define the granular ball radius as the maximum distance from the centroid to",
+                  "location": "Section 3 Method"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "model": "cn:deepseek-v4.1-flash",
+            "peerOutputVisible": false,
+            "contextFresh": true,
+            "humanOperator": "qa-verifier"
+          }
+        }
+      },
+      {
+        "seat_id": "domain",
+        "role_marker": "R2",
+        "agent_file": "academic-paper-reviewer/agents/domain_reviewer_agent.md",
+        "status": "submitted",
+        "dispatched_at": "2026-10-27T11:24:57+08:00",
+        "submitted_at": "2026-10-27T11:26:14+08:00",
+        "configuration_card": 3,
+        "report": {
+          "schema_version": "1",
+          "review_id": "rev-20261027-9e9ab217",
+          "seat_id": "domain",
+          "role": "R2",
+          "created_at": "2026-10-27T09:47:00+00:00",
+          "submitted_at": "2026-10-27T11:26:14+08:00",
+          "verdict": "major_revision",
+          "confidence": 0.7,
+          "summary": "Domain seat (R2). The paper sits in granular-ball computing and noise-robust learning, two literatures with substantial prior work on locally adaptive metric and neighbourhood size. The related-work section is a single paragraph whose novelty claim is made against an unnamed literature, and the reference list has two entries. The gap statement may well be true, but as written nothing lets a reader trained in this area verify it, and the baseline the paper uses in its own experiments is itself uncited.",
+          "findings": [
+            {
+              "id": "domain-F1",
+              "severity": "major",
+              "title": "Claim of a completely open gap is made without naming or citing any prior method that closes it partially",
+              "detail": "'No prior work couples the radius to a local noise estimate' is a universal negative that needs either a cited survey or a systematic comparison. Granular computing, rough-set neighbourhood methods, and locally adaptive kernel/neighbourhood selection all contain closely adjacent ideas, and some of them tie scale to local density or label purity. Name the closest prior methods, state precisely how coupling to a *noise* estimate differs from coupling to density or impurity, and soften the claim if the distinction is narrower than stated.",
+              "evidence": [
+                {
+                  "quote": "Granular-ball computing extends rough-set theory to metric spaces. Prior",
+                  "location": "Section 2 Related Work"
+                }
+              ]
+            },
+            {
+              "id": "domain-F2",
+              "severity": "major",
+              "title": "Reference list of two entries cannot support the positioning claims",
+              "detail": "Two references, both with the placeholder venue 'Journal of Examples', cannot establish coverage of granular-ball computing, rough-set theory, or noisy-label learning. Notably the fixed-radius granular-ball baseline used in the experiments is not cited at all, so the primary comparison point has no attributable source. Expand the bibliography to the actual foundational papers and cite the baseline implementation.",
+              "evidence": [
+                {
+                  "quote": "[1] Author et al. Granular-ball computing. Journal of Examples, 2020.",
+                  "location": "References"
+                }
+              ]
+            },
+            {
+              "id": "domain-F3",
+              "severity": "minor",
+              "title": "The theoretical framing stops at one attributive sentence",
+              "detail": "The rough-set/granular-computing lineage is invoked but never used: no formal definition of a granular ball is given, no relationship between the proposed radius rule and existing granular-ball constructions is stated, and no property (consistency, coverage, or bounds on the ball count) is proved. Even a short formal section would let the community place the contribution relative to the existing theory it claims to extend.",
+              "evidence": [
+                {
+                  "quote": "Prior studies fixed the ball radius globally or tuned it per dataset, which either",
+                  "location": "Section 2 Related Work"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "model": "cn:deepseek-v4.1-flash",
+            "peerOutputVisible": false,
+            "contextFresh": true,
+            "humanOperator": "qa-verifier"
+          }
+        }
+      },
+      {
+        "seat_id": "perspective",
+        "role_marker": "R3",
+        "agent_file": "academic-paper-reviewer/agents/perspective_reviewer_agent.md",
+        "status": "submitted",
+        "dispatched_at": "2026-10-27T11:24:57+08:00",
+        "submitted_at": "2026-10-27T11:26:14+08:00",
+        "configuration_card": 4,
+        "report": {
+          "schema_version": "1",
+          "review_id": "rev-20261027-9e9ab217",
+          "seat_id": "perspective",
+          "role": "R3",
+          "created_at": "2026-10-27T09:50:00+00:00",
+          "submitted_at": "2026-10-27T11:26:14+08:00",
+          "verdict": "minor_revision",
+          "confidence": 0.58,
+          "summary": "Perspective seat (R3). Read as a practitioner-facing contribution, the idea is genuinely appealing: shrinking granularity only where noise is detected is a sensible cost/accuracy trade for sensor pipelines, and it connects naturally to data reduction, active learning, and edge deployment. The paper, however, never engages any of those connections and never reports the operating costs that would decide adoption. My concerns are about framing and scope rather than about the core idea, which is why I am more lenient than my colleagues on the numbers.",
+          "findings": [
+            {
+              "id": "perspective-F1",
+              "severity": "major",
+              "title": "Deployment-facing costs that would decide practical adoption are not reported",
+              "detail": "For the sensor use case the paper motivates, the relevant questions are ball count versus accuracy, per-sample inference cost, memory footprint, and behaviour under distribution shift. None are measured. A short results table reporting compression ratio, training time, and inference time at matched accuracy would make the practical claim assessable and would also serve the methodological concern about whether the gain comes from fewer training points.",
+              "evidence": [
+                {
+                  "quote": "We evaluate on three benchmarks (MNIST-rot, USPS-rot, and a private sensor",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            },
+            {
+              "id": "perspective-F2",
+              "severity": "major",
+              "title": "Unstated assumption: a reliable local noise estimate is available before the method is applied",
+              "detail": "The entire mechanism is conditioned on a local noise estimate being high or low, but the paper never says how that estimate is obtained, nor whether it is available in the regime it targets. If labels are corrupted as claimed in the introduction, estimating noise from those same labels risks circularity. State the noise estimator, its data requirements, and what the method does when the estimate is itself unreliable.",
+              "evidence": [
+                {
+                  "quote": "exceeds a threshold. We claim AGBS improves downstream classification accuracy",
+                  "location": "Section 1 Introduction"
+                }
+              ]
+            },
+            {
+              "id": "perspective-F3",
+              "severity": "comment",
+              "title": "Adjacent traditions that would strengthen the contribution are ignored",
+              "detail": "Prototype selection and instance reduction, active learning under label noise, and coreset construction all solve a closely related problem and offer both baselines and terminology. Connecting to them would sharpen the contribution claim, give reviewers familiar comparison points, and likely suggest cheap extra experiments. The private-set provenance also deserves an explicit privacy/data-governance sentence, since the paper's framing is a real deployment.",
+              "evidence": [
+                {
+                  "quote": "Prior studies fixed the ball radius globally or tuned it per dataset, which either",
+                  "location": "Section 2 Related Work"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "model": "cn:deepseek-v4.1-flash",
+            "peerOutputVisible": false,
+            "contextFresh": true,
+            "humanOperator": "qa-verifier"
+          }
+        }
+      },
+      {
+        "seat_id": "da",
+        "role_marker": "DA",
+        "agent_file": "academic-paper-reviewer/agents/devils_advocate_reviewer_agent.md",
+        "status": "submitted",
+        "dispatched_at": "2026-10-27T11:24:57+08:00",
+        "submitted_at": "2026-10-27T11:26:14+08:00",
+        "configuration_card": null,
+        "report": {
+          "schema_version": "1",
+          "review_id": "rev-20261027-9e9ab217",
+          "seat_id": "da",
+          "role": "DA",
+          "created_at": "2026-10-27T09:54:00+00:00",
+          "submitted_at": "2026-10-27T11:26:14+08:00",
+          "verdict": "reject",
+          "confidence": 0.66,
+          "summary": "Devil's Advocate seat. Strongest counter-argument: the paper's central empirical claim is a mean of three deltas measured once each, on datasets that are two rotation-augmented variants of the same handwriting tasks plus an unreleased private set, against two baselines that share the paper's own assumptions. Under those conditions a 2-3 point difference is exactly what one expects from run-to-run variance and from simply training on fewer, cleaner points. The conclusion then generalizes the mechanism to 'any metric space' with no supporting experiment. The narrative — adaptive granularity tames noise — is plausible and may even be right, but the evidence presented cannot distinguish it from cheaper explanations, so the paper as submitted does not support its own claims.",
+          "findings": [
+            {
+              "id": "da-F1",
+              "severity": "critical",
+              "title": "The headline 3.1-point gain is a single-run point estimate, so the paper's central claim is unfalsifiable as presented",
+              "detail": "The introduction's headline claim and the conclusion's 'consistent gains' both rest on one seed per configuration. With one observation per cell there is no error term: a delta of 2.6-3.1 points cannot be separated from seed variance, from baseline hyperparameter choice, or from the effect of reducing the training set. Everything downstream in the paper — the abstract claim, the 'consistent gains' conclusion, the generalization claim — is built on this single unsupported number. Minimum remedy: repeat every configuration over at least five seeds, report mean and standard deviation, and run paired tests against each baseline, with the compression ratio matched. If the effect survives that, most of my objection disappears.",
+              "evidence": [
+                {
+                  "quote": "USPS-rot, and from 70.0 to 72.6 on the sensor set. Each result uses a single",
+                  "location": "Section 4 Experiments"
+                },
+                {
+                  "quote": "by 3.1 points on average across three public benchmarks.",
+                  "location": "Section 1 Introduction"
+                }
+              ]
+            },
+            {
+              "id": "da-F2",
+              "severity": "major",
+              "title": "Overgeneralization: 'any metric space' is claimed from three tabular/image benchmarks with no supporting experiment",
+              "detail": "The conclusion generalizes beyond the evidence by orders of magnitude. Every experiment is a fixed-dimensional vector classification task; there is no test on a graph metric, a text embedding, a time-series metric, or a metric with non-Euclidean geometry, and the method's own definition assumes a centroid and a bounded maximum distance, which do not exist in arbitrary metric spaces. Either run the experiment that licenses the claim or restrict it to the tested setting.",
+              "evidence": [
+                {
+                  "quote": "the approach generalizes to any metric space.",
+                  "location": "Section 5 Conclusion"
+                }
+              ]
+            },
+            {
+              "id": "da-F3",
+              "severity": "major",
+              "title": "Cherry-pickable benchmark construction: two rotation variants of handwriting data plus an unreleased private set",
+              "detail": "The evidence base is narrower than its three-dataset presentation implies. MNIST-rot and USPS-rot are the same augmentation applied to two handwriting collections, so the three results are not three independent tests of the mechanism, and the third cannot be inspected by any reader. There is no negative result, no dataset where the method fails, and no per-class or per-noise-level breakdown that would show where adaptivity helps. Add at least one dataset from a different domain and report failures honestly.",
+              "evidence": [
+                {
+                  "quote": "We evaluate on three benchmarks (MNIST-rot, USPS-rot, and a private sensor",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            },
+            {
+              "id": "da-F4",
+              "severity": "major",
+              "title": "Ignored alternative explanation: the gain may come from fewer training points, not from noise-adaptive radii",
+              "detail": "The paper never rules out the deflationary story. Shrinking radii where noise is high removes or downweights noisy members, which changes the effective training-set size and the decision-boundary smoothness; both effects are known to move k-NN accuracy by a few points on their own. Without a control that holds compression fixed while disabling the noise coupling, and without an ablation of the split and merge steps, the attributed cause is unestablished. The fixed iteration budget of 10 further means the comparison is against a baseline tuned differently.",
+              "evidence": [
+                {
+                  "quote": "The stopping rule uses a fixed iteration budget of 10.",
+                  "location": "Section 3 Method"
+                },
+                {
+                  "quote": "The baselines are k-NN and a fixed-radius granular-ball baseline.",
+                  "location": "Section 4 Experiments"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "model": "cn:deepseek-v4.1-flash",
+            "peerOutputVisible": false,
+            "contextFresh": true,
+            "humanOperator": "qa-verifier"
+          }
+        }
+      }
+    ]
+  },
+  "synthesis": {
+    "requested_at": "2026-10-27T11:26:17+08:00",
+    "completed_at": "2026-10-27T11:26:22+08:00",
+    "decision": "major_revision",
+    "decision_letter_path": "editorial_decision.md",
+    "revision_roadmap_path": "revision_roadmap.md",
+    "da_critical_adjudications": [
+      {
+        "finding_id": "da-F1",
+        "outcome": "validated",
+        "rationale": "The manuscript states 'Each result uses a single random seed' and reports exactly one accuracy pair per dataset, while the introduction claims a 3.1-point average gain and the conclusion claims 'consistent gains'. With no repetitions, variance, confidence intervals, or significance tests, the reported deltas cannot be distinguished from seed noise or baseline tuning, so the central quantitative claim is genuinely unsupported as presented. The DA critical is upheld; it is consistent with the advisory major_revision and reinforces the methodology seat's methodology-F1."
+      }
+    ]
+  },
+  "checkpoints": {
+    "panel_confirmed_at": "2026-10-27T11:24:57+08:00",
+    "report_approved_at": "2026-10-27T11:26:22+08:00"
+  },
+  "advisory_checks": {
+    "acronyms": "not_run",
+    "suggested_references": "not_run",
+    "reviewer_claims": "not_run"
+  },
+  "warnings": []
+}

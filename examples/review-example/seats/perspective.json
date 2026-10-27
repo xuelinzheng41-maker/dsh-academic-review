@@ -1,0 +1,55 @@
+{
+  "schema_version": "1",
+  "review_id": "rev-20261027-9e9ab217",
+  "seat_id": "perspective",
+  "role": "R3",
+  "created_at": "2026-10-27T09:50:00+00:00",
+  "submitted_at": "2026-10-27T11:26:14+08:00",
+  "verdict": "minor_revision",
+  "confidence": 0.58,
+  "summary": "Perspective seat (R3). Read as a practitioner-facing contribution, the idea is genuinely appealing: shrinking granularity only where noise is detected is a sensible cost/accuracy trade for sensor pipelines, and it connects naturally to data reduction, active learning, and edge deployment. The paper, however, never engages any of those connections and never reports the operating costs that would decide adoption. My concerns are about framing and scope rather than about the core idea, which is why I am more lenient than my colleagues on the numbers.",
+  "findings": [
+    {
+      "id": "perspective-F1",
+      "severity": "major",
+      "title": "Deployment-facing costs that would decide practical adoption are not reported",
+      "detail": "For the sensor use case the paper motivates, the relevant questions are ball count versus accuracy, per-sample inference cost, memory footprint, and behaviour under distribution shift. None are measured. A short results table reporting compression ratio, training time, and inference time at matched accuracy would make the practical claim assessable and would also serve the methodological concern about whether the gain comes from fewer training points.",
+      "evidence": [
+        {
+          "quote": "We evaluate on three benchmarks (MNIST-rot, USPS-rot, and a private sensor",
+          "location": "Section 4 Experiments"
+        }
+      ]
+    },
+    {
+      "id": "perspective-F2",
+      "severity": "major",
+      "title": "Unstated assumption: a reliable local noise estimate is available before the method is applied",
+      "detail": "The entire mechanism is conditioned on a local noise estimate being high or low, but the paper never says how that estimate is obtained, nor whether it is available in the regime it targets. If labels are corrupted as claimed in the introduction, estimating noise from those same labels risks circularity. State the noise estimator, its data requirements, and what the method does when the estimate is itself unreliable.",
+      "evidence": [
+        {
+          "quote": "exceeds a threshold. We claim AGBS improves downstream classification accuracy",
+          "location": "Section 1 Introduction"
+        }
+      ]
+    },
+    {
+      "id": "perspective-F3",
+      "severity": "comment",
+      "title": "Adjacent traditions that would strengthen the contribution are ignored",
+      "detail": "Prototype selection and instance reduction, active learning under label noise, and coreset construction all solve a closely related problem and offer both baselines and terminology. Connecting to them would sharpen the contribution claim, give reviewers familiar comparison points, and likely suggest cheap extra experiments. The private-set provenance also deserves an explicit privacy/data-governance sentence, since the paper's framing is a real deployment.",
+      "evidence": [
+        {
+          "quote": "Prior studies fixed the ball radius globally or tuned it per dataset, which either",
+          "location": "Section 2 Related Work"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "model": "cn:deepseek-v4.1-flash",
+    "peerOutputVisible": false,
+    "contextFresh": true,
+    "humanOperator": "qa-verifier"
+  }
+}

@@ -1,0 +1,209 @@
+/* Academic Review panel styles (CSS Modules; hashed by the build). */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  color: inherit;
+  font-size: 13px;
+}
+
+.panelHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panelDescription {
+  margin: 0;
+  opacity: 0.7;
+}
+
+.refreshButton {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.refreshButton:hover {
+  opacity: 0.8;
+}
+
+.stateText {
+  margin: 24px 0;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.emptyState {
+  margin: 32px 8px;
+  padding: 24px;
+  border: 1px dashed currentColor;
+  border-radius: 10px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.emptyTitle {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.emptyBody {
+  margin: 0;
+  opacity: 0.7;
+}
+
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgb(128 128 128 / 0.35);
+  border-radius: 10px;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reviewTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+
+.statusChip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(128 128 128 / 0.5);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statusChip[data-status='report_ready'],
+.statusChip[data-status='submitted'] {
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.statusChip[data-status='awaiting_panel_confirmation'],
+.statusChip[data-status='awaiting_synthesis_approval'] {
+  color: #9a6700;
+  border-color: #9a6700;
+}
+
+.statusChip[data-status='failed'] {
+  color: #cf222e;
+  border-color: #cf222e;
+}
+
+.checkpointBadge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgb(154 103 0 / 0.12);
+  color: #9a6700;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.facts {
+  display: flex;
+  gap: 18px;
+  margin: 0;
+}
+
+.facts div {
+  display: flex;
+  gap: 6px;
+}
+
+.facts dt {
+  opacity: 0.6;
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.seatHeading {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.seatTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.seatRow {
+  border-top: 1px solid rgb(128 128 128 / 0.2);
+}
+
+.seatRow td {
+  padding: 6px 4px;
+  vertical-align: top;
+}
+
+.seatName {
+  font-weight: 500;
+  width: 45%;
+}
+
+.findings {
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  opacity: 0.55;
+}
+
+.reviewFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reportButton {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: rgb(64 120 192);
+  color: #fff;
+  cursor: pointer;
+}
+
+.reportButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

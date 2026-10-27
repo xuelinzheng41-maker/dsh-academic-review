@@ -1,0 +1,9 @@
+node_modules/
+.academic-review/
+*.tmp
+.probe/
+.pack/
+dist/
+*.log
+.DS_Store
+Thumbs.db
