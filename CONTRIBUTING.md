@@ -21,11 +21,11 @@ CC BY-NC 4.0.
 - **Input gate**: `.md`/`.tex`/`.txt` only; never add PDF parsing.
 - **Keep the two human checkpoints.** No automation may bypass the panel-start
   checkpoint or the pre-report approval.
-- **No scope creep into later phases**: the `academic-paper`,
-  `academic-pipeline` and `sr-screener` skills, plus the re-review/guided/
-  calibration review modes, are explicitly out of scope; refuse them rather than
-  falling back silently. `deep-research` is vendored and served, but as a
-  prompt-only skill — it gets no tool, state or panel.
+- **No scope creep into later phases**: the `academic-pipeline` and
+  `sr-screener` skills, plus the re-review/guided/calibration review modes, are
+  explicitly out of scope; refuse them rather than falling back silently.
+  `deep-research` and `academic-paper` are vendored and served, but as
+  prompt-only skills — neither gets a tool, state or panel.
 - Findings must carry an evidence quote plus location; seats must not see each
   other's outputs.
 - **Bilingual docs**: any user-facing doc change updates **both** `README.md`

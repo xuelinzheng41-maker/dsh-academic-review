@@ -24,10 +24,11 @@
      pnpm verify:vendor`.
   5. If upstream changed prompts/agents/templates, reconcile
      `assets/prompts/` and the docs, and bump the plugin minor version.
-- **Non-goals**: upstream areas this port does not serve (`academic-paper`,
-  `academic-pipeline`, `sr-screener`, the upstream pipeline scripts) are not
-  vendored; revisit only when those skills are added. `deep-research` **is**
-  vendored and served, prompt-only (no tool, no state, no panel).
+- **Non-goals**: upstream areas this port does not serve
+  (`academic-pipeline`, `sr-screener`, the upstream pipeline scripts) are not
+  vendored; revisit only when those skills are added. `deep-research` and
+  `academic-paper` **are** vendored and served, prompt-only (no tool, no state,
+  no panel).
 
 ## Named maintainer
 

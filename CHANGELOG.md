@@ -8,6 +8,60 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.3.0] - 2026-10-27
+
+Third served skill. **No tool, route or state schema changed**: the five
+`academic_review_*` tools, their arguments, the review-state schema, the panel's
+three GET routes and both slash commands are identical to 0.2.0, so
+`.academic-review/` directories written by 0.1.1 or 0.2.0 keep loading.
+
+### Added
+
+- The vendored **`academic-paper`** skill (upstream **3.3.1**, read from its own
+  SKILL.md frontmatter, `last_updated` 2026-08-15, 63 files, SKILL.md 65,335
+  repository bytes) is served next to the reviewer and `deep-research`. It is
+  **prompt-only**: no tool, no review state, no panel, no slash command. It
+  depends on the host's file tools — that is how it drafts — and on whatever web
+  tools the host gives the session.
+- **Write policy A travels with it.** The rule is delivered as the **first block
+  of the served text**: a 549-byte block is prepended to the body, before any
+  drafting instruction, and mirrored in metadata as `writePolicy:
+  'new-paths-only'` with `writePolicyEnforced: false`. This port cannot
+  technically prevent the host's file tools from overwriting a path, so the rule
+  is an instruction the model is told to follow, not an interlock. The
+  file-producing skill table (`src/write-policy.ts`) is checked in both
+  directions, so a skill that starts writing files must be listed and a listed
+  skill that stops matching fails the suite.
+- `vendor/academic-paper/` (63 files), vendored whole and byte-identical,
+  including the only non-Markdown file in the whole port:
+  `templates/latex_article_template.tex` (4,844 B, pinned from the upstream git
+  object — the CRLF worktree copy would have been 5,043 B).
+
+### Changed
+
+- Vendored totals: **254 files** (was 181) — 144 skill files (28 reviewer + 53
+  `deep-research` + 63 `academic-paper`) + 110 shared (108 by scan + 2 by
+  registry receipt). All 181 previously pinned files are unchanged; 73 were
+  added (63 skill + 10 shared).
+- The computed `shared/` closure grew from 98 to 108 by scan, and the
+  disclosure list shrank: **11 distinct** unvendored upstream targets (16
+  reference sites) instead of 14 (22), because the three targets that used to
+  dangle under `academic-paper/` now resolve inside the vendored tree. That drop
+  is the evidence that the list is computed rather than maintained by hand.
+- Per-skill own-tree port notices: reviewer 0, `deep-research` 1,
+  `academic-paper` 1 (both name the same unvendored
+  `academic-pipeline/references/literature_corpus_consumers.md`).
+- The routing hint reads both `Triggers on:` and `Triggers:` (academic-paper
+  writes the latter), so the third skill is served with its trigger guidance.
+- README (both languages) and `docs/PORT_SPEC.md` document the three served
+  skills, the new totals, the .tex file and the enforced-vs-instructed split.
+
+### Unchanged
+
+- The reviewer skill (1.11.1), `deep-research` (2.12.1), the five tools, the
+  review-state schema, the GUI panel, both slash commands, and the CC BY-NC 4.0
+  terms.
+
 ## [0.2.0] - 2026-10-27
 
 Second served skill. The five review tools, their arguments, the review-state

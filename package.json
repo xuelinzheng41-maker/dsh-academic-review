@@ -1,6 +1,6 @@
 {
   "name": "dsh-academic-review",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "description": "Unofficial DSH port of Academic Research Skills: a 5-seat journal peer-review panel driven by review-state tools, plus the deep-research skill served prompt-only.",
   "type": "module",

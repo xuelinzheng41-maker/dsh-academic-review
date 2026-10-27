@@ -4,33 +4,39 @@
 
 [![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
 
-> **Scope:** this port serves **two** ARS skills — `academic-paper-reviewer`
-> and `deep-research` — and only the reviewer has tools, review state and a GUI
-> panel; `deep-research` is served as a prompt-only skill. `academic-paper`,
-> `academic-pipeline` and `sr-screener` are **not** part of this release. Reviewer
-> input is `.md` / `.tex` / `.txt` only: there is no PDF parsing and no OCR.
+> **Scope:** this port serves **three** ARS skills — `academic-paper-reviewer`,
+> `deep-research` and `academic-paper` — and only the reviewer has tools, review
+> state and a GUI panel. `deep-research` is a prompt-only research skill;
+> `academic-paper` is a prompt-only writing pipeline, and its write-new-paths
+> rule is an instruction to the model, not a runtime interlock. `academic-pipeline`
+> and `sr-screener` are **not** part of this release. Reviewer input is `.md` /
+> `.tex` / `.txt` only: there is no PDF parsing and no OCR.
 > The plugin's own tools and commands never rewrite your manuscript (see
 > [Write policy A](#write-policy-a--new-paths-only)). Skills that write files
 > carry the same rule as an *instruction*: it is not enforcement.
 
 An **unofficial DSH port** of the Academic Research Skills (ARS) skills
-`academic-paper-reviewer` and `deep-research` for DeepSeek Harness.
-It is not affiliated with, sponsored by, or endorsed by the upstream author or
-project.
+`academic-paper-reviewer`, `deep-research` and `academic-paper` for DeepSeek
+Harness. It is not affiliated with, sponsored by, or endorsed by the upstream
+author or project.
 
-The plugin serves both vendored upstream skills through one DSH skill provider.
-Only the reviewer is wired to plugin code: the review-state tools a 5-seat
-peer-review panel needs (an immutable per-seat report store, manuscript SHA-256
-pinning, and the two human checkpoints the upstream protocol requires), plus the
-read-only panel and two slash commands. `deep-research` is served **as-is, with
-no tools, no state and no GUI** — it runs on the host's own `web_search` /
-`web_fetch` and file tools, so its output quality is bounded by what those host
-tools can actually reach.
+The plugin serves all three vendored upstream skills through one DSH skill
+provider. Only the reviewer is wired to plugin code: the review-state tools a
+5-seat peer-review panel needs (an immutable per-seat report store, manuscript
+SHA-256 pinning, and the two human checkpoints the upstream protocol requires),
+plus the read-only panel and two slash commands. `deep-research` and
+`academic-paper` are served **as-is, with no tools, no state and no GUI**:
+`deep-research` runs on the host's own `web_search` / `web_fetch` and file
+tools, so its output quality is bounded by what those host tools can actually
+reach; `academic-paper` drafts with the same host file tools, which is why
+[Write policy A](#write-policy-a--new-paths-only) is prepended to its served body
+as text the model is told to follow.
 
 ## Attribution and license
 
-- Upstream work: Academic Research Skills, skill `academic-paper-reviewer`
-  v1.11.1 (SKILL.md last_updated 2026-08-15) by **Cheng-I Wu**
+- Upstream work: Academic Research Skills, skills `academic-paper-reviewer`
+  v1.11.1, `deep-research` v2.12.1 and `academic-paper` v3.3.1 (each SKILL.md
+  last_updated 2026-08-15) by **Cheng-I Wu**
   (ORCID https://orcid.org/0009-0008-9523-0103),
   https://github.com/Imbad0202/academic-research-skills, vendored at commit
   `1ec249df98728682dfbbdfb940a658338bfd6f80`.
@@ -44,17 +50,23 @@ tools can actually reach.
 
 ## What this plugin provides
 
-### Skills served (two)
+### Skills served (three)
 
-Both trees are vendored unmodified under `vendor/` from the pinned ARS commit
-`1ec249df98728682dfbbdfb940a658338bfd6f80`, and both keep their upstream names.
-The version column is the `metadata.version` in each vendored `SKILL.md`
+All three trees are vendored unmodified under `vendor/` from the pinned ARS
+commit `1ec249df98728682dfbbdfb940a658338bfd6f80`, and all keep their upstream
+names. The version column is the `metadata.version` in each vendored `SKILL.md`
 frontmatter, read at load time — not a number typed into the plugin.
 
 | Skill | Upstream version | What this plugin adds | Resource base |
 | --- | --- | --- | --- |
 | `academic-paper-reviewer` | **1.11.1** (SKILL.md `last_updated` 2026-08-15) | The five `academic_review_*` tools, the review state directory, the read-only GUI panel, and `/ars-review` + `/ars-review-status`. | `vendor/academic-paper-reviewer` |
 | `deep-research` | **2.12.1** (SKILL.md `last_updated` 2026-08-15) | Nothing but service: the upstream body is loaded verbatim. No tools, no state, no GUI, no slash command. | `vendor/deep-research` |
+| `academic-paper` | **3.3.1** (SKILL.md `last_updated` 2026-08-15) | Service **plus the write-policy block**: policy A is prepended to the served body (549 bytes) and mirrored in metadata as `writePolicy` + `writePolicyEnforced: false`. No tools, no state, no GUI, no slash command. | `vendor/academic-paper` |
+
+The vendored set is **254 files**: 144 skill files (28 + 53 + 63) plus 110 shared
+(108 reached by the path scan, 2 vendored by registry receipt because no vendored
+Markdown names them). Every pin is a SHA-256 in `vendor-manifest.json`, checked by
+`pnpm verify:vendor`.
 
 `deep-research` is a 13-agent research pipeline that expects web search, page
 fetching and file tools. This plugin supplies none of them and intercepts
@@ -62,6 +74,22 @@ nothing: whatever `web_search` / `web_fetch` / file tools your DSH host already
 gives the session are the only means it has to look things up. **Its output
 quality is therefore bounded by those host tools** — with no network access the
 skill can still reason, but it cannot verify sources.
+
+`academic-paper` is upstream's 12-agent writing pipeline (11 modes, and by far
+the largest vendored tree: **63 files** — 12 `agents/`, 29 `references/`, 11
+`templates/`, 10 `examples/` and its `SKILL.md`, 65,335 repository bytes). It is
+the only vendored skill that instructs the model to write files — 85 writing verbs
+and 46 drafting verbs in its own body — which is why it is the single entry in the
+plugin's file-producing skill table, and why policy A travels with it. It is also
+the only vendored tree containing a non-Markdown file:
+`academic-paper/templates/latex_article_template.tex` (4,844 B), vendored
+byte-for-byte from the upstream git object, not from a checkout.
+
+What it does **not** get is as important as what it does: no tool, no review
+state, no GUI panel, no slash command — its 11 modes are modes of its own prompt,
+not of this plugin. What it **does** depend on is the host: the session's own file
+tools are how it drafts, and the host's web tools (if any) are how it looks things
+up. This port ships neither and intercepts neither.
 
 ### What this port does not ship — the port notice
 
@@ -74,11 +102,14 @@ carries the full list in `metadata.unavailableReferences` /
 `metadata.unavailableReferenceCount`. The model is told, in the notice, not to
 fabricate the missing content.
 
-Today exactly **one** case exists:
-`deep-research/agents/bibliography_agent.md` points at
+Today **two** own-tree cases exist, and both name the same file:
+`deep-research/agents/bibliography_agent.md` and
+`academic-paper/agents/literature_strategist_agent.md` point at
 `academic-pipeline/references/literature_corpus_consumers.md`, an upstream skill
-this port does not vendor. This is the block you will see appended to the
-`deep-research` body, verbatim:
+this port does not vendor. The reviewer's own tree is clean, so the reviewer
+never receives a notice. This is the block you will see appended to the
+`deep-research` body (the `academic-paper` one differs only in the `named by`
+path), verbatim:
 
 ```text
 <!-- dsh-academic-review:port-notice:begin (not upstream text) -->
@@ -93,21 +124,27 @@ tell the user which reference is missing.
 ```
 
 **The honest limitation.** The shared protocol files under `vendor/shared/` —
-which *both* served skills read — contain **14 distinct references** (22
-reference sites) to upstream areas this port does not vendor: 3 under
-`academic-paper/`, 4 under `academic-pipeline/`, 5 under `docs/design/`, 1 under
-`examples/` and 1 under `scripts/adapters/`. Those are surfaced in skill
-**metadata only** (`metadata.unavailableSharedReferences` /
+which *all three* served skills read — contain **11 distinct references** (16
+reference sites) to upstream areas this port does not vendor: 4 under
+`academic-pipeline/`, 5 under `docs/design/`, 1 under `examples/` and 1 under
+`scripts/adapters/`. Those are surfaced in skill **metadata only**
+(`metadata.unavailableSharedReferences` /
 `metadata.unavailableSharedReferenceCount`), and deliberately **not** appended to
 the skill body: `shared/` is reached identically by every served skill, so a body
 notice derived from it would fire on the reviewer too and would change the
 reviewer's served bytes.
 
-Say it plainly: **`deep-research` inherits upstream cross-skill references that
-this port cannot satisfy.** It is served faithfully, minus those targets. A later
-round either vendors the referenced skills or extends the notice to cover the
-`shared/` scope; until then, the metadata is the complete record of what is
-missing and the notice is the in-conversation warning.
+That list is **computed, not maintained**, and the computation shows it moving:
+vendoring `academic-paper` took it from 14 distinct targets down to 11, because
+the three targets that used to dangle under `academic-paper/` now resolve inside
+the vendored tree. A hand-written list would still say 14.
+
+Say it plainly: **`deep-research` and `academic-paper` inherit upstream
+cross-skill references that this port cannot satisfy.** Both are served
+faithfully, minus those targets. A later round either vendors the referenced
+skills (`academic-pipeline`) or extends the notice to cover the `shared/` scope;
+until then, the metadata is the complete record of what is missing and the notice
+is the in-conversation warning.
 
 ### Tools
 
@@ -142,9 +179,9 @@ read-only: it is served by three authenticated GET routes
 | `quick` | Compressed panel pass | A fast sanity pass before submission or after minor edits. |
 | `methodology-focus` | Methodology seat emphasized | You want the methods/statistics scrutinized hardest. |
 
-Out of scope for this release: the `academic-paper`, `academic-pipeline` and
-`sr-screener` skills, and the `re-review` / `guided` / `calibration` review
-modes (refused explicitly, with no silent fallback).
+Out of scope for this release: the `academic-pipeline` and `sr-screener`
+skills, and the `re-review` / `guided` / `calibration` review modes (refused
+explicitly, with no silent fallback).
 
 ### Review state layout
 
@@ -160,19 +197,25 @@ Under the session workspace:
 
 ### Guarantees
 
-The manuscript is never written to; every tool call re-verifies
-the pinned SHA-256 (`paper_changed` on drift); a finding without an evidence
-quote plus location is refused; a seat may not claim peer-output visibility;
-PDF input is rejected rather than parsed.
+The plugin never writes to the manuscript, and every tool call re-verifies the
+pinned SHA-256 (`paper_changed` on drift); a finding without an evidence quote
+plus location is refused; a seat may not claim peer-output visibility; PDF input
+is rejected rather than parsed. Those are guarantees of plugin code. The
+write-new-paths rule inside a *served skill* is an instruction to the model, not
+one of these guarantees — see [Write policy A](#write-policy-a--new-paths-only).
 
 ### Hard limits
 
 - **Input formats**: `.md`, `.tex`, and `.txt` only. PDF is **not** parsed —
   `academic_review_create` rejects it outright. Convert first if needed.
 - **Read-only manuscript**: the plugin never writes to the paper under review.
-- **Tooling is reviewer-only**: `deep-research` is served as a prompt-only
-  skill (no tools, no state, no GUI); there is no pipeline integration, and no
-  re-review/guided/calibration review modes in this release.
+- **Tooling is reviewer-only**: `deep-research` and `academic-paper` are served
+  as prompt-only skills (no tools, no state, no GUI); there is no pipeline
+  integration, and no re-review/guided/calibration review modes in this release.
+- **Writing skills are instructed, not sandboxed**: `academic-paper` writes with
+  the host's own file tools. This plugin cannot intercept those calls, so policy A
+  reaches it as prepended text plus `writePolicyEnforced: false` in metadata,
+  never as an interlock.
 - **Two human checkpoints**: before the panel starts and before the final
   editorial decision closes the review.
 
@@ -184,12 +227,24 @@ prompt can relax it.**
 **Enforced or only instructed — read this before quoting the rule.** The part this
 plugin owns, it enforces: the five `academic_review_*` tools and the two slash
 commands write new paths only and refuse an existing one. The part a *skill* does
-is prompt text, and this plugin never sees the host's file tools, so it cannot
-intercept, block or undo a write. For the skills that instruct the model to write
-files (`academic-paper`), policy A is prepended to the served body and mirrored as
-`writePolicy: 'new-paths-only'` with `writePolicyEnforced: false` — a rule the model
-is told to follow, not an interlock. Treat it as a strong instruction with a
-visible audit trail in the served payload, not as a runtime guarantee.
+is prompt text, and this port cannot technically prevent the host's file tools
+from overwriting a path: it never sees those calls, so it cannot intercept, block
+or undo a write, and there is no sandbox around the writing skill.
+
+For the skill that instructs the model to write files (`academic-paper`), the rule
+is therefore delivered as the **first block of the served text** — a 549-byte block
+prepended to the body, before any drafting instruction — and mirrored as
+`writePolicy: 'new-paths-only'` with `writePolicyEnforced: false`. That is an
+instruction the model is told to follow, **not an interlock**; the metadata says so
+machine-readably so nobody can quote `writePolicy` as enforcement. Treat it as a
+strong instruction with a visible audit trail in the served payload, never as a
+runtime guarantee.
+
+The table behind that behaviour is `src/write-policy.ts`, and it is checked in
+both directions: a vendored skill that starts instructing writes must be added to
+it, and a listed skill that stops matching fails the test, so the list cannot rot
+into a rubber stamp. `academic-paper` is its only entry today — the reviewer and
+`deep-research` bodies are nowhere near the threshold.
 
 1. **Any file a skill produces is written to a new path.** A review writes
    `state.json`, `seats/<seat_id>.json`, `seats/<seat_id>.md`,
@@ -202,9 +257,12 @@ visible audit trail in the served payload, not as a runtime guarantee.
    tool, not by a slash command, not by the panel, not by a seat and not by the
    editorial synthesizer. The plugin only ever reads it (it may hash it, to pin
    the bytes).
-3. **`deep-research` outputs follow the same rule.** That skill has no write tool
-   of its own; anything a run produces (a report, notes, a bibliography) must go
-   to a new path, and everything it reads stays read-only.
+3. **The served skills follow the same rule.** `deep-research` has no write tool
+   of its own, and `academic-paper` writes only through the host: in both cases
+   anything a run produces (a paper draft, a report, notes, a bibliography) goes to
+   a new path, and everything either skill reads — the manuscript included — stays
+   read-only. For `academic-paper` this is the case where the rule is instruction
+   rather than interlock, so it is the one to check by eye in the transcript.
 4. **An existing output path is refused, never clobbered.** If a command or a
    run is pointed at a path that already exists, the correct behaviour is to
    refuse or to pick a new name — never to write over it, append to it, or
@@ -265,8 +323,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-revie
 A pinned tag or the release tarball works the same way:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.2.0
-dsh plugin --profile <profile> add ./dsh-academic-review-0.2.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.3.0
+dsh plugin --profile <profile> add ./dsh-academic-review-0.3.0.tgz
 ```
 
 The build output (`lib/`) is committed on purpose, so a git install needs no
@@ -274,8 +332,8 @@ build step. The bundle patch `cordis.patch.yml` inserts one plugin row
 (`id: academic-review`, `name: dsh-academic-review`) configured with
 `stateDir: .academic-review`.
 
-After installing, the session gains five `academic_review_*` tools and **two**
-skills — `academic-paper-reviewer` and `deep-research` (see
+After installing, the session gains five `academic_review_*` tools and **three**
+skills — `academic-paper-reviewer`, `deep-research` and `academic-paper` (see
 `docs/PORT_SPEC.md`). A review writes to
 `<workspace>/.academic-review/<review_id>/` and nowhere else. The provider can be
 narrowed with the plugin's `skills: [...]` config (default: every vendored
@@ -309,6 +367,32 @@ The vendored tree is byte-identical to upstream and is checked against
 
 ## Upgrade
 
+### 0.2.0 → 0.3.0
+
+0.3.0 adds the third served skill. **No tool, route or state schema changed**: the
+five tools, their arguments, the review-state schema, the panel routes and both
+slash commands are identical to 0.2.0, so `.academic-review/` directories keep
+loading.
+
+- **New:** the vendored `academic-paper` skill (upstream **3.3.1**), served
+  prompt-only — no tools, no state, no GUI, no slash command. It drafts with the
+  host's own file tools and looks things up with whatever web tools the host
+  gives the session.
+- **Write policy A travels with it:** the rule is the **first block of the served
+  text** (549 bytes prepended), mirrored as `writePolicy: 'new-paths-only'` with
+  `writePolicyEnforced: false`. This port cannot technically stop the host's file
+  tools from overwriting a path, so it is an instruction, not an interlock.
+- **Vendoring:** 254 files (was 181) — 144 skill files (28 + 53 + 63) + 110 shared
+  (108 by scan + 2 by registry receipt), including the port's only non-Markdown
+  file, `academic-paper/templates/latex_article_template.tex` (4,844 B). The
+  disclosure list shrank from 14 distinct unvendored targets to 11 as the three
+  `academic-paper/` targets started resolving.
+- **Unchanged:** the reviewer skill (1.11.1), `deep-research` (2.12.1), five
+  tools, review state, panel, both slash commands, CC BY-NC 4.0 terms.
+
+To upgrade, replace the package with the 0.3.0 build from the same source and
+restart the session.
+
 ### 0.1.1 → 0.2.0
 
 0.2.0 serves a second skill. Nothing about an existing review changes: the five
@@ -324,7 +408,8 @@ untouched, so `.academic-review/` directories written by 0.1.1 keep loading.
 - **Unchanged:** the reviewer skill (1.11.1), five tools, review state, panel,
   slash commands, and the CC BY-NC 4.0 terms.
 - **Rule reinforced:** [Write policy A](#write-policy-a--new-paths-only) — new
-  paths only; the manuscript is never overwritten, moved or deleted.
+  paths only; the plugin's own tools never overwrite, move or delete the
+  manuscript.
 
 To upgrade, replace the package with the 0.2.0 build from the same source and
 restart the session, exactly as below.

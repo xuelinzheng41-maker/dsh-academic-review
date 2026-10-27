@@ -111,9 +111,12 @@ recompute_receipts.py (58,463), review_criteria_binding.py (39,289).
   check_phase_conformance, check_panel_synthesis.
 - templates/revision_response_template.md — no shared/scripts refs.
 
-## Not vendored (Phase 1)
+## Not vendored
 
-All other skills (academic-paper, deep-research, academic-pipeline,
-sr-screener), commands/, evals/, tests/, audits/, .claude/, .github/,
-tools/. Exception candidate: deep-research/agents/socratic_mentor_agent.md,
-only if Phase 2.5 coaching is implemented.
+Skills this port does not serve (`academic-pipeline`, `sr-screener`), and the
+upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
+`audits/`, `.claude/`, `.github/`, `tools/`.
+
+`deep-research/` and `academic-paper/` **are** vendored as of 0.2.0, each in its
+own tree and inventoried by `vendor-manifest.json`; this file stays the
+file-by-file inventory of the reviewer tree only.

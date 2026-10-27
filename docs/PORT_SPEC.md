@@ -1,4 +1,4 @@
-# DSH Port Spec — academic-paper-reviewer (Phase 1: reviewer-only)
+# DSH Port Spec — dsh-academic-review (0.3.0: reviewer surface + two prompt-only skills)
 
 Status: draft for T2/T3 implementation · Prepared by T1 · Target plugin: `dsh-academic-review`
 
@@ -12,9 +12,11 @@ at that commit says 3.23.2; the skill-local version is authoritative for the
 reviewer skill.) License: **CC BY-NC 4.0** — see `THIRD_PARTY_NOTICES.md`
 and section 5 below.
 
-Phase 1 scope: reviewer only. `deep-research`, `academic-pipeline`,
-`academic-paper`, and `sr-screener` integration are **out of scope** and
-must not be started.
+Served set (0.3.0): `academic-paper-reviewer` (1.11.1) is the only skill wired
+to plugin code — tools, review state, panel, slash commands. `deep-research`
+(2.12.1) and `academic-paper` (3.3.1) are vendored and served prompt-only: no
+tool, no state, no panel. `academic-pipeline` and `sr-screener` remain **out of
+scope** and must not be started.
 
 ---
 
@@ -74,7 +76,7 @@ Upstream Iron Rules that MUST carry into the port verbatim in behavior:
 The port vendors **every** skill it serves, whole and byte-identical, under
 `vendor/<skill>/`, and `vendor/` is itself the registry: a directory is a
 skill exactly when it holds `SKILL.md` (so `vendor/shared/` is never mistaken
-for one). Two skills are vendored today, from one pinned upstream commit; the
+for one). Three skills are vendored today, from one pinned upstream commit; the
 skill list is a single `SKILLS` constant in `scripts/vendor-upstream.mjs` and a
 new skill is added by adding a name there and re-running `pnpm vendor`.
 
@@ -82,8 +84,9 @@ new skill is added by adding a name there and re-running `pnpm vendor`.
 |---|---|---|
 | `vendor/academic-paper-reviewer/` | 28 | SKILL.md, 7 `agents/`, 14 `references/`, 3 `templates/`, 3 `examples/` |
 | `vendor/deep-research/` | 53 | SKILL.md, 14 `agents/`, 24 `references/`, 6 `templates/`, 8 `examples/` |
-| `vendor/shared/` (not a skill) | 100 | 18 root files, 62 `contracts/`, 16 `references/`, 1 `agents/`, 1 `templates/`, 2 `review_criteria_sources/` |
-| **total** | **181** | every hash pinned in `vendor-manifest.json` |
+| `vendor/academic-paper/` | 63 | SKILL.md, 12 `agents/`, 29 `references/`, 11 `templates/`, 10 `examples/`; the only non-Markdown file is `templates/latex_article_template.tex` (4,844 B) |
+| `vendor/shared/` (not a skill) | 110 | 18 root files, 71 `contracts/`, 16 `references/`, 1 `agents/`, 1 `templates/`, 1 `policy_data/`, 2 `review_criteria_sources/` |
+| **total** | **254** | every hash pinned in `vendor-manifest.json` (144 skill files + 110 shared) |
 
 File-by-file sizes for the reviewer tree are in `docs/UPSTREAM_INVENTORY.md`;
 the `deep-research` tree is inventoried by `vendor-manifest.json` (one SHA-256
@@ -99,6 +102,19 @@ it is served as a prompt-only skill on the session's own `web_search` /
 bounded by what the host provides, and there is no review state, no panel and
 no slash command behind it.
 
+`academic-paper` is upstream's 12-agent writing pipeline (11 modes, version
+**3.3.1**, SKILL.md `last_updated` 2026-08-15, **63 files**, SKILL.md 65,335
+repository bytes). It is the first vendored skill that *instructs the model to
+write files* — 85 writing verbs and 46 drafting verbs in its own body, against 24
+/ 4 for the reviewer and 18 / 4 for `deep-research` — so it is the one entry in
+`src/write-policy.ts`'s `FILE_PRODUCING_SKILLS` table. Policy A is **prepended**
+to its served body (549 bytes) so the rule is read before the drafting
+instructions, and mirrored in metadata as `writePolicy: 'new-paths-only'` plus
+`writePolicyEnforced: false`; those two metadata keys appear on this skill only.
+The vendored tree is also the only one holding a non-Markdown file,
+`templates/latex_article_template.tex`, pinned byte-for-byte from the upstream git
+object (4,844 B; the CRLF worktree copy would have been 5,043 B and wrong).
+
 **Served-body port notice (commit 4c84ffb).** A served skill is upstream text,
 and upstream text can name a file that lives in another ARS skill this port does
 not vendor. The provider therefore scans each served skill's *own* tree at load
@@ -111,22 +127,32 @@ vendored files are never edited; the notice is runtime text only. The full list
 always travels in `metadata.unavailableReferences` (+
 `unavailableReferenceCount`).
 
-Today exactly one own-tree miss exists:
-`deep-research/agents/bibliography_agent.md` →
-`academic-pipeline/references/literature_corpus_consumers.md`. The reviewer's own
-tree is clean, so the reviewer never receives a notice.
+Today two own-tree misses exist, one per prompt-only skill, and they name the
+same file: `deep-research/agents/bibliography_agent.md` and
+`academic-paper/agents/literature_strategist_agent.md` both point at
+`academic-pipeline/references/literature_corpus_consumers.md`. Per-skill
+`metadata.unavailableReferenceCount` today: reviewer **0**, `deep-research`
+**1**, `academic-paper` **1** — the reviewer's own tree is clean, so the reviewer
+never receives a notice.
 
 **Scope 2 — the shared closure — is metadata-only.** `vendor/shared/` is reached
-identically by every served skill and contains **14 distinct references** (22
-reference sites) to unvendored upstream areas (3 `academic-paper/`, 4
-`academic-pipeline/`, 5 `docs/design/`, 1 `examples/`, 1 `scripts/adapters/`). A
-body notice derived from that scope would fire on both skills and would change
-the reviewer's served bytes, so those misses are reported in
+identically by every served skill and contains **11 distinct references** (16
+reference sites) to unvendored upstream areas (4 `academic-pipeline/`, 5
+`docs/design/`, 1 `examples/`, 1 `scripts/adapters/`). A body notice derived from
+that scope would fire on every skill and would change the reviewer's served
+bytes, so those misses are reported in
 `metadata.unavailableSharedReferences` (+ `unavailableSharedReferenceCount`) and
-**not** appended to any body. Consequence, stated plainly:
-`deep-research` inherits upstream cross-skill references this port cannot
-satisfy; a later round either vendors those skills or extends the notice to the
-shared scope deliberately.
+**not** appended to any body.
+
+The count moved when `academic-paper` was vendored: **14 distinct targets before,
+11 now**, because the three targets that used to dangle under `academic-paper/`
+now resolve inside the vendored tree. That drop is the evidence that the list is
+*computed* — a hand-maintained list would still say 14.
+
+Consequence, stated plainly: `deep-research` and `academic-paper` inherit
+upstream cross-skill references this port cannot satisfy; a later round either
+vendors `academic-pipeline` or extends the notice to the shared scope
+deliberately.
 
 **`vendor-manifest.json` schemaVersion 2** is the single source of truth for
 what is vendored and what the pins are:
@@ -139,18 +165,19 @@ what is vendored and what the pins are:
                 "license": "CC BY-NC 4.0" },   // repository-level pin
   "vendored": {
     "skillDir": "vendor",
-    "skills": ["academic-paper-reviewer", "deep-research"],
-    "skillFileCounts": { "academic-paper-reviewer": 28, "deep-research": 53 },
-    "skillFileCount": 81,
-    "sharedFileCount": 100,
-    "sharedFileCounts": { "byScan": 98, "byRegistryReceipt": 2 },
-    "totalFileCount": 181
+    "skills": ["academic-paper-reviewer", "deep-research", "academic-paper"],
+    "skillFileCounts": { "academic-paper-reviewer": 28, "deep-research": 53,
+                         "academic-paper": 63 },
+    "skillFileCount": 144,
+    "sharedFileCount": 110,
+    "sharedFileCounts": { "byScan": 108, "byRegistryReceipt": 2 },
+    "totalFileCount": 254
   },
-  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … ],
-  "sharedFiles": [ "shared/…", … 100 entries ],
+  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … 3 entries ],
+  "sharedFiles": [ "shared/…", … 110 entries ],
   "sharedViaRegistryReceipts": [ { "file": "shared/review_criteria_sources/…",
                                    "criterionIds": [ … ] }, … ],
-  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 181 }
+  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 254 }
 }
 ```
 
@@ -213,8 +240,10 @@ spans, bare prose), expands a directory reference to the files it holds
 file inside `shared/` name siblings relative to itself and to `shared/`, and
 iterates to a fixpoint. A target that does not exist upstream is collected and
 the run throws with the full list **before anything is written**. Result today:
-98 files by scan + 2 by registry receipt = 100 under `vendor/shared/`; the table
-above records the reviewer's share of that closure. (Upstream `shared/` has 155
+108 files by scan + 2 by registry receipt = 110 under `vendor/shared/`; the table
+above records the reviewer's share of that closure. The closure grew by 10 when
+`academic-paper` joined (98 → 108 by scan), and 13 of the 110 are reachable
+through that skill alone. (Upstream `shared/` has 155
 files; most belong to other skills and are NOT vendored.)
 
 ### 1.4 `scripts/` dependency map (advisory checkers)
@@ -240,15 +269,21 @@ mechanisms (§2) and need not be ported in Phase 1.
 
 ### 1.5 What must NOT be vendored
 
-Skills this port does not serve (`academic-paper/`, `academic-pipeline/`,
-`sr-screener/`), and the upstream repository's non-skill trees `commands/`,
-`evals/`, `tests/`, `audits/`, `.github/`, `.claude/`.
+Skills this port does not serve (`academic-pipeline/`, `sr-screener/`), and the
+upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
+`audits/`, `.github/`, `.claude/`.
 
 `deep-research/` **is** vendored (§1.2) — the reviewer's Phase 2.5 coaching
 references `deep-research/agents/socratic_mentor_agent.md` for its L5 question
 texts, and that file ships inside the fully vendored tree, so the reference
 resolves. Phase 2.5 coaching itself remains unimplemented: the reference
 resolving is not the feature.
+
+`academic-paper/` **is** vendored too (§1.2), as of 0.3.0. Nothing in the plugin
+calls into it: it is served as a prompt-only skill, its own references resolve
+inside the vendored tree, and the one place this port had to touch its served
+output is policy A, which is prepended text plus metadata — not an edit to the
+vendored files.
 
 ---
 
@@ -388,9 +423,9 @@ This table is authoritative and mirrors `src/tools.ts`: every row is one
 `academic_review_create`, `academic_review_status`, `academic_review_confirm`,
 `academic_review_submit`, `academic_review_report` — five tools, no more.
 
-The second served skill does not touch this surface: `deep-research` registers
-no tool (§1.2), so the tool list below is still complete and its arguments,
-results and error codes are unchanged by 0.2.0.
+The two prompt-only skills do not touch this surface: neither `deep-research`
+nor `academic-paper` registers a tool (§1.2), so the tool list below is still
+complete and its arguments, results and error codes are unchanged by 0.3.0.
 
 | Tool | Args | Behavior |
 |---|---|---|
@@ -492,6 +527,10 @@ prompt or upstream instruction can relax it:
   (no overwrite, no append, no "move it out of the way");
 - `deep-research` has no write tool: anything a run produces must go to a new
   path, and its inputs are read-only;
+- `academic-paper` writes with the host's file tools, which this plugin never
+  sees: for that skill the rule travels as the prepended policy block plus
+  `writePolicy` / `writePolicyEnforced: false` in metadata, and the model is
+  told to treat every output as a new path;
 - manuscript drift is reported (`paper_changed`), never repaired: the plugin
   does not restore or rewrite the file, it asks for a new review.
 
@@ -502,7 +541,12 @@ here: a skill body is prompt text, the model writes with the host's file tools,
 and this plugin never sees those calls. So for a skill that instructs writing
 (`academic-paper`) the rule travels as a block prepended to the served body plus
 `metadata.writePolicy = 'new-paths-only'` and `metadata.writePolicyEnforced =
-false`. Instruction with an audit trail, never an interlock.
+false`. Instruction with an audit trail, never an interlock. The block is
+prepended, not appended, so it is the first thing the model reads in a writing
+task. The table itself (`src/write-policy.ts`) is checked in both directions —
+a vendored skill that starts instructing writes must be listed, and a listed skill
+that stops matching fails the suite — so the single entry (`academic-paper`)
+cannot rot into a rubber stamp.
 
 1. **Input formats**: only `.md`, `.tex`, `.txt`. The adapter performs no PDF
    parsing or OCR — a PDF input is rejected at `create` with instructions to
