@@ -91,12 +91,12 @@ file-producing skill table by **prose drafting**, and policy A travels with it.
 scoping and rapid reviews (8 modes, **25 files**: six Python scripts under
 `scripts/`, two `.js` workflow templates and one `.json` template under
 `templates/`, one example `.json` under `examples/`, and its `SKILL.md`, 33,843
-bytes). It is the second skill that produces files, by a **different mechanism**:
-its body tells the model to run its own bundled scripts with an output argument, so
-it qualifies by **bundled-script execution**, not by drafting vocabulary. It does
-not qualify the other way, and that is measurable: the counts are writing verbs 24
-and drafting verbs 3, against thresholds of 40 and 20, so prose drafting never
-fires for it.
+repository bytes). It is the second skill that produces files, by a **different
+mechanism**: its body tells the model to run its own bundled scripts with an output
+argument, so it qualifies by **bundled-script execution**, not by drafting
+vocabulary. It does not qualify the other way, and that is measurable: `sr-screener`
+carries 24 writing verbs and 3 drafting verbs, both under the thresholds of 40 and
+20, so prose drafting never fires for it.
 
 **Two skills produce files, by two different mechanisms.** `academic-paper`
 drafts documents; `sr-screener` writes by running its own scripts. Both carry the
