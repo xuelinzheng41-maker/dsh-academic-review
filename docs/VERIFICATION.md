@@ -416,3 +416,9 @@ All with the auth cookie unless noted:
 | typecheck / test (46/46) / build green | **PASS** (§10) |
 
 Both t4 findings are CLOSED. No new findings. PASS.
+
+## 16. Vendor pins describe the repository bytes, not this checkout
+
+`vendor-manifest.json` records the SHA-256 of the bytes the **upstream repository stores** at the pinned commit, not the bytes a checkout happens to place on disk. The difference is `core.autocrlf`: on Windows it is `true` by default (`C:/Program Files/Git/etc/gitconfig`), so git rewrites the LF blobs to CRLF in the working tree. Hashing a worktree therefore pins this machine's checkout - the first version of this port shipped exactly that, and every vendored file reported digest drift on Linux while passing on Windows.
+
+`scripts/vendor-upstream.mjs` now reads every file with `git cat-file blob <commit>:<path>`, refuses a checkout whose HEAD is not the pinned commit, refuses a worktree copy that differs from the commit beyond line endings, and `.gitattributes` pins `vendor/**` to `-text` so git never converts the vendored tree again. To compare the pins with upstream independently, hash the repository blob rather than a checked-out file: `git -C <upstream> cat-file blob HEAD:<path> | sha256sum`.

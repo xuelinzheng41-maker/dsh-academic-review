@@ -15,10 +15,12 @@
  * - Nothing is edited after copying: no BOM stripping, no line-ending
  *   normalization, no frontmatter rewriting.
  */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const vendorRoot = join(repoRoot, 'vendor')
@@ -94,17 +96,83 @@ async function listFiles(root, base = root) {
   return out.sort()
 }
 
-async function hashTree(root) {
-  const files = await listFiles(root)
-  const hashes = {}
-  for (const file of files) hashes[file] = sha256(await readFile(join(root, file)))
-  return hashes
+/** Bytes exactly as the upstream REPOSITORY stores them, never a worktree copy. */
+function repoBytes(upstreamRoot, relPath, commit) {
+  try {
+    return execFileSync('git', ['-C', upstreamRoot, 'cat-file', 'blob', commit + ':' + relPath], { maxBuffer: 1 << 27 })
+  } catch (error) {
+    throw new Error('cannot read ' + relPath + ' at ' + commit + ' from ' + upstreamRoot + ': ' + (error?.message || error))
+  }
+}
+
+/** The skill tree as committed upstream, not as this machine checked it out. */
+function skillFileList(upstreamRoot, commit) {
+  const listing = execFileSync(
+    'git',
+    ['-C', upstreamRoot, 'ls-tree', '-r', '--name-only', commit, '--', SKILL_DIR],
+    { encoding: 'utf8', maxBuffer: 1 << 27 },
+  )
+  return listing.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+}
+
+function resolveUpstreamCommit(upstreamRoot) {
+  let head
+  try {
+    head = execFileSync('git', ['-C', upstreamRoot, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 20,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim()
+  } catch (error) {
+    throw new Error(
+      upstreamRoot +
+        ' is not a git checkout, so the repository bytes cannot be recovered from it. ' +
+        'Vendoring a plain directory would copy whatever the worktree holds (core.autocrlf rewrites ' +
+        'line endings on checkout) and the pins would describe this machine instead of upstream. ' +
+        'Clone the upstream repository and check out the pinned commit.',
+    )
+  }
+  if (head !== UPSTREAM.commit) {
+    throw new Error(
+      'upstream HEAD is ' + head + ' but UPSTREAM.commit is ' + UPSTREAM.commit + '; check out the pinned commit before vendoring',
+    )
+  }
+  return head
+}
+
+/** Folding CRLF to LF, used only to recognise the git checkout filter. */
+function foldCrlf(buffer) {
+  return Buffer.from(buffer.toString('binary').replace(/\r\n/g, '\n'), 'binary')
+}
+
+/**
+ * Refuse to vendor a file whose worktree copy disagrees with the commit.
+ *
+ * A CRLF/LF difference is exactly what core.autocrlf produces on checkout, and
+ * it is why the repository bytes are read with git instead of from disk. Anything
+ * else means the checkout was edited, and pinning it would silently vendor
+ * something upstream never published.
+ */
+function assertWorktreeClean(upstreamRoot, relPath, bytes) {
+  let onDisk
+  try {
+    onDisk = readFileSync(join(upstreamRoot, relPath))
+  } catch {
+    return { filtered: false }
+  }
+  if (onDisk.equals(bytes)) return { filtered: false }
+  if (foldCrlf(onDisk).equals(bytes)) return { filtered: true }
+  throw new Error(
+    'the worktree copy of ' + relPath + ' differs from the commit beyond line endings; commit or discard the local edits first',
+  )
 }
 
 function parseArgs(argv) {
   let upstream
   let check = false
   for (let i = 0; i < argv.length; i += 1) {
+    // 'pnpm run <script> -- ...' forwards the separator itself on pnpm 11.
+    if (argv[i] === '--') continue
     if (argv[i] === '--upstream') upstream = argv[++i]
     else if (argv[i] === '--check') check = true
     else throw new Error('unknown argument: ' + argv[i])
@@ -112,9 +180,7 @@ function parseArgs(argv) {
   return { upstream, check }
 }
 
-const { upstream, check } = parseArgs(process.argv.slice(2))
-
-if (check) {
+async function verify() {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   let bad = 0
   for (const [file, expected] of Object.entries(manifest.files)) {
@@ -137,42 +203,68 @@ if (check) {
   }
   if (bad > 0) {
     console.error('verify-vendor: ' + bad + ' problem(s)')
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
   console.log('verify-vendor: ' + Object.keys(manifest.files).length + ' files byte-identical to vendor-manifest.json')
-  process.exit(0)
 }
 
-if (upstream === undefined) {
-  console.error('usage: node scripts/vendor-upstream.mjs --upstream <ARS checkout> [--check]')
-  process.exit(2)
+async function vendor(upstream) {
+  if (upstream === undefined) {
+    console.error('usage: node scripts/vendor-upstream.mjs --upstream <ARS checkout> [--check]')
+    process.exitCode = 2
+    return
+  }
+  const upstreamRoot = resolve(upstream)
+  const commit = resolveUpstreamCommit(upstreamRoot)
+  const entries = [...skillFileList(upstreamRoot, commit), ...SHARED_FILES].sort()
+
+  const files = {}
+  const filtered = []
+  const bodies = []
+  for (const relPath of entries) {
+    const bytes = repoBytes(upstreamRoot, relPath, commit)
+    const { filtered: wasFiltered } = assertWorktreeClean(upstreamRoot, relPath, bytes)
+    if (wasFiltered) filtered.push(relPath)
+    bodies.push([relPath, bytes])
+    files[relPath] = sha256(bytes)
+  }
+
+  await rm(vendorRoot, { recursive: true, force: true })
+  await mkdir(vendorRoot, { recursive: true })
+  for (const [relPath, bytes] of bodies) {
+    const target = join(vendorRoot, relPath)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, bytes)
+  }
+
+  const skillFiles = entries.filter(relPath => relPath.startsWith(SKILL_DIR + '/'))
+  const manifest = {
+    schemaVersion: 1,
+    upstream: UPSTREAM,
+    vendored: {
+      skillDir: 'vendor/' + SKILL_DIR,
+      skillFileCount: skillFiles.length,
+      sharedFileCount: SHARED_FILES.length,
+      totalFileCount: entries.length,
+    },
+    sharedFiles: SHARED_FILES,
+    files,
+  }
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+  console.log(
+    'vendored ' + skillFiles.length + ' skill files + ' + SHARED_FILES.length + ' shared files from ' + commit + ' (repository bytes)' +
+      (filtered.length > 0 ? '; ' + filtered.length + ' worktree cop' + (filtered.length === 1 ? 'y' : 'ies') + ' had filtered line endings and were read from git' : ''),
+  )
 }
 
-const upstreamRoot = resolve(upstream)
-await stat(join(upstreamRoot, SKILL_DIR, 'SKILL.md'))
-
-await rm(vendorRoot, { recursive: true, force: true })
-await mkdir(vendorRoot, { recursive: true })
-await cp(join(upstreamRoot, SKILL_DIR), join(vendorRoot, SKILL_DIR), { recursive: true, dereference: false })
-for (const file of SHARED_FILES) {
-  const target = join(vendorRoot, file)
-  await mkdir(dirname(target), { recursive: true })
-  await cp(join(upstreamRoot, file), target)
+async function main(argv) {
+  const { upstream, check } = parseArgs(argv)
+  if (check) return verify()
+  return vendor(upstream)
 }
 
-const files = await hashTree(vendorRoot)
-const skillFiles = await hashTree(join(vendorRoot, SKILL_DIR))
-const manifest = {
-  schemaVersion: 1,
-  upstream: UPSTREAM,
-  vendored: {
-    skillDir: 'vendor/' + SKILL_DIR,
-    skillFileCount: Object.keys(skillFiles).length,
-    sharedFileCount: SHARED_FILES.length,
-    totalFileCount: Object.keys(files).length,
-  },
-  sharedFiles: SHARED_FILES,
-  files,
-}
-await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-console.log('vendored ' + Object.keys(skillFiles).length + ' skill files + ' + SHARED_FILES.length + ' shared files into vendor/')
+export { SHARED_FILES, SKILL_DIR, foldCrlf, repoBytes, skillFileList, resolveUpstreamCommit, assertWorktreeClean, sha256, main }
+
+const invokedDirectly = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+if (invokedDirectly) await main(process.argv.slice(2))
