@@ -43,6 +43,8 @@
  *
  * @module dsh-academic-review/references
  */
+/** Inline code span, used to tell a syntax example from a real link. */
+export declare const INLINE_CODE: RegExp;
 /** Markdown link with an inline destination and optional title. */
 export declare const MARKDOWN_LINK: RegExp;
 /** Bare shared/... path, not part of a longer path or URL. */
