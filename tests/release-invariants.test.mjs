@@ -356,9 +356,69 @@ test('docs/UPSTREAM_INVENTORY.md is recomputed: header counts and every quoted b
   })
 
   assert.deepEqual(problems, [], 'the inventory disagrees with the tree:\n  ' + problems.join('\n  '))
-  console.log('# inventory: ' + String(rowsBySection.length) + ' claimed tree(s) recount to their rows and their trees, '
-    + String(rowsBySection.reduce((total, section) => total + section.rows.length, 0)) + ' byte row(s) and '
-    + String(sharedChecked) + ' shared/ size(s) match stat()')
+
+  const measured = rowsBySection.reduce((total, section) => total + section.rows.length, 0) + sharedChecked
+
+  // The document quotes sizes it cannot prove from this package: the upstream-only scripts
+  // are not vendored, so nothing here can stat() them. That is legitimate - but only if the
+  // file says so and says how to re-derive them, and only if its own arithmetic holds. The
+  // basis paragraph is therefore checked like any other claim: a paragraph that states the
+  // method and then miscounts the rows it covers is worse than no paragraph, because it is
+  // the thing a future editor will trust instead of measuring.
+  let basisStart = -1
+  lines.forEach((line, index) => {
+    if (basisStart === -1 && /\*\*What the numbers in this file are/u.test(line)) basisStart = index
+  })
+  assert.notEqual(basisStart, -1,
+    doc + ' must state what its numbers ARE (the basis paragraph); a table of byte sizes with no stated'
+    + ' basis is how the previous edition drifted by one byte per line')
+
+  const basis = []
+  for (let index = basisStart; index < lines.length; index += 1) {
+    if (lines[index].trim() === '') break
+    basis.push(lines[index])
+  }
+  const stated = basis.join(' ').replace(/\s+/gu, ' ')
+  assert.match(stated, /repository byte count/u,
+    doc + ' basis must say the numbers are repository bytes, not worktree bytes')
+  assert.match(stated, /git cat-file -s/u,
+    doc + ' basis must give the re-derivation (git cat-file -s <commit>:<path>) so a reader without the'
+    + ' vendored file can check a row')
+  assert.match(stated, /core\.autocrlf/u,
+    doc + ' basis must name the failure mode that produced the stale edition, not only the unit')
+
+  const counted = /(\d+) rows[^.]*?the (\d+) vendored files[^.]*?the (\d+) upstream-only scripts/u.exec(stated)
+  assert.notEqual(counted, null,
+    doc + ' basis must count the rows it covers (N rows, the V vendored files and the S upstream-only scripts)'
+    + ' so the split between measured and documented is checkable')
+
+  const statedTotal = Number(counted[1])
+  const statedVendored = Number(counted[2])
+  const statedScripts = Number(counted[3])
+  const scriptSizes = []
+  lines.forEach((line) => {
+    for (const match of line.matchAll(/\b([a-z0-9_]+\.py)\s+\(([\d,]+)\)/gu)) {
+      scriptSizes.push({ name: match[1], bytes: Number(match[2].replace(/,/gu, '')) })
+    }
+  })
+
+  assert.equal(statedVendored, measured,
+    doc + ' basis says it covers ' + String(statedVendored) + ' vendored files, but this file holds '
+    + String(measured) + ' measured row(s) ('
+    + String(rowsBySection.reduce((total, section) => total + section.rows.length, 0)) + ' table + '
+    + String(sharedChecked) + ' shared/)')
+  assert.equal(statedScripts, scriptSizes.length,
+    doc + ' basis says ' + String(statedScripts) + ' upstream-only scripts, but the file quotes '
+    + String(scriptSizes.length) + ' script size(s)')
+  assert.equal(statedTotal, statedVendored + statedScripts,
+    doc + ' basis says ' + String(statedTotal) + ' rows but splits them into '
+    + String(statedVendored) + ' + ' + String(statedScripts))
+
+  console.log('# inventory: ' + String(rowsBySection.length) + ' claimed tree(s) recount to their rows and their trees; '
+    + String(measured) + ' of ' + String(statedTotal) + ' byte rows measured here ('
+    + String(rowsBySection.reduce((total, section) => total + section.rows.length, 0)) + ' table + '
+    + String(sharedChecked) + ' shared/) match stat(); the ' + String(statedScripts)
+    + ' upstream-only script sizes are documented from the object store and are NOT measured by this suite')
 })
 
 /** stat().size, or undefined when the path is not there - used inside a forEach. */
