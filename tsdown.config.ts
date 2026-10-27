@@ -13,7 +13,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, resolve as resolvePath, sep } from 'node:path'
+import { basename, dirname, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { transform } from 'lightningcss'
 import { defineConfig, type UserConfig } from 'tsdown'
@@ -56,6 +56,42 @@ const PLUGIN_ID: string = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
 ).name
 
+/**
+ * Package root, absolute and trailing-separated: the anchor every emitted
+ * module id is made relative to.
+ */
+const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
+
+/**
+ * Clone-independent identity for one asset file.
+ *
+ * An absolute path may never reach the bundle. lightningcss hashes its
+ * `filename` into the CSS-modules class prefix (`[hash]_[local]`) and rolldown
+ * prints module ids into `//#region` comments, so either one would bake this
+ * machine's clone directory into committed output and make `lib/`
+ * irreproducible off this machine. Everything downstream therefore sees the
+ * repo-relative POSIX form; only file I/O uses the absolute path.
+ *
+ * Forward slashes are deliberate: a Windows build and a POSIX build of the
+ * same source then hash and print identically.
+ *
+ * @param absolutePath - resolved path inside (or below) the package root.
+ * @returns repo-relative POSIX path, e.g. `src/client/AcademicReviewPanel.module.css`.
+ */
+function stableAssetId(absolutePath: string): string {
+  return relative(PACKAGE_ROOT, absolutePath).split(sep).join('/')
+}
+
+/**
+ * Resolve a stable asset id back to the absolute path used for reading and
+ * watching. Identity stays relative; I/O stays absolute.
+ * @param stableId - repo-relative POSIX path.
+ * @returns absolute path.
+ */
+function assetPathOf(stableId: string): string {
+  return resolvePath(PACKAGE_ROOT, stableId)
+}
+
 const config: UserConfig = {
   name: `${PLUGIN_ID}/client`,
   entry: { client: 'lib/client/index.js' },
@@ -90,16 +126,23 @@ const config: UserConfig = {
     name: 'dsh-css-modules-inline',
     resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.module.css')) return null
-      const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-      return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+      const abs = resolvePath(importer !== undefined ? sourceAssetPath(source, importer) : source)
+      // The virtual id is the module identity rolldown caches on and prints,
+      // so it must be the clone-independent form, never the absolute path.
+      return CSS_VIRTUAL_PREFIX + stableAssetId(abs) + CSS_VIRTUAL_SUFFIX
     },
     async load(virtualId: string) {
       if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-      const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      const stableId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      const fileId = assetPathOf(stableId)
       this.addWatchFile(fileId)
       const source = readFileSync(fileId)
       const { code, exports: cssExports } = transform({
-        filename: fileId,
+        // lightningcss hashes this string into the class prefix, so it must be
+        // the repo-relative id: 1.33.0 has no content-hash placeholder, its
+        // `[hash]` is a hash of this filename alone (verified: identical
+        // content under a different filename yields a different prefix).
+        filename: stableId,
         code: source,
         cssModules: { pattern: '[hash]_[local]' },
         minify: true,
