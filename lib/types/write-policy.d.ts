@@ -225,13 +225,20 @@ export declare function fileProducingEntry(skillName: string): FileProducingSkil
  * Render the block prepended to a file-producing skill's served body.
  * Empty string for any other skill, so its body stays byte-identical.
  *
- * The wording is deliberately shape-agnostic: it speaks of files, artefacts and
- * steps, never of drafts or manuscripts, so it is equally true of a skill that
- * drafts prose (academic-paper) and one that produces its files by running
- * bundled scripts (sr-screener). Its bytes are pinned by the suite - widening it
- * for one shape would change the payload of the other - and
- * tests/write-policy.test.mjs asserts that it carries no drafting-only noun and
- * keeps the cannot-be-enforced sentence.
+ * One block, both shapes. It speaks of files, artefacts and steps rather than
+ * drafts, so it is true for a skill that drafts prose (academic-paper) and for one
+ * that produces files by running bundled scripts (sr-screener) - and it names the
+ * script shape explicitly instead of leaving the model to reinterpret "artefact"
+ * per command: for the step "run build_outputs.py --out Screening_TA", the risk is
+ * not whether an output is an artefact but WHICH paths the command writes, so the
+ * bullet names its --out target, work dir, log and workbook. The block stays one
+ * block (never one per shape) and its bytes are identical for every skill that
+ * carries it.
+ *
+ * tests/write-policy.test.mjs asserts the property, not the prose: the block must
+ * keep the cannot-be-enforced sentence, must require the bundled-script sentence
+ * (with a mutation proving the check fails when that sentence is removed), and
+ * must not acquire drafting-only vocabulary.
  * @param skillName - served skill name.
  * @returns the block (with a trailing blank line), or ''.
  */

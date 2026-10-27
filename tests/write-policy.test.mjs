@@ -247,32 +247,73 @@ test('the script rule refuses every shape that is not an instruction to run a wr
   assert.equal(runsBundledScripts('# nothing\n', writes.skillDir), false)
 })
 
-test('the block is truthful for both shapes, prepended, and identical for both', async () => {
+/**
+ * The properties the served block must always have. Kept as a predicate rather
+ * than inline asserts so the mutation tests below can prove it actually rejects
+ * a block that has lost one of them.
+ */
+function blockProblems(block) {
+  const problems = []
+  if (!block.startsWith(WRITE_POLICY_BEGIN)) problems.push('missing opening marker')
+  if (!block.includes(WRITE_POLICY_END)) problems.push('missing closing marker')
+  const rules = block.slice(WRITE_POLICY_BEGIN.length, block.indexOf(WRITE_POLICY_END))
+  // The honesty sentence, word for word: it must never be softened or dropped.
+  if (!/cannot enforce/iu.test(rules)) problems.push('lost the cannot-enforce sentence')
+  if (!/never sees your file tools/iu.test(rules)) problems.push('lost the never-sees-your-file-tools clause')
+  if (!/not upstream text/iu.test(rules)) problems.push('no longer says it is not upstream text')
+  // The shape-agnostic rule.
+  if (!/existing file/iu.test(rules)) problems.push('lost the never-overwrite rule')
+  if (!/new path/iu.test(rules)) problems.push('lost the new-path rule')
+  if (!/tell the user/iu.test(rules)) problems.push('lost the tell-the-user rule')
+  // The bundled-script sentence: for a step like 'run build_outputs.py --out X' the
+  // risk is WHICH paths the command writes, so the block has to name them.
+  if (!/bundled script/iu.test(rules)) problems.push('lost the bundled-script sentence')
+  if (!/--out/iu.test(rules)) problems.push('the bundled-script sentence no longer names an output argument')
+  if (!/work dir/iu.test(rules)) problems.push('the bundled-script sentence no longer names the work dir')
+  if (!/(log|workbook)/iu.test(rules)) problems.push('the bundled-script sentence no longer names a log or workbook')
+  // No drafting-only vocabulary: the block serves a script-running skill too.
+  for (const draftingOnly of ['draft', 'manuscript', 'chapter', 'prose', 'section']) {
+    if (rules.toLowerCase().includes(draftingOnly)) problems.push('drafting-only vocabulary: ' + draftingOnly)
+  }
+  const nonEmpty = block.split('\n').filter(line => line.length > 0)
+  if (nonEmpty.length > 14) problems.push('too long: ' + String(nonEmpty.length) + ' non-empty lines')
+  return problems
+}
+
+test('the block is truthful for both shapes, names the script shape, and is identical for both', async () => {
   const block = renderWritePolicyBlock(PAPER_SKILL_NAME)
   assert.equal(block, renderWritePolicyBlock(SCREENER_SKILL_NAME), 'one block, not one per shape')
+  assert.deepEqual(blockProblems(block), [], 'the served block is malformed: ' + blockProblems(block).join('; '))
 
+  // It stays short enough to be a header, not a second document.
   const blockLines = block.split('\n')
   const nonEmpty = blockLines.filter(line => line.length > 0)
-  assert.ok(nonEmpty.length <= 12, 'block has ' + String(nonEmpty.length) + ' non-empty lines')
+  assert.ok(nonEmpty.length <= 14, 'block has ' + String(nonEmpty.length) + ' non-empty lines')
   assert.equal(blockLines[0], WRITE_POLICY_BEGIN)
   assert.equal(blockLines[blockLines.length - 3], WRITE_POLICY_END)
 
-  // It must not drift into drafting-only language, or it stops being true for a
-  // skill that produces files by running a script.
-  const rules = block.slice(WRITE_POLICY_BEGIN.length, block.indexOf(WRITE_POLICY_END))
-  for (const draftingOnly of ['draft', 'manuscript', 'chapter', 'prose', 'section']) {
-    assert.equal(rules.toLowerCase().includes(draftingOnly), false,
-      'the block must not use drafting-only vocabulary (' + draftingOnly + '): it has to be true for a script-running skill too')
-  }
-  // It is phrased over files, artefacts and steps - which is what both shapes share.
-  assert.match(rules, /existing file/iu)
-  assert.match(rules, /new path/iu)
-  assert.match(rules, /artefact/iu)
-  assert.match(rules, /step/iu)
-  // The honesty sentence stays, word for word.
-  assert.match(rules, /cannot enforce/iu)
-  assert.match(rules, /never sees your file tools/iu)
-  assert.match(rules, /not upstream text/iu)
+  // The script rule sits directly after the artefact rule, in that order, because
+  // it narrows it for the command the model is about to run.
+  const artefactAt = block.indexOf('Every artefact you produce')
+  const scriptAt = block.indexOf('Every file a bundled script writes')
+  assert.ok(artefactAt > 0 && scriptAt > artefactAt, 'the bundled-script rule must follow the artefact rule')
+  assert.ok(block.indexOf('choose a new name') > scriptAt, 'the choose-a-new-name rule comes after both')
+
+  // MUTATION 1: drop the script sentence -> the guard must reject it.
+  const withoutScript = blockLines.filter(line => !line.includes('bundled script') && !line.includes('log or workbook')).join('\n')
+  assert.notEqual(withoutScript, block, 'the mutation must actually change the block')
+  assert.equal(blockProblems(withoutScript).includes('lost the bundled-script sentence'), true,
+    'the guard must fail when the script sentence is removed')
+
+  // MUTATION 2: reintroduce drafting-only wording -> rejected.
+  const withDrafting = block.replace('Every artefact you produce', 'Every draft you produce')
+  assert.equal(blockProblems(withDrafting).some(problem => problem.includes('drafting-only vocabulary')), true,
+    'the guard must fail when the block drifts into drafting-only language')
+
+  // MUTATION 3: soften the honesty sentence -> rejected.
+  const softened = block.replace('the plugin cannot enforce', 'the plugin enforces')
+  assert.equal(blockProblems(softened).includes('lost the cannot-enforce sentence'), true,
+    'the guard must fail when the honesty sentence is softened')
 
   // Prepended for both skills, exactly once each, body verbatim after it.
   for (const skill of [PAPER_SKILL_NAME, SCREENER_SKILL_NAME]) {
@@ -338,12 +379,16 @@ test('served bytes: the three older payloads do not move, sr-screener gains the 
   // the rule is not allowed to move their bytes.
   assert.equal(bytes(reviewer.content), 47300, 'the reviewer served payload moved')
   assert.equal(bytes(research.content), 51632, 'the deep-research served payload moved')
-  assert.equal(bytes(paper.content), 64978, 'the academic-paper served payload moved')
+  assert.equal(bytes(paper.content), 65113, 'the academic-paper served payload moved')
   // sr-screener gains the head and, on this tree, no notice of its own.
-  assert.equal(bytes(block), 549)
+  assert.equal(bytes(block), 684)
   assert.equal(bytes(screenerNotice), 0)
-  assert.equal(bytes(screener.content), bytes(screenerBody) + bytes(block))
-  assert.equal(bytes(screener.content), 33077)
+  // One block, so both carriers gain the same bytes: their payload is exactly
+  // body + the same block + their own notice.
+  assert.equal(renderWritePolicyBlock(SCREENER_SKILL_NAME), block)
+  assert.equal(bytes(paper.content), bytes(paperBody) + bytes(block) + bytes(paperNotice))
+  assert.equal(bytes(screener.content), bytes(screenerBody) + bytes(block) + bytes(screenerNotice))
+  assert.equal(bytes(screener.content), 33212)
   assert.equal(screener.content.startsWith(block + screenerBody), true)
 })
 
