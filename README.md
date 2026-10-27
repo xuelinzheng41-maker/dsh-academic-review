@@ -110,14 +110,32 @@ silent fallback).
 
 ## Install
 
-Add the package to a DSH profile:
+Add the package to a DSH profile straight from this repository:
 
 ```bash
-dsh plugin --profile <profile> add <path to this package, or the published name>
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review
 ```
 
-The bundle patch `cordis.patch.yml` inserts one plugin row (`id: academic-review`,
-`name: dsh-academic-review`) configured with `stateDir: .academic-review`.
+A pinned tag or the release tarball works the same way:
+
+```bash
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.1.0
+dsh plugin --profile <profile> add ./dsh-academic-review-0.1.0.tgz
+```
+
+The build output (`lib/`) is committed on purpose, so a git install needs no
+build step. The bundle patch `cordis.patch.yml` inserts one plugin row
+(`id: academic-review`, `name: dsh-academic-review`) configured with
+`stateDir: .academic-review`.
+
+After installing, the session gains five `academic_review_*` tools and the
+`academic-paper-reviewer` skill (see `docs/PORT_SPEC.md`). A review writes to
+`<workspace>/.academic-review/<review_id>/`.
+
+> **License note:** the `LICENSE` file is the verbatim CC BY-NC 4.0 legalcode.
+> GitHub's license detector reports it as `NOASSERTION`/`Other` for that text,
+> so the sidebar may not show "CC BY-NC 4.0". The license is CC BY-NC 4.0 —
+> non-commercial — exactly as stated above and in `LICENSE`.
 
 ## Development
 
