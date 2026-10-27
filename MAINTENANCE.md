@@ -24,8 +24,10 @@
      pnpm verify:vendor`.
   5. If upstream changed prompts/agents/templates, reconcile
      `assets/prompts/` and the docs, and bump the plugin minor version.
-- **Non-goals**: upstream files that Phase 1 does not use (deep-research,
-  pipeline, scripts) are not vendored; revisit only when those phases start.
+- **Non-goals**: upstream areas this port does not serve (`academic-paper`,
+  `academic-pipeline`, `sr-screener`, the upstream pipeline scripts) are not
+  vendored; revisit only when those skills are added. `deep-research` **is**
+  vendored and served, prompt-only (no tool, no state, no panel).
 
 ## Named maintainer
 
@@ -39,7 +41,10 @@
 2. `pnpm typecheck && pnpm test && pnpm build` — all green.
 3. `LICENSE`, `THIRD_PARTY_NOTICES.md`, README attribution — pinned commit
    and version are current.
-4. `pnpm pack` — `files` includes `lib`, `vendor`, `vendor-manifest.json`,
-   `cordis.patch.yml`, `docs`, `assets`, `THIRD_PARTY_NOTICES.md`.
+4. `pnpm pack` — `files` in `package.json` is the contract: `lib`, `vendor`,
+   `vendor-manifest.json`, `cordis.patch.yml`, `LICENSE`,
+   `THIRD_PARTY_NOTICES.md`, `README.md`, `README.zh-CN.md`, `CHANGELOG.md`,
+   `docs`, `assets`. Every user-facing document ships in the tarball, and the
+   two READMEs ship together.
 5. Tag the release with the upstream commit it vendors, e.g.
    `v0.1.0+ars.1ec249d`.
