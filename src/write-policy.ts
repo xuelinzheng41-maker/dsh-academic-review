@@ -8,75 +8,89 @@
  * skill's own bundled scripts), and this plugin never sees any of those calls,
  * so policy A cannot be technically enforced: there is no interlock, no guard
  * rail, no refusal. What this module does is put the rule in front of the model
- * at the one moment it matters - as the first thing in the served body of a
- * skill that produces files - and mirror it in metadata (`writePolicy`,
- * `writePolicyEnforced: false` and the qualifying `writePolicyBasis`) so a caller
- * can inspect it without parsing prose. The guarantee is an instruction the model
- * is told to follow, not a constraint the runtime applies.
+ * at the one moment it matters - as the first thing in EVERY served body - and
+ * mirror it in metadata (`writePolicy`, `writePolicyEnforced: false`, and the
+ * `writePolicyBasis` where an instrument measured one) so a caller can inspect
+ * it without parsing prose. The guarantee is an instruction the model is told to
+ * follow, not a constraint the runtime applies.
  *
  * We also ship the skills' scripts verbatim and never execute or audit them:
  * nothing here runs a vendored program, and a served body is text.
  *
- * Why the rule has to be PREPENDED: the skills in the table below spend their
- * body telling the model what to draft, or which command to run. A rule read
- * after those instructions is a rule read after the decision to write has
- * already been made, so the block goes first.
+ * WHY EVERY SKILL, NOT JUST THE SKILLS WE CAN SHOW PRODUCE FILES
  *
- * HOW A SKILL QUALIFIES - TWO INSTRUMENTS, BECAUSE REALITY HAS TWO SHAPES
+ * The earlier design served this block only to skills that a detector proved
+ * produce files, and refused it to everything else. That was the wrong default,
+ * because it asked us to prove a negative about a prompt, and we cannot. The
+ * qa-gate adversarial pass found three shapes that all write and all scored as
+ * non-producers: a skill that writes with shell commands it does not ship
+ * (`mkdir -p exports && ls > out/inventory.md` - no interpreter, nothing
+ * resolving inside its own directory), a skill that writes through inline
+ * `python -c` (no .py token on the line), and prose that says "generate the
+ * deliverable" or "produce the artefact" (neither verb is in
+ * {@link WRITING_VERB}, so it scored nothing). Each of those shipped with no
+ * policy at all.
  *
- * Verb counting alone was the wrong instrument. It was built for a skill that
- * drafts prose, and it passed sr-screener - a skill that produces an Excel
- * log, PRISMA counts and a corpus handoff by telling the model to run its own
- * bundled Python - as "not file-producing", because that SKILL.md barely uses
- * the word "draft". So qualification is now the OR of two measured rules, and a
- * skill qualifies when EITHER holds:
+ * Worse, the both-directions table test could not see that: when the detector
+ * misses a skill, the detector and the table agree that it does not produce
+ * files, so the test passes. It enforces consistency with the rule, never
+ * correctness of the rule, and it is blind to a shared blind spot.
  *
- * 1. PROSE DRAFTING ({@link draftsDocuments}): the body instructs drafting
- *    repeatedly - writing verbs at or above {@link FILE_PRODUCING_MIN_WRITING_VERBS}
- *    AND drafting verbs at or above {@link FILE_PRODUCING_MIN_DRAFTING_VERBS}.
- *    Both must hold; see the note on the thresholds below.
- * 2. BUNDLED SCRIPT EXECUTION ({@link runsBundledScripts}): the body contains a
- *    command line that (a) starts with an interpreter, (b) names an executable
- *    file that this package actually ships inside THAT SKILL'S OWN directory,
- *    and (c) carries an argument through which the program is told to write
- *    something. All three on the same line, and (b) is checked against the disk,
- *    not against the text.
+ * The two failure directions are not symmetric. A block served to a skill that
+ * never writes costs a few lines of harmless instruction - qa-gate measured
+ * that such a skill suffers nothing. A file-producing skill served without the
+ * block loses the policy entirely, at exactly the moment it writes. So the
+ * serving rule is now UNCONDITIONAL: every served skill gets the block, and the
+ * rule cannot be fooled by a write shape nobody thought to enumerate.
  *
- * Why rule 2 cannot be satisfied by a skill that merely mentions python:
- * - mentioning "python" in prose has no interpreter-plus-script invocation, so
- *   (a) and (b) never both hold on one line;
- * - naming a script that does not resolve inside THAT SKILL'S OWN vendored
- *   directory fails (b), because the check is a location check against the disk,
- *   not an existence check against the repository. This is what keeps
- *   academic-paper-reviewer out, and the reason is location first: it instructs
- *   python3 scripts/audit_panel_claims.py, and that script lives upstream at the
- *   REPOSITORY ROOT (beside scripts/test_audit_panel_claims.py), not in the
- *   reviewer's skill directory - the reviewer's own tree ships no .py file at
- *   all. (This port also does not vendor the root scripts/ directory, so the
- *   invocation resolves to nothing here either, but the rule would refuse it even
- *   if we did vendor root scripts: the executable has to live where the skill can
- *   ship it.) The contrast that makes the rule legible is sr-screener's
- *   qualifying line - python $S/build_outputs.py --work sr_work --out
- *   Screening_TA --config screening_config.json - which carries the same
- *   interpreter and the same kind of output argument and gets the opposite
- *   verdict, decided purely by where the executable lives;
- * - running a shipped script with only read-side arguments (--inputs, --config,
- *   --from) fails (c), because an invocation is only file-producing when it is
- *   told where to put an output;
- * - shipping scripts and never telling the model to run them fails (a): a
- *   shipped helper the model is not instructed to execute is not an instruction
- *   to write, so the skill does not qualify. Pinned by tests/write-policy.test.mjs.
+ * Why the rule has to be PREPENDED: every served body spends its text telling
+ * the model what to draft, or which command to run. A rule read after those
+ * instructions is a rule read after the decision to write has already been made,
+ * so the block goes first.
  *
- * WHY A TABLE, AND WHY IT IS CHECKED IN BOTH DIRECTIONS
+ * WHAT THE DETECTOR AND THE TABLE ARE NOW: DOCUMENTATION, NOT A GATE
  *
- * The table is explicit so a reader can see exactly which skills carry the
- * policy and why. A rule computed from the skill's own text keeps it honest:
- * tests/write-policy.test.mjs fails when a vendored skill that qualifies is
- * missing from the table, and it also fails when the table lists a skill that
- * does not qualify. So the table cannot rot in either direction - it can only be
- * wrong out loud.
+ * The detector below survives because it answers a question worth answering -
+ * which vendored skills are DEMONSTRATED file producers, and by which
+ * instrument - and a reader deserves that answer next to the rule. It decides
+ * nothing about serving: no skill is denied the block for being absent from the
+ * table, and {@link renderWritePolicyBlock} does not consult it. Two instruments
+ * are measured, because reality has two shapes:
  *
- * @module dsh-academic-review/write-policy
+ * 1. PROSE DRAFTING ({@link draftsDocuments}): writing verbs at or above
+ *    {@link FILE_PRODUCING_MIN_WRITING_VERBS} AND drafting verbs at or above
+ *    {@link FILE_PRODUCING_MIN_DRAFTING_VERBS}. Both must hold; see the note on
+ *    the thresholds below.
+ * 2. BUNDLED SCRIPT EXECUTION ({@link runsBundledScripts}): a command line that
+ *    (a) starts with an interpreter, (b) names an executable file this package
+ *    actually ships inside THAT SKILL'S OWN directory, and (c) carries an
+ *    argument through which the program is told to write something. All three on
+ *    the same line, and (b) is checked against the disk, not against the text.
+ *
+ * What the detector records, and what it is known to miss:
+ * - ACADEMIC-PAPER-REVIEWER is a demonstration of the limit, not a licence to
+ *   skip the block. It instructs `python3 scripts/audit_panel_claims.py ...
+ *   --out-dir ...`, which fails (b) because the executable must resolve inside
+ *   the skill's own vendored directory: audit_panel_claims.py lives upstream at
+ *   the REPOSITORY ROOT (beside scripts/test_audit_panel_claims.py), the
+ *   reviewer's own tree ships no .py file at all, and this port vendors no root
+ *   scripts/ tree. Same interpreter, same kind of output argument as
+ *   sr-screener's `python $S/build_outputs.py --work sr_work --out Screening_TA
+ *   --config screening_config.json`, opposite verdict, decided purely by where
+ *   the executable lives. It carries the block anyway.
+ * - The three qa-gate shapes above are recorded as UNPROVEN, not as
+ *   non-producers. Absence from this table means "we could not show it writes",
+ *   never "it does not write".
+ *
+ * THE TABLE IS STILL CHECKED IN BOTH DIRECTIONS, AND STILL CANNOT PROVE THE RULE
+ *
+ * tests/write-policy.test.mjs fails when a vendored skill the detector calls a
+ * producer is missing from the table, and when the table lists a skill the
+ * detector no longer calls a producer - so the documentation cannot rot in either
+ * direction. That test is worth keeping precisely because it is weak: it proves
+ * the record matches the detector, and the adversarial fixtures in the same suite
+ * demonstrate why the detector cannot be trusted with the serving decision.
+ * * @module dsh-academic-review/write-policy
  */
 
 import { readdirSync, type Dirent } from 'node:fs'
@@ -138,20 +152,24 @@ export const EXECUTABLE_EXTENSION = /\.(?:py|mjs|cjs|js|sh|ps1)$/iu
 /** Why a skill produces files. Exactly one is recorded per table entry. */
 export type FileProductionBasis = 'prose-drafting' | 'bundled-script'
 
-/** One skill that produces files, therefore carries policy A. */
+/** One skill demonstrated to produce files, and how that was demonstrated. */
 export interface FileProducingSkill {
   /** Vendored skill directory name. */
   readonly skill: string
-  /** Which of the two instruments justified the entry. */
+  /** Which of the two instruments measured it. */
   readonly basis: FileProductionBasis
   /** One-line justification, for the reader of this file and test failures. */
   readonly reason: string
 }
 
 /**
- * The skills that produce files, therefore the skills that carry policy A.
- * Keep this in sync with {@link qualifyFileProduction}: tests/write-policy.test.mjs
- * fails in both directions if it drifts.
+ * The vendored skills DEMONSTRATED to produce files, and the instrument that
+ * demonstrated it. This is documentation, not a precondition: every served skill
+ * carries policy A whether or not it appears here, and nothing in the serving path
+ * consults this list. A skill absent from it is unproven, not proven harmless.
+ * Keep it in sync with {@link qualifyFileProduction}: tests/write-policy.test.mjs
+ * fails in both directions if it drifts, and listens to what that test can and
+ * cannot prove (see the module header).
  */
 export const FILE_PRODUCING_SKILLS: readonly FileProducingSkill[] = [
   {
@@ -354,37 +372,41 @@ export function qualifyFileProduction(input: {
 }
 
 /**
- * The table entry for one skill, if it carries policy A.
+ * The table entry for one skill, if it is a demonstrated producer.
+ * This is a lookup in the record, not a serving decision: a skill with no entry
+ * still receives the block.
  * @param skillName - served skill name.
- * @returns the entry, or undefined when the skill does not produce files.
+ * @returns the entry, or undefined when no instrument demonstrated production.
  */
 export function fileProducingEntry(skillName: string): FileProducingSkill | undefined {
   return FILE_PRODUCING_SKILLS.find(entry => entry.skill === skillName)
 }
 
 /**
- * Render the block prepended to a file-producing skill's served body.
- * Empty string for any other skill, so its body stays byte-identical.
+ * Render the block prepended to EVERY served skill body.
  *
- * One block, both shapes. It speaks of files, artefacts and steps rather than
- * drafts, so it is true for a skill that drafts prose (academic-paper) and for one
- * that produces files by running bundled scripts (sr-screener) - and it names the
- * script shape explicitly instead of leaving the model to reinterpret "artefact"
- * per command: for the step "run build_outputs.py --out Screening_TA", the risk is
- * not whether an output is an artefact but WHICH paths the command writes, so the
- * bullet names its --out target, work dir, log and workbook. The block stays one
- * block (never one per shape) and its bytes are identical for every skill that
- * carries it.
+ * Unconditional by design, and the signature says so: there is no skill argument to
+ * condition on, because conditioning on one is what produced the false negatives
+ * the module header describes. The block is cheap; a producer served without it is
+ * not. A caller that used to pass a skill name can drop the argument.
+ *
+ * One block for every shape. It speaks of files, artefacts and steps rather than
+ * drafts, so it is true for a skill that drafts prose (academic-paper), one that
+ * produces files by running bundled scripts (sr-screener), and one that does not
+ * write at all (academic-paper-reviewer) - and it names the script shape explicitly
+ * instead of leaving the model to reinterpret "artefact" per command: for the step
+ * "run build_outputs.py --out Screening_TA", the risk is not whether an output is an
+ * artefact but WHICH paths the command writes, so the bullet names its --out target,
+ * work dir, log and workbook. One block, never one per shape or per skill.
  *
  * tests/write-policy.test.mjs asserts the property, not the prose: the block must
- * keep the cannot-be-enforced sentence, must require the bundled-script sentence
- * (with a mutation proving the check fails when that sentence is removed), and
- * must not acquire drafting-only vocabulary.
- * @param skillName - served skill name.
- * @returns the block (with a trailing blank line), or ''.
+ * keep the cannot-be-enforced sentence, must keep the bundled-script sentence (with
+ * a mutation proving the check fails when it is removed), must not acquire
+ * drafting-only vocabulary, and must be served to every vendored skill including
+ * the ones no instrument can prove write.
+ * @returns the block (with a trailing blank line).
  */
-export function renderWritePolicyBlock(skillName: string): string {
-  if (fileProducingEntry(skillName) === undefined) return ''
+export function renderWritePolicyBlock(): string {
   return [
     WRITE_POLICY_BEGIN,
     '**Port write policy A - not upstream text.** Follow this rule; the plugin cannot enforce',
@@ -408,29 +430,36 @@ export function renderWritePolicyBlock(skillName: string): string {
  * PUBLIC SURFACE, AND WE ARE PROMISING IT STAYS. These keys are how a caller -
  * a panel, a report, a docs table - inspects the policy without parsing the served
  * prose, so they are part of the plugin's contract to the host, not an internal
- * detail. Three keys, and a skill either carries all three or none:
+ * detail.
  *
- * - `writePolicy: 'new-paths-only'` - the rule that applies;
- * - `writePolicyEnforced: false` - deliberate and permanent, the machine-readable
- *   version of the honesty boundary at the top of this module, so a consumer
- *   cannot read the policy name and believe the runtime stops overwrites;
- * - `writePolicyBasis: 'prose-drafting' | 'bundled-script'` - WHICH instrument
- *   qualified the skill, so "why does sr-screener carry this?" is answerable from
- *   the served metadata instead of from this source file. It is read off the
- *   {@link FILE_PRODUCING_SKILLS} entry, never typed here a second time, so the
- *   advertisement cannot drift from the table that decides it.
+ * THE ASYMMETRY BETWEEN THE KEYS IS DELIBERATE, SO DO NOT "FIX" IT:
  *
- * A skill that produces files by no instrument carries none of the three: an
- * empty basis would be a claim with no measurement behind it.
+ * - `writePolicy: 'new-paths-only'` and `writePolicyEnforced: false` are on EVERY
+ *   served skill, because the block is served to every skill. `writePolicyEnforced:
+ *   false` is deliberate and permanent: it is the machine-readable version of the
+ *   honesty boundary at the top of this module, so a consumer cannot read the policy
+ *   name and believe the runtime stops overwrites.
+ * - `writePolicyBasis: 'prose-drafting' | 'bundled-script'` is on the skills an
+ *   instrument actually measured (academic-paper, sr-screener) and is ABSENT on
+ *   academic-paper-reviewer and deep-research. A basis for a skill nothing measured
+ *   would be a claim with no measurement behind it. Its absence means "we could not
+ *   show it writes", never "it does not write" - which is exactly why it does not
+ *   gate the block.
+ *
+ * The basis is read off the {@link FILE_PRODUCING_SKILLS} entry, never typed here a
+ * second time, so the advertisement cannot drift from the record that measured it.
  * @param skillName - served skill name.
  * @returns the three keys for a file-producing skill, or an empty object otherwise.
  */
 export function writePolicyMetadataOf(skillName: string): Record<string, unknown> {
-  const entry = fileProducingEntry(skillName)
-  if (entry === undefined) return {}
-  return {
+  const metadata: Record<string, unknown> = {
     writePolicy: WRITE_POLICY_NEW_PATHS_ONLY,
     writePolicyEnforced: false,
-    writePolicyBasis: entry.basis,
   }
+  // The basis is a MEASUREMENT, so it is present only where an instrument measured
+  // one. The policy keys above are unconditional, because the block is: inventing a
+  // basis for a skill nothing measured would be a claim with no evidence behind it.
+  const entry = fileProducingEntry(skillName)
+  if (entry !== undefined) metadata.writePolicyBasis = entry.basis
+  return metadata
 }
