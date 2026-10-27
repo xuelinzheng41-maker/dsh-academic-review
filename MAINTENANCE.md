@@ -24,11 +24,18 @@
      pnpm verify:vendor`.
   5. If upstream changed prompts/agents/templates, reconcile
      `assets/prompts/` and the docs, and bump the plugin minor version.
-- **Non-goals**: upstream areas this port does not serve
-  (`academic-pipeline`, `sr-screener`, the upstream pipeline scripts) are not
-  vendored; revisit only when those skills are added. `deep-research` and
-  `academic-paper` **are** vendored and served, prompt-only (no tool, no state,
-  no panel).
+  6. **Vendoring is extension-agnostic.** Non-Markdown and executable payload is
+     pinned exactly like Markdown: bytes from the git object store
+     (`git cat-file blob <commit>:<path>`), never from a checkout.
+     `academic-paper/templates/latex_article_template.tex` is 4,844 bytes in the
+     repository and 5,043 bytes as a CRLF worktree copy — that 199-byte gap is the
+     whole reason the rule exists. `sr-screener`'s six `.py`, two `.js` and two
+     `.json` are pinned the same way.
+- **Non-goals**: upstream areas this port does not serve (`academic-pipeline`,
+  and the upstream repository's root `scripts/` directory) are not vendored;
+  revisit only when that skill is added. `deep-research`, `academic-paper` and
+  `sr-screener` **are** vendored and served, prompt-only (no tool, no state, no
+  panel).
 
 ## Named maintainer
 

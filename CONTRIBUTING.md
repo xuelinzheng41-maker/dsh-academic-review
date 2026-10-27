@@ -21,11 +21,17 @@ CC BY-NC 4.0.
 - **Input gate**: `.md`/`.tex`/`.txt` only; never add PDF parsing.
 - **Keep the two human checkpoints.** No automation may bypass the panel-start
   checkpoint or the pre-report approval.
-- **No scope creep into later phases**: the `academic-pipeline` and
-  `sr-screener` skills, plus the re-review/guided/calibration review modes, are
-  explicitly out of scope; refuse them rather than falling back silently.
-  `deep-research` and `academic-paper` are vendored and served, but as
-  prompt-only skills — neither gets a tool, state or panel.
+- **No scope creep into later phases**: the `academic-pipeline` skill, plus the
+  re-review/guided/calibration review modes, is explicitly out of scope; refuse it
+  rather than falling back silently. `deep-research`, `academic-paper` and
+  `sr-screener` are vendored and served, but as prompt-only skills — none of the
+  three gets a tool, state or panel.
+- **Vendored code is served, never executed.** No `child_process`, `exec`,
+  `spawn` or any other execution path may exist in `src/`. A vendored script is
+  pinned text, not a program this plugin runs. The reason is the honesty boundary
+  policy A depends on: this plugin cannot see or audit what a script writes, so
+  running one would put bytes on disk that no policy can account for.
+  `tests/no-code-execution.test.mjs` fails if an execution path appears.
 - Findings must carry an evidence quote plus location; seats must not see each
   other's outputs.
 - **Bilingual docs**: any user-facing doc change updates **both** `README.md`

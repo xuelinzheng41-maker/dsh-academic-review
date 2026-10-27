@@ -1,7 +1,9 @@
 # Upstream Inventory — ARS academic-paper-reviewer @ 1ec249df98728682dfbbdfb940a658338bfd6f80
 
 Source: https://github.com/Imbad0202/academic-research-skills (Cheng-I Wu),
-vendored read-only copy at `D:\A粒球计算\tmp\ars-upstream`.
+vendored read-only from a clone of the upstream repository at the pinned commit
+(`<path to an ARS checkout at 1ec249df>`; the bytes are read out of its git object
+store, so a checkout made with any `core.autocrlf` setting is equivalent).
 Skill version 1.11.1 (2026-08-15); repo plugin.json version 3.23.2.
 License: CC BY-NC 4.0.
 
@@ -113,10 +115,32 @@ recompute_receipts.py (58,463), review_criteria_binding.py (39,289).
 
 ## Not vendored
 
-Skills this port does not serve (`academic-pipeline`, `sr-screener`), and the
-upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
-`audits/`, `.claude/`, `.github/`, `tools/`.
+Skills this port does not serve (`academic-pipeline`), and the upstream
+repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
+`.claude/`, `.github/`, `tools/`, and the repo-root `scripts/` directory. The
+root `scripts/` entry is the reason the reviewer stays out of the file-producing
+table: those scripts exist upstream but live outside every skill tree, and this
+port vendors the four skill trees plus `shared/`, nothing else.
 
-`deep-research/` and `academic-paper/` **are** vendored as of 0.2.0, each in its
-own tree and inventoried by `vendor-manifest.json`; this file stays the
-file-by-file inventory of the reviewer tree only.
+`deep-research/` and `academic-paper/` **are** vendored as of 0.2.0, and
+`sr-screener/` as of 0.4.0, each in its own tree and inventoried by
+`vendor-manifest.json`; this file stays the file-by-file inventory of the reviewer
+tree only.
+
+## sr-screener/ (25 files, vendored unmodified, not executed)
+
+`sr-screener` is the first served tree that ships executable payload, so it gets
+one line of description even though its file-by-file pins live in
+`vendor-manifest.json`:
+
+| Class | Files | Executed by this plugin? |
+|---|---|---|
+| Markdown (SKILL.md + 14 more) | 15 | no — served as text |
+| Python under `scripts/` | 6 — `build_outputs.py`, `build_workflow.py`, `merge_decisions.py`, `prepare_fulltext.py`, `prepare_records.py`, `srlib.py` | **no** — shipped verbatim and pinned, never run, never audited |
+| `.js` workflow templates under `templates/workflows/` | 2 | **no** — template text |
+| `.json` templates (`templates/screening_config.template.json`, `examples/example_config_dta.json`) | 2 | **no** — data |
+
+Upstream states the requirement in its own body: Python 3.9+, standard library
+only, `openpyxl` optional. The host's shell is what would run these scripts; this
+plugin cannot see what they write, which is why policy A reaches the skill as
+instruction and metadata only (`docs/PORT_SPEC.md` §1.6).

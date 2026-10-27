@@ -1,4 +1,4 @@
-# DSH Port Spec — dsh-academic-review (0.3.0: reviewer surface + two prompt-only skills)
+# DSH Port Spec — dsh-academic-review (0.4.0: reviewer surface + three prompt-only skills)
 
 Status: draft for T2/T3 implementation · Prepared by T1 · Target plugin: `dsh-academic-review`
 
@@ -12,11 +12,13 @@ at that commit says 3.23.2; the skill-local version is authoritative for the
 reviewer skill.) License: **CC BY-NC 4.0** — see `THIRD_PARTY_NOTICES.md`
 and section 5 below.
 
-Served set (0.3.0): `academic-paper-reviewer` (1.11.1) is the only skill wired
+Served set (0.4.0): `academic-paper-reviewer` (1.11.1) is the only skill wired
 to plugin code — tools, review state, panel, slash commands. `deep-research`
-(2.12.1) and `academic-paper` (3.3.1) are vendored and served prompt-only: no
-tool, no state, no panel. `academic-pipeline` and `sr-screener` remain **out of
-scope** and must not be started.
+(2.12.1), `academic-paper` (3.3.1) and `sr-screener` (1.0.0) are vendored and
+served prompt-only: no tool, no state, no panel. `sr-screener` differs from the
+other two in one respect worth stating up front — its usefulness depends on the
+host running the six Python scripts it ships (§1.6). `academic-pipeline` remains
+**out of scope** and must not be started.
 
 ---
 
@@ -76,7 +78,7 @@ Upstream Iron Rules that MUST carry into the port verbatim in behavior:
 The port vendors **every** skill it serves, whole and byte-identical, under
 `vendor/<skill>/`, and `vendor/` is itself the registry: a directory is a
 skill exactly when it holds `SKILL.md` (so `vendor/shared/` is never mistaken
-for one). Three skills are vendored today, from one pinned upstream commit; the
+for one). Four skills are vendored today, from one pinned upstream commit; the
 skill list is a single `SKILLS` constant in `scripts/vendor-upstream.mjs` and a
 new skill is added by adding a name there and re-running `pnpm vendor`.
 
@@ -84,9 +86,10 @@ new skill is added by adding a name there and re-running `pnpm vendor`.
 |---|---|---|
 | `vendor/academic-paper-reviewer/` | 28 | SKILL.md, 7 `agents/`, 14 `references/`, 3 `templates/`, 3 `examples/` |
 | `vendor/deep-research/` | 53 | SKILL.md, 14 `agents/`, 24 `references/`, 6 `templates/`, 8 `examples/` |
-| `vendor/academic-paper/` | 63 | SKILL.md, 12 `agents/`, 29 `references/`, 11 `templates/`, 10 `examples/`; the only non-Markdown file is `templates/latex_article_template.tex` (4,844 B) |
+| `vendor/academic-paper/` | 63 | SKILL.md, 12 `agents/`, 29 `references/`, 11 `templates/`, 10 `examples/`; its `templates/latex_article_template.tex` (4,844 B) is the only non-Markdown file in the three trees vendored before `sr-screener` |
+| `vendor/sr-screener/` | 25 | SKILL.md, 15 Markdown files, 6 `.py` under `scripts/`, 2 `.js` workflow templates and 1 `.json` template under `templates/`, 1 example `.json` under `examples/` — 10 non-Markdown files, the first executable payload this port ships |
 | `vendor/shared/` (not a skill) | 110 | 18 root files, 71 `contracts/`, 16 `references/`, 1 `agents/`, 1 `templates/`, 1 `policy_data/`, 2 `review_criteria_sources/` |
-| **total** | **254** | every hash pinned in `vendor-manifest.json` (144 skill files + 110 shared) |
+| **total** | **279** | every hash pinned in `vendor-manifest.json` (169 skill files + 110 shared) |
 
 File-by-file sizes for the reviewer tree are in `docs/UPSTREAM_INVENTORY.md`;
 the `deep-research` tree is inventoried by `vendor-manifest.json` (one SHA-256
@@ -106,14 +109,54 @@ no slash command behind it.
 **3.3.1**, SKILL.md `last_updated` 2026-08-15, **63 files**, SKILL.md 65,335
 repository bytes). It is the first vendored skill that *instructs the model to
 write files* — 85 writing verbs and 46 drafting verbs in its own body, against 24
-/ 4 for the reviewer and 18 / 4 for `deep-research` — so it is the one entry in
-`src/write-policy.ts`'s `FILE_PRODUCING_SKILLS` table. Policy A is **prepended**
-to its served body (549 bytes) so the rule is read before the drafting
-instructions, and mirrored in metadata as `writePolicy: 'new-paths-only'` plus
-`writePolicyEnforced: false`; those two metadata keys appear on this skill only.
-The vendored tree is also the only one holding a non-Markdown file,
+/ 4 for the reviewer and 18 / 4 for `deep-research` — so it is one of the two
+entries in `src/write-policy.ts`'s `FILE_PRODUCING_SKILLS` table, qualified by
+**prose drafting**. Policy A is **prepended** to its served body (684 bytes) so
+the rule is read before the drafting instructions, and mirrored in metadata as
+`writePolicy: 'new-paths-only'`, `writePolicyEnforced: false` and
+`writePolicyBasis: 'prose-drafting'`. Its tree holds
 `templates/latex_article_template.tex`, pinned byte-for-byte from the upstream git
-object (4,844 B; the CRLF worktree copy would have been 5,043 B and wrong).
+object (4,844 B; the CRLF worktree copy would have been 5,043 B and wrong) — the
+only non-Markdown file in the three trees vendored before `sr-screener`, and the
+first non-Markdown payload this port ever shipped, which is what proved the
+vendoring pipeline is extension-agnostic.
+
+`sr-screener` is upstream's protocol-driven screening pipeline for systematic,
+scoping and rapid reviews (8 modes, version **1.0.0**, SKILL.md `last_updated`
+2026-09-29, **25 files**). It is the second entry in the table, and it qualifies
+by a **different instrument**: its body instructs the model to execute its own
+bundled Python with output arguments (`python $S/build_outputs.py --work sr_work
+--out Screening_TA --config screening_config.json`), so it qualifies by
+**bundled-script execution** rather than by drafting vocabulary. Same prepended
+block (684 bytes, one block for both skills), same three metadata keys, with
+`writePolicyBasis: 'bundled-script'`.
+
+**How a skill qualifies — the OR of two instruments.** A vendored skill qualifies
+when EITHER holds, measured on its parsed body:
+
+1. **prose drafting** — writing verbs ≥ 40 **and** drafting verbs ≥ 20;
+2. **bundled-script execution** — a single line that carries an interpreter
+   token, names an executable this package actually ships inside *that skill's
+   own* directory (resolved against the disk, not the text), **and** carries an
+   output argument.
+
+Two shapes must NOT qualify, and they are what make the rule trustworthy rather
+than a rubber stamp:
+
+- **a glossary mention of `python` does not qualify** — no interpreter-plus-shipped-script
+  invocation sits on one line, so (2) never holds;
+- **an output argument on a script the skill does not ship does not qualify** —
+  (2) fails on **location**, and for the reviewer it fails for a second,
+  independent reason. The reviewer's own body carries `python3
+  scripts/audit_panel_claims.py … --out-dir`, and it stays out of the table
+  because (a) the rule requires the executable to resolve to a file this package
+  ships inside `academic-paper-reviewer/`, and that file lives at the upstream
+  repository **root**, not in the reviewer's tree — it fails on location, not on
+  existence: upstream really ships it, and this port records it as an unvendored
+  reference; and (b) this port vendors the four skill trees and `shared/`, and no
+  part of the upstream root `scripts/` directory, so the file is also absent here.
+  Both halves matter: a reader who checks upstream at `1ec249df` will find the
+  file, and 'we do not ship it' would be true but incomplete.
 
 **Served-body port notice (commit 4c84ffb).** A served skill is upstream text,
 and upstream text can name a file that lives in another ARS skill this port does
@@ -165,19 +208,20 @@ what is vendored and what the pins are:
                 "license": "CC BY-NC 4.0" },   // repository-level pin
   "vendored": {
     "skillDir": "vendor",
-    "skills": ["academic-paper-reviewer", "deep-research", "academic-paper"],
+    "skills": ["academic-paper-reviewer", "deep-research", "academic-paper",
+               "sr-screener"],
     "skillFileCounts": { "academic-paper-reviewer": 28, "deep-research": 53,
-                         "academic-paper": 63 },
-    "skillFileCount": 144,
+                         "academic-paper": 63, "sr-screener": 25 },
+    "skillFileCount": 169,
     "sharedFileCount": 110,
     "sharedFileCounts": { "byScan": 108, "byRegistryReceipt": 2 },
-    "totalFileCount": 254
+    "totalFileCount": 279
   },
-  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … 3 entries ],
+  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … 4 entries ],
   "sharedFiles": [ "shared/…", … 110 entries ],
   "sharedViaRegistryReceipts": [ { "file": "shared/review_criteria_sources/…",
                                    "criterionIds": [ … ] }, … ],
-  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 254 }
+  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 279 }
 }
 ```
 
@@ -246,6 +290,21 @@ above records the reviewer's share of that closure. The closure grew by 10 when
 through that skill alone. (Upstream `shared/` has 155
 files; most belong to other skills and are NOT vendored.)
 
+**Two shared counts, two different measures — do not compare them directly.** The
+package **holds 110** shared files (108 by scan + 2 by registry receipt). The four
+skill trees **collectively reach 98 distinct shared targets**, and the shared-to-
+shared closure those 98 pull in accounts for the remaining files, which is why the
+two numbers differ by 12 and neither is wrong. `sr-screener` adds nothing to
+either measure: it names five `shared/` paths directly and reaches 74 once their
+own references are followed, and every one of the 74 was already in the closure
+through the older trees — a differential of zero, asserted as a comparison of two
+computed sets rather than as a pinned size.
+
+The walk reads **Markdown only**, deliberately: 16 of the 89 payload files carry
+49 reference-shaped strings and 27 of them would dangle if the walk read them. A
+path inside a Python docstring or a JSON schema string is data a program consumes,
+not an instruction telling the agent to open a file in this port.
+
 ### 1.4 `scripts/` dependency map (advisory checkers)
 
 The reviewer tree references these repo-root Python scripts. They are CI /
@@ -269,9 +328,17 @@ mechanisms (§2) and need not be ported in Phase 1.
 
 ### 1.5 What must NOT be vendored
 
-Skills this port does not serve (`academic-pipeline/`, `sr-screener/`), and the
-upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
-`audits/`, `.github/`, `.claude/`.
+Last changed in 0.4.0: `sr-screener/` left this list when it became a served
+skill, and the upstream root `scripts/` directory was named here explicitly,
+because it is half the reason the reviewer stays out of the file-producing table
+(§1.2). The list is a fence, so it describes the field as it is today.
+
+Skills this port does not serve (`academic-pipeline/`), and the upstream
+repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
+`.github/`, `.claude/`, and the repo-root `scripts/` directory — this port
+vendors the four skill trees plus `shared/`, and nothing else. Vendoring root
+`scripts/` would put `scripts/audit_panel_claims.py` and its siblings inside the
+package, which is not a location any skill's own tree owns.
 
 `deep-research/` **is** vendored (§1.2) — the reviewer's Phase 2.5 coaching
 references `deep-research/agents/socratic_mentor_agent.md` for its L5 question
@@ -284,6 +351,35 @@ calls into it: it is served as a prompt-only skill, its own references resolve
 inside the vendored tree, and the one place this port had to touch its served
 output is policy A, which is prepended text plus metadata — not an edit to the
 vendored files.
+
+`sr-screener/` **is** vendored too (§1.2), as of 0.4.0 — the first tree that ships
+executable payload. Its six Python scripts are pinned exactly like Markdown, and
+nothing in this plugin runs, audits or observes them; §1.6 states what that costs
+the user.
+
+### 1.6 `sr-screener`'s bundled scripts — shipped, pinned, never run
+
+`sr-screener` is the first served skill whose usefulness depends on executing code
+it ships. Its tree carries six Python scripts (`scripts/build_outputs.py`,
+`build_workflow.py`, `merge_decisions.py`, `prepare_fulltext.py`,
+`prepare_records.py`, `srlib.py`) plus two `.js` workflow templates, and upstream
+states the requirement in its own body: **Python 3.9+, standard library only,
+`openpyxl` optional** (it produces the Excel log).
+
+What this port does with them, stated plainly:
+
+- it **ships them verbatim and pinned** — same discipline as every Markdown byte,
+  hashed from the git object store, checked by `pnpm verify:vendor`;
+- it **never executes them**: `tests/no-code-execution.test.mjs` fails if any
+  execution path (`child_process`, `exec`, `spawn`) appears in `src/`;
+- it **never audits them**: nothing here reads what a script writes, and nothing
+  asserts the scripts behave;
+- it **cannot see what they write**: a script writes directly through the host, so
+  policy A reaches it as instruction and metadata only (§4);
+- it **does not guarantee a Python toolchain**: the host's shell is what would run
+  them, and without Python 3.9+ that part of the skill does not work at all. It
+  fails visibly — the command errors — rather than quietly returning something
+  that looks like a screen.
 
 ---
 
@@ -423,9 +519,10 @@ This table is authoritative and mirrors `src/tools.ts`: every row is one
 `academic_review_create`, `academic_review_status`, `academic_review_confirm`,
 `academic_review_submit`, `academic_review_report` — five tools, no more.
 
-The two prompt-only skills do not touch this surface: neither `deep-research`
-nor `academic-paper` registers a tool (§1.2), so the tool list below is still
-complete and its arguments, results and error codes are unchanged by 0.3.0.
+The three prompt-only skills do not touch this surface: none of `deep-research`,
+`academic-paper` or `sr-screener` registers a tool (§1.2), so the tool list below
+is still complete and its arguments, results and error codes are unchanged by
+0.4.0.
 
 | Tool | Args | Behavior |
 |---|---|---|
@@ -527,10 +624,12 @@ prompt or upstream instruction can relax it:
   (no overwrite, no append, no "move it out of the way");
 - `deep-research` has no write tool: anything a run produces must go to a new
   path, and its inputs are read-only;
-- `academic-paper` writes with the host's file tools, which this plugin never
-  sees: for that skill the rule travels as the prepended policy block plus
-  `writePolicy` / `writePolicyEnforced: false` in metadata, and the model is
-  told to treat every output as a new path;
+- `academic-paper` writes with the host's file tools and `sr-screener` writes by
+  running its own bundled scripts, and this plugin sees neither: for both skills
+  the rule travels as the prepended policy block plus `writePolicy` /
+  `writePolicyEnforced: false` / `writePolicyBasis` in metadata, and the model is
+  told to treat every output as a new path — including the `--out` target, the
+  work directory, the log and the workbook that a script writes;
 - manuscript drift is reported (`paper_changed`), never repaired: the plugin
   does not restore or rewrite the file, it asks for a new review.
 
@@ -538,15 +637,18 @@ prompt or upstream instruction can relax it:
 enforced by this plugin's own code, which owns the five `academic_review_*` tools
 and both slash commands. Policy A as it applies to a *skill* is not enforceable
 here: a skill body is prompt text, the model writes with the host's file tools,
-and this plugin never sees those calls. So for a skill that instructs writing
-(`academic-paper`) the rule travels as a block prepended to the served body plus
-`metadata.writePolicy = 'new-paths-only'` and `metadata.writePolicyEnforced =
-false`. Instruction with an audit trail, never an interlock. The block is
-prepended, not appended, so it is the first thing the model reads in a writing
-task. The table itself (`src/write-policy.ts`) is checked in both directions —
-a vendored skill that starts instructing writes must be listed, and a listed skill
-that stops matching fails the suite — so the single entry (`academic-paper`)
-cannot rot into a rubber stamp.
+and this plugin never sees those calls. So for a skill that produces files — by drafting
+(`academic-paper`) or by running its own scripts (`sr-screener`) — the rule
+travels as a **684-byte block prepended** to the served body plus
+`metadata.writePolicy = 'new-paths-only'`, `metadata.writePolicyEnforced =
+false` and `metadata.writePolicyBasis`, which names the instrument that qualified
+the skill. Instruction with an audit trail, never an interlock. The block is
+prepended, not appended, so it is the first thing the model reads, before any
+drafting instruction or command line. The table itself (`src/write-policy.ts`) is
+checked in both directions — a vendored skill that starts producing files by
+either instrument must be listed, and a listed skill that stops matching fails the
+suite — so the two entries (`academic-paper` by prose drafting, `sr-screener` by
+bundled-script execution) cannot rot into a rubber stamp.
 
 1. **Input formats**: only `.md`, `.tex`, `.txt`. The adapter performs no PDF
    parsing or OCR — a PDF input is rejected at `create` with instructions to

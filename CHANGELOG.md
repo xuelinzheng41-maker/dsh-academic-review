@@ -8,6 +8,65 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.4.0] - 2026-10-27
+
+Fourth served skill, and the first whose usefulness depends on executing code it
+ships. **No tool, route or state schema changed**: the five `academic_review_*`
+tools, their arguments, the review-state schema, the panel's three GET routes and
+both slash commands are identical to 0.3.0, so `.academic-review/` directories
+keep loading.
+
+### Added
+
+- The vendored **`sr-screener`** skill (upstream **1.0.0**, read from its own
+  SKILL.md frontmatter, `last_updated` 2026-09-29, 25 files) is served next to the
+  other three. It is **prompt-only**: no tool, no review state, no panel, no slash
+  command.
+- **The first executable payload.** `sr-screener` ships six Python scripts
+  (`scripts/build_outputs.py`, `build_workflow.py`, `merge_decisions.py`,
+  `prepare_fulltext.py`, `prepare_records.py`, `srlib.py`) plus two `.js`
+  workflow templates and two `.json` templates. They are vendored verbatim and
+  pinned by SHA-256 like every Markdown byte. This plugin **never executes them,
+  never audits them, and cannot see what they write**; the host's shell runs them.
+  Upstream states the requirement as **Python 3.9+, standard library only,
+  `openpyxl` optional**, so without a Python 3.9+ toolchain that part of the skill
+  does not work at all — it fails visibly rather than returning something that
+  looks like a screen.
+- **A second reason to carry policy A.** The rule is now an OR of two measured
+  instruments: prose drafting (writing verbs ≥ 40 and drafting verbs ≥ 20) or
+  bundled-script execution (one line with an interpreter, an executable the package
+  ships inside that skill's own directory, and an output argument).
+  `academic-paper` qualifies the first way, `sr-screener` the second. The
+  prepended block grew from 549 to **684 bytes** — the extra bullet names
+  script-written artifacts (the `--out` target, the work directory, the log, the
+  workbook) — and one block still serves both skills. Metadata now also carries
+  `writePolicyBasis` (`'prose-drafting'` / `'bundled-script'`), so the reason is
+  machine-readable, on file-producing skills only.
+
+### Changed
+
+- **Vendored set:** 279 files (was 254) — 169 skill files (28 + 53 + 63 + 25) +
+  110 shared (108 by scan + 2 by registry receipt). The package now holds **89
+  non-Markdown files** (`.json` 79, `.py` 6, `.js` 2, `.tex` 1, `.yaml` 1);
+  all 89 are byte-identical to their git objects and to their pins, which makes the
+  payload class extension-agnostic in practice as well as in the pipeline.
+  `sr-screener` contributes ten of them.
+- **Shared did not move:** the closure stays 110 files (108 by scan), and the four
+  trees collectively reach 98 distinct shared targets. `sr-screener` names five
+  `shared/` paths directly and reaches 74 once their own references are followed —
+  every one already in the closure through the older trees, a differential of zero
+  asserted by comparing two computed sets rather than by pinning a size.
+- **The reference walk reads Markdown only**, deliberately: 16 of the 89 payload
+  files carry 49 reference-shaped strings, 27 of which would dangle if the walk
+  read them. A path inside a Python docstring is data, not an instruction to open a
+  file in this port.
+
+### Unchanged
+
+- The reviewer skill (1.11.1), `deep-research` (2.12.1), `academic-paper`
+  (3.3.1), the five tools, the review-state schema, the panel, both slash commands,
+  and the CC BY-NC 4.0 terms. 0 of the 254 previous pins moved.
+
 ## [0.3.0] - 2026-10-27
 
 Third served skill. **No tool, route or state schema changed**: the five
