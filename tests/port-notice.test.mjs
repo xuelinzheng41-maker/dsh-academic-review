@@ -32,6 +32,7 @@ import {
   missingReferencesForSkill,
   scanVendorReferences,
 } from '../lib/references.js'
+import { renderWritePolicyBlock } from '../lib/write-policy.js'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorRoot = defaultVendorBasePath()
@@ -59,11 +60,17 @@ test('deep-research is served with a notice naming the one reference this port d
   const candidate = candidates.find(item => item.name === DEEP_RESEARCH_SKILL_NAME)
   const definition = await instance.get(candidate, {})
   const body = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
+  const block = renderWritePolicyBlock()
 
   const missingTarget = 'academic-pipeline/references/literature_corpus_consumers.md'
-  // The upstream body is served first, unmodified, and the notice is appended.
-  assert.ok(definition.content.startsWith(body), 'the vendored body must be served unmodified')
-  const notice = definition.content.slice(body.length)
+  // Since 3f16ec3 the write-policy rule is prepended to every served skill, so the payload
+  // is block + body + notice. The body is still served unmodified and the notice is still
+  // appended; the parts are located by block.length + body.length rather than by
+  // restating a total, so a change to any part shows up as the part that moved.
+  assert.ok(definition.content.startsWith(block), 'the write-policy block must be served first')
+  assert.equal(definition.content.slice(block.length, block.length + body.length), body,
+    'the vendored body must be served unmodified, directly after the block')
+  const notice = definition.content.slice(block.length + body.length)
   assert.ok(notice.includes(PORT_NOTICE_BEGIN), 'the notice must open with its marker')
   assert.ok(notice.includes(PORT_NOTICE_END), 'the notice must close with its marker')
   assert.match(notice, /not upstream text/iu)
@@ -89,10 +96,17 @@ test('academic-paper-reviewer is served with no notice and its body is unchanged
   const candidate = candidates.find(item => item.name === REVIEW_SKILL_NAME)
   const definition = await instance.get(candidate, {})
   const body = await vendoredBody(REVIEW_SKILL_NAME)
+  const block = renderWritePolicyBlock()
 
-  assert.equal(definition.content, body)
+  // The test's name still describes what it asserts: the reviewer earns NO NOTICE and its
+  // BODY is byte-for-byte the vendored text. What changed in t37 is that the rule is now
+  // prepended to every served skill, so the payload is block + body; the assertion is
+  // re-aimed at the body part rather than loosened, and the byte-length check measures
+  // that part instead of the whole payload.
+  assert.equal(definition.content, block + body, 'the reviewer payload must be block + body and nothing else')
+  assert.equal(definition.content.slice(block.length), body, 'the reviewer body must stay byte-identical to the vendored text')
   assert.equal(definition.content.includes(PORT_NOTICE_BEGIN), false)
-  assert.equal(Buffer.byteLength(definition.content, 'utf8'), Buffer.byteLength(body, 'utf8'))
+  assert.equal(Buffer.byteLength(definition.content.slice(block.length), 'utf8'), Buffer.byteLength(body, 'utf8'))
   assert.equal(definition.metadata.unavailableReferences.length, 0)
   assert.equal(definition.metadata.unavailableReferenceCount, 0)
   assert.equal(renderPortNotice(REVIEW_SKILL_NAME, []), '')
@@ -260,9 +274,14 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   assert.equal(researchShared.includes('academic-pipeline/references/literature_corpus_consumers.md'), true)
   assert.equal(reviewer.metadata.unavailableReferences.length, 0, 'the reviewer own-tree scope is clean')
 
-  // The bodies are untouched by any of this.
-  assert.equal(reviewer.content, await vendoredBody(REVIEW_SKILL_NAME))
-  assert.equal(research.content, (await vendoredBody(DEEP_RESEARCH_SKILL_NAME)) + renderPortNotice(
+  // The bodies are untouched by any of this. Each payload is rebuilt from its parts - the
+  // prepended block, the vendored body, and the notice the provider derives - so the
+  // assertion derives the payload rather than restating a total.
+  const block = renderWritePolicyBlock()
+  const reviewerBody = await vendoredBody(REVIEW_SKILL_NAME)
+  const researchBody = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
+  assert.equal(reviewer.content, block + reviewerBody)
+  assert.equal(research.content, block + researchBody + renderPortNotice(
     DEEP_RESEARCH_SKILL_NAME,
     [{ target: 'academic-pipeline/references/literature_corpus_consumers.md', sources: ['deep-research/agents/bibliography_agent.md'] }],
   ))
