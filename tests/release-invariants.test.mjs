@@ -35,8 +35,11 @@
  */
 
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -532,3 +535,148 @@ function statSyncSize(path) {
     return undefined
   }
 }
+
+/**
+ * The upstream-only script sizes: measured, or named as not measured.
+ *
+ * docs/UPSTREAM_INVENTORY.md quotes fourteen sizes for scripts this package does NOT vendor.
+ * They cannot be stat()ed here, so the release invariant has to reach them another way: the
+ * pinned commit's object store. The risk of an environment-gated check is that it passes by
+ * doing nothing, on every machine that lacks the clone, forever - a comment with a skip line
+ * attached. So the mechanism is proved FIRST, unconditionally, against a throwaway repository
+ * built in the test: same measurement, same comparison, one size nudged, the failure required
+ * to name the file and both values. Only then does DSH_UPSTREAM_CLONE supply real data, and
+ * when it is absent the test names every path it could not verify instead of saying "skipped".
+ *
+ * No machine-local path is written into this repository: the variable carries the path at run
+ * time, and the documents name the variable and the commit, never a directory.
+ */
+
+const execFileAsync = promisify(execFile)
+
+/** Run git and return stdout, trimmed. Throws with the command in the message if it fails. */
+async function git(args, cwd) {
+  try {
+    const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 })
+    return stdout.trim()
+  } catch (error) {
+    throw new Error('git ' + args.join(' ') + ' failed in ' + cwd + ': ' + (error.message ?? String(error)))
+  }
+}
+
+/** The script sizes the inventory quotes, in document order. */
+function scriptRows(documentLines) {
+  const rows = []
+  documentLines.forEach((line, index) => {
+    for (const match of line.matchAll(/\b([a-z0-9_]+\.py)\s+\(([\d,]+)\)/gu)) {
+      rows.push({ name: match[1], path: 'scripts/' + match[1], bytes: Number(match[2].replace(/,/gu, '')), line: index + 1 })
+    }
+  })
+  return rows
+}
+
+/** Read sizes out of the object store at a commit: repository bytes, never worktree bytes. */
+async function measureScripts(clonePath, commit, paths) {
+  const measured = []
+  for (const path of paths) {
+    const size = await git(['cat-file', '-s', commit + ':' + path], clonePath)
+    measured.push({ path, bytes: Number(size) })
+  }
+  return measured
+}
+
+/** Compare a document's claims against measurements, in both directions. */
+function compareScriptSizes(stated, measured) {
+  const problems = []
+  const byPath = new Map(measured.map(entry => [entry.path, entry.bytes]))
+  for (const row of stated) {
+    const actual = byPath.get(row.path)
+    if (actual === undefined) {
+      problems.push(row.path + ' is quoted in the document (line ' + String(row.line) + ') but was not measured')
+      continue
+    }
+    if (actual !== row.bytes) {
+      problems.push(row.path + ' is documented as ' + String(row.bytes) + ' bytes, the object store says ' + String(actual))
+    }
+  }
+  for (const entry of measured) {
+    if (stated.some(row => row.path === entry.path) === false) {
+      problems.push(entry.path + ' was measured but is not quoted in the document')
+    }
+  }
+  return problems
+}
+
+test('the upstream script check is a mechanism that can fail (throwaway repository)', async () => {
+  const stated = scriptRows(await linesOf(join('docs', 'UPSTREAM_INVENTORY.md')))
+  assert.ok(stated.length > 0, 'the inventory must quote upstream-only script sizes to check at all')
+
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-upstream-fixture-'))
+  try {
+    await git(['init', '-q'], dir)
+    await mkdir(join(dir, 'scripts'), { recursive: true })
+    const contents = stated.map(row => 'fixture content for ' + row.name + '\n' + 'x'.repeat(row.name.length) + '\n')
+    for (const [index, row] of stated.entries()) await writeFile(join(dir, row.path), contents[index], 'utf8')
+    await git(['add', 'scripts'], dir)
+    await git(['-c', 'user.email=fixture@example.invalid', '-c', 'user.name=fixture',
+      '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'fixture'], dir)
+    const commit = await git(['rev-parse', 'HEAD'], dir)
+
+    const measured = await measureScripts(dir, commit, stated.map(row => row.path))
+    assert.equal(measured.length, stated.length, 'every quoted path must be measured, not a subset')
+    for (const [index, entry] of measured.entries()) {
+      assert.equal(entry.bytes, Buffer.byteLength(contents[index], 'utf8'),
+        entry.path + ' must be measured as repository bytes (' + String(Buffer.byteLength(contents[index], 'utf8'))
+        + '), not as something else (' + String(entry.bytes) + ')')
+    }
+
+    // The honest table produces no complaints: if this could not be zero, every run would be
+    // noise and the real check would be unreadable.
+    assert.deepEqual(compareScriptSizes(stated.map(row => ({ ...row, bytes: 0 })).map((row, index) => ({ ...row, bytes: measured[index].bytes })), measured), [],
+      'a table that agrees with the measurements must produce no problems')
+
+    // One nudged byte must produce exactly one problem, naming the file AND both values.
+    const nudged = stated.map((row, index) => ({ ...row, bytes: index === 3 ? measured[index].bytes + 1 : measured[index].bytes }))
+    const problems = compareScriptSizes(nudged, measured)
+    assert.equal(problems.length, 1, 'one wrong row must produce one problem, saw ' + String(problems.length))
+    assert.match(problems[0], new RegExp(stated[3].name.replace(/\./gu, '\\.')),
+      'the failure must name the file: ' + problems[0])
+    assert.match(problems[0], new RegExp(String(measured[3].bytes + 1) + ' bytes, the object store says ' + String(measured[3].bytes)),
+      'the failure must name both values: ' + problems[0])
+    console.log('# upstream script fixture: ' + String(measured.length) + ' files of known content in a throwaway repository; '
+      + 'one nudged byte produced exactly one problem naming the file and both values')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the upstream-only script sizes match the pinned object store, or are named as unverified', async () => {
+  const stated = scriptRows(await linesOf(join('docs', 'UPSTREAM_INVENTORY.md')))
+  assert.ok(stated.length > 0, 'the inventory must quote upstream-only script sizes')
+  assert.equal(new Set(stated.map(row => row.name)).size, stated.length,
+    'each upstream-only script must be quoted once: ' + stated.map(row => row.name).join(', '))
+
+  const clone = process.env.DSH_UPSTREAM_CLONE
+  if (clone === undefined || clone === '') {
+    // Not a silent skip. Every path is named, because a single "skipped" line is how a check
+    // stops being read. The mechanism itself was exercised by the test above on every run.
+    for (const row of stated) {
+      console.log('#   not verified: ' + row.path + ' (' + String(row.bytes) + ' bytes, inventory line '
+        + String(row.line) + ') - no DSH_UPSTREAM_CLONE')
+    }
+    console.log('# upstream script sizes: ' + String(stated.length) + ' NOT verified (DSH_UPSTREAM_CLONE unset);'
+      + ' the mechanism is proved against a fixture repository above, on every run')
+    return
+  }
+
+  const { upstream } = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const measured = await measureScripts(clone, upstream.commit, stated.map(row => row.path))
+  assert.equal(measured.length, stated.length,
+    'the clone must yield a measurement for every quoted script, not a subset: '
+    + String(measured.length) + ' of ' + String(stated.length))
+  const problems = compareScriptSizes(stated, measured)
+  assert.deepEqual(problems, [],
+    'the inventory and the object store disagree at ' + upstream.commit + ':\n  ' + problems.join('\n  '))
+  console.log('# upstream script sizes: ' + String(stated.length) + ' verified against ' + upstream.commit.slice(0, 12)
+    + ' in DSH_UPSTREAM_CLONE')
+})
