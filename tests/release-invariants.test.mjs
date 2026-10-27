@@ -98,7 +98,16 @@ function isHistoryHeading(heading) {
 
 test('every install line names the version in package.json, in both languages', async () => {
   const { version } = await packageJson()
-  const INSTALL = /dsh\s+plugin\b.*\badd\b\s+(\S+)/u
+
+  // What an INSTALL INSTRUCTION is, defined rather than guessed at: a line that names THIS
+  // package or repository AND carries a package-manager command. qa-gate proved the old
+  // shape - the literal words "dsh plugin ... add" - missed `dsh plugin install <repo>@0.3.9`,
+  // which would hand the reader a different release while the guard stayed green.
+  // Naming the package is what stops this parsing every sentence that contains "install";
+  // the command shape stops it parsing prose that merely mentions the package. The deliberate
+  // unversioned line stays legal and stays SEEN - it is an instruction, just not a pinned one.
+  const COMMAND = /\b(?:dsh\s+plugin\b[^\n]*?\b(?:add|install)\b|(?:pnpm|npm|yarn)\s+(?:add|install|i)\b)/u
+  const PACKAGE_NAME = 'dsh-academic-review'
 
   const perDoc = {}
   for (const doc of ['README.md', 'README.zh-CN.md']) {
@@ -107,16 +116,25 @@ test('every install line names the version in package.json, in both languages', 
     const installLines = []
     lines.forEach((line, index) => {
       const heading = tracker.feed(line)
-      const match = INSTALL.exec(line)
-      if (match === null) return
+      if (COMMAND.test(line) === false || line.includes(PACKAGE_NAME) === false) return
       // History sections quote the release they describe; the current install lines do not.
       if (isHistoryHeading(heading)) return
-      const target = match[1]
-      const tags = [...target.matchAll(/#v(\d+\.\d+\.\d+)|-(\d+\.\d+\.\d+)\.(?:tgz|tar\.gz)/gu)]
+      const target = line.trim().split(/\s+/u).pop()
+      // A version is named as a tag ref ("#v0.4.0"), a tarball ("-0.4.0.tgz") or a package
+      // range ("@0.3.9"); all three are pins the reader will act on.
+      const tags = [...line.matchAll(/[#@]v?(\d+\.\d+\.\d+)|-(\d+\.\d+\.\d+)\.(?:tgz|tar\.gz)/gu)]
         .map(found => found[1] ?? found[2])
       installLines.push({ line: index + 1, target, tags })
     })
     assert.ok(installLines.length > 0, doc + ' must contain at least one install line; none was found')
+
+    // The unversioned instruction must be SEEN, not dropped: if the widened matcher stops
+    // recognising it, the documents still read correctly while the guard quietly stops
+    // covering a line it used to cover. If the documents ever remove that line on purpose,
+    // this assertion is the place to change deliberately.
+    assert.equal(installLines.some(install => install.tags.length === 0), true,
+      doc + ' must keep a deliberate unversioned install instruction (add <repo> installs the'
+      + ' default branch) and the matcher must still see it')
 
     // An unversioned install line is a deliberate shape: "add <repo>" installs whatever the
     // default branch is, and the documents say so out loud before offering the pinned forms.
@@ -151,12 +169,25 @@ test('the newest CHANGELOG section is a dated heading equal to package.json', as
   const { version } = await packageJson()
   const lines = await linesOf('CHANGELOG.md')
 
+  // Two release-heading shapes are legal and both must be SEEN: "## [0.4.0] - 2026-10-27" and
+  // "## 0.4.0 - 2026-10-27". qa-gate proved the bracketed-only pattern did not see the second
+  // at all, so an unbracketed "## 0.9.9 - 2026-10-28" could sit above the real newest section
+  // and the file would still be called correct. Because headings are collected in file order
+  // and the FIRST must be the shipped version, a bracketed and an unbracketed section cannot
+  // both be newest: whichever is first wins and the other can only be below it.
+  const RELEASE_HEADING = /^##\s+(?:\[([^\]]+)\]|v?(\d+\.\d+\.\d+))\s*(.*)$/u
   const headings = []
   lines.forEach((line, index) => {
-    const match = /^##\s+\[([^\]]+)\]\s*(.*)$/u.exec(line)
-    if (match !== null) headings.push({ line: index + 1, version: match[1], rest: match[2].trim() })
+    const match = RELEASE_HEADING.exec(line)
+    if (match === null) return
+    headings.push({
+      line: index + 1,
+      version: (match[1] ?? match[2]).trim(),
+      rest: (match[3] ?? '').trim(),
+      bracketed: match[1] !== undefined,
+    })
   })
-  assert.ok(headings.length > 0, 'CHANGELOG.md must have at least one "## [x.y.z]" section')
+  assert.ok(headings.length > 0, 'CHANGELOG.md must have at least one "## [x.y.z]" or "## x.y.z" section')
 
   const newest = headings[0]
   // A release that ships without a changelog entry is exactly the case nobody notices, so
@@ -171,10 +202,23 @@ test('the newest CHANGELOG section is a dated heading equal to package.json', as
     'CHANGELOG.md:' + String(newest.line) + ' must be a dated heading ("## [' + version
     + '] - YYYY-MM-DD"), found "' + newest.rest + '" - a section without a date is a draft, not a release')
 
+  // Every versioned section - not just the newest - must be dated, so a draft heading anywhere
+  // in the file cannot pass as a release note.
+  const DATED = /^-\s*\d{4}-\d{2}-\d{2}$/u
+  const releasable = headings.filter(heading => /^\d+\.\d+\.\d+$/u.test(heading.version))
+  const undated = releasable.filter(heading => DATED.test(heading.rest) === false)
+  assert.deepEqual(undated.map(heading => 'CHANGELOG.md:' + String(heading.line) + ' ["' + heading.version + '"] "'
+    + heading.rest + '"'), [], 'every versioned section in CHANGELOG.md must carry a release date (YYYY-MM-DD)')
+
+  // Two sections cannot claim the same version: a duplicated entry means one of them is a
+  // stale edit, and whichever is read first decides what the file says the release contains.
+  const versions = releasable.map(heading => heading.version)
+  assert.equal(new Set(versions).size, versions.length,
+    'CHANGELOG.md has two sections claiming the same version: ' + versions.join(', '))
+
   // The first section must also be the highest version, so a 0.5.0 entry inserted below a
   // 0.4.0 one cannot leave the file claiming the older release is current.
-  const numeric = headings
-    .filter(heading => VERSION.test(heading.version))
+  const numeric = releasable
     .map(heading => ({ version: heading.version.split('.').map(Number), line: heading.line, text: heading.version }))
   const highest = numeric.reduce((best, heading) => {
     for (let index = 0; index < 3; index += 1) {
@@ -184,7 +228,9 @@ test('the newest CHANGELOG section is a dated heading equal to package.json', as
   })
   assert.equal(highest.text, version, 'the highest section in CHANGELOG.md must be the shipped version')
   console.log('# changelog: newest section [' + newest.version + '] ' + newest.rest + ' at line ' + String(newest.line)
-    + '; ' + String(headings.length) + ' sections, highest ' + highest.text)
+    + '; ' + String(headings.length) + ' section(s) seen ('
+    + String(headings.filter(heading => heading.bracketed).length) + ' bracketed, '
+    + String(headings.filter(heading => heading.bracketed === false).length) + ' unbracketed), highest ' + highest.text)
 })
 
 /**
@@ -201,10 +247,46 @@ test('every commit-looking token in the documents is a prefix of the pinned comm
   const pinned = manifest.upstream.commit
   assert.match(pinned, /^[0-9a-f]{40}$/u, 'the manifest must pin a full 40-hex commit')
 
-  // A commit is written as lowercase hex that uses at least one letter: a token of nothing
-  // but digits is a date wearing hex clothes (a review_id example reads rev-20261027-<8hex>),
-  // and no test should call a date a stale pin.
-  const COMMIT_SHAPED = /\b[0-9a-f]{7,40}\b/gu
+  // What counts as commit-shaped is now qa-gate's shapes rather than the nicer ones this
+  // test was written with. Two holes it proved:
+  //   (a) a token SHORTER than seven hex - "deadbe" - was invisible to the old pattern,
+  //       because \b[0-9a-f]{7,40}\b simply does not match it;
+  //   (b) an UPPERCASE token - "1EC249DF" - was invisible too, so a WRONG uppercase pin
+  //       could sit in a document for as long as anyone cared to leave it there.
+  // Both are scanned now, and the comparison against the pin is case-insensitive: a commit
+  // is a hex string, and its case is not a fact about the code.
+  //
+  // The letter requirement stays: a token of nothing but digits is a date wearing hex
+  // clothes (a review_id example reads rev-20261027-<8hex>), and no test should call a date
+  // a stale pin.
+  const COMMIT_SHAPED = /\b[0-9a-fA-F]{6,40}\b/gu
+
+  // Scanning six-hex tokens means scanning hex-ish noise, so the two shapes that ARE noise
+  // are masked by structure and COUNTED in the pass line - not exempted by hope, and never
+  // by a pattern that could swallow anything:
+  //   - a review id, rev-YYYYMMDD-<hex>, which this plugin generates itself;
+  //   - a digest quoted beside the word sha256, which is a hash of bytes, not a commit.
+  // Masking is per line and narrow: everything else on that line is still scanned, which the
+  // mutations prove by planting a stale pin beside a digest and watching it fail.
+  const NOISE = [
+    { shape: 'review-id', pattern: /\brev-\d{8}-[0-9a-fA-F]{6,40}\b/gu },
+    { shape: 'sha256', pattern: /\bsha-?256\b\W{0,4}[0-9a-fA-F]{6,64}\b/giu },
+  ]
+
+  // A mask that could swallow the pin itself, or that masks nothing at all, would be a code
+  // path nobody has watched fail. Both directions are checked here, on every run, in every
+  // environment - no fixture clone, no environment variable, nothing to forget.
+  for (const noise of NOISE) {
+    const probe = 'pinned ' + pinned + ' rev-20261027-1a52a1cb sha256: 3f786850e387550fdab836ed7e6dc881'
+    assert.equal(probe.replace(noise.pattern, '').includes(pinned), true,
+      'the ' + noise.shape + ' mask must not swallow the pinned commit')
+  }
+  assert.equal('rev-20261027-1a52a1cb'.replace(NOISE[0].pattern, '').trim(), '',
+    'the review-id mask must actually mask a review id')
+  assert.equal('sha256: 3f786850e387550f'.replace(NOISE[1].pattern, '').trim(), '',
+    'the sha256 mask must actually mask a quoted digest')
+
+  const masked = {}
   const used = new Set()
   let checked = 0
   let skipped = 0
@@ -222,19 +304,27 @@ test('every commit-looking token in the documents is a prefix of the pinned comm
   for (const doc of [...CURRENT_DOCS, 'CHANGELOG.md']) {
     const lines = await linesOf(doc)
     lines.forEach((line, index) => {
-      for (const match of line.matchAll(COMMIT_SHAPED)) {
+      let scanned = line
+      for (const noise of NOISE) {
+        scanned = scanned.replace(noise.pattern, (found) => {
+          masked[noise.shape] = (masked[noise.shape] ?? 0) + 1
+          return ' '.repeat(found.length)
+        })
+      }
+      for (const match of scanned.matchAll(COMMIT_SHAPED)) {
         const token = match[0]
         if (/^[0-9]+$/u.test(token)) {
           skipped += 1
           continue
         }
         checked += 1
-        if (pinned.startsWith(token)) {
-          if (token in NON_UPSTREAM_COMMITS) used.add(token)
+        const lower = token.toLowerCase()
+        if (pinned.startsWith(lower)) {
+          if (lower in NON_UPSTREAM_COMMITS) used.add(lower)
           continue
         }
-        if (token in NON_UPSTREAM_COMMITS) {
-          used.add(token)
+        if (lower in NON_UPSTREAM_COMMITS) {
+          used.add(lower)
           continue
         }
         // Reported with the document and the line, not as a count: the next reader has to be
@@ -250,8 +340,10 @@ test('every commit-looking token in the documents is a prefix of the pinned comm
   // Two-sided allowlist: an exemption nobody uses any more is a silent weakening.
   const unused = Object.keys(NON_UPSTREAM_COMMITS).filter(token => used.has(token) === false)
   assert.deepEqual(unused, [], 'these NON_UPSTREAM_COMMITS entries are no longer used: ' + unused.join(', '))
-  console.log('# commit pins: ' + String(checked) + ' commit-shaped token(s) checked against ' + pinned.slice(0, 12)
-    + ', ' + String(skipped) + ' date-shaped token(s) skipped, ' + String(used.size) + ' allowlisted as this repo\'s own')
+  console.log('# commit pins: ' + String(checked) + ' commit-shaped token(s) (6-40 hex, any case) checked against '
+    + pinned.slice(0, 12) + '; ' + String(skipped) + ' date-shaped skipped; '
+    + NOISE.map(noise => String(masked[noise.shape] ?? 0) + ' ' + noise.shape).join(', ')
+    + ' masked; ' + String(used.size) + ' allowlisted as this repo\'s own')
 })
 
 test('docs/UPSTREAM_INVENTORY.md is recomputed: header counts and every quoted byte size', async () => {
