@@ -1,3 +1,11 @@
+# Line endings must not depend on the tester's git config. core.autocrlf=true is
+# the Windows default (and is set on this machine), so the same commit checks out
+# with CRLF there and LF on Linux, which turns any byte or string comparison of a
+# markdown file into a platform-dependent test. Pin markdown to LF in the
+# repository itself; the rule below is deliberately placed AFTER this one, because
+# git uses the LAST matching pattern and vendor/** must keep its -text setting.
+*.md text eol=lf
+
 # The vendored upstream tree is copied byte-for-byte and pinned by SHA-256 in
 # vendor-manifest.json. Disable git's text conversion for it: with
 # core.autocrlf=true (the Windows default) a checkout rewrites LF to CRLF in the

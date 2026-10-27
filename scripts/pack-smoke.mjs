@@ -46,7 +46,7 @@ const FORBIDDEN_ENTRIES = ['package/tsconfig.json', 'package/tsconfig.client.jso
  * Which root-level markdown documents must ship, and why.
  *
  * npm always includes package.json, the README files, the LICENSE files and the
- * file named by 'main', and nothing else: a root CHANGELOG.md ships only when it
+ * file named by 'main', and nothing else: a root CHANGELOG.md ships only because it
  * is listed in package.json 'files'. Both directions are asserted, so a document that starts
  * or stops shipping fails the job instead of drifting quietly - and a new root
  * document that nobody decided about fails too, because it is not in this table.
@@ -55,7 +55,7 @@ const ROOT_DOC_POLICY = new Map([
   ['README.md', { shipped: true, why: 'listed in files, and npm always ships README*' }],
   ['README.zh-CN.md', { shipped: true, why: 'listed in files, and npm always ships README*' }],
   ['THIRD_PARTY_NOTICES.md', { shipped: true, why: 'listed in files: the CC BY-NC 4.0 attribution travels with the package' }],
-  ['CHANGELOG.md', { shipped: false, why: 'root file, not listed in files, and npm does not auto-include CHANGELOG - only package.json, README*, LICENSE* and main' }],
+  ['CHANGELOG.md', { shipped: true, why: 'listed in files: an installed copy is what readers open to see what changed between versions' }],
   ['CONTRIBUTING.md', { shipped: false, why: 'root file, not listed in files: contributor guide is repository-only' }],
   ['MAINTENANCE.md', { shipped: false, why: 'root file, not listed in files: maintainer notes are repository-only' }],
 ])
@@ -208,7 +208,7 @@ async function main() {
       assert.ok(entry.size > 0, packedPath + ' ships empty')
       console.log('  ' + name + ': shipped byte-identically (' + entry.size + ' B, ' + policy.why + ')')
     }
-    ok('README.md and README.zh-CN.md ship byte-identically; the unlisted root docs stay out as documented')
+    ok('all root documents follow ROOT_DOC_POLICY (' + [...ROOT_DOC_POLICY.values()].filter(policy => policy.shipped).length + ' shipped byte-identically, ' + [...ROOT_DOC_POLICY.values()].filter(policy => !policy.shipped).length + ' asserted absent)')
 
     // docs/ is shipped wholesale, so every page in it must travel byte-identically.
     const repoDocs = readdirSync(join(repoRoot, 'docs')).filter(name => name.endsWith('.md'))
