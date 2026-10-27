@@ -77,9 +77,9 @@ const REVIEW_ID_RE = /^rev-[0-9]{8}-[0-9a-f]{8}$/
 /** Timestamps the plugin assigns carry an explicit offset, never a bare Z. */
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
 /** The skills the plugin contract promises to serve, in discovery (alphabetical) order. */
-const EXPECTED_SKILL_NAMES = ['academic-paper', 'academic-paper-reviewer', 'deep-research']
+const EXPECTED_SKILL_NAMES = ['academic-paper', 'academic-paper-reviewer', 'deep-research', 'sr-screener']
 /** Version each skill's own frontmatter declares, pinned so a re-vendor is visible. */
-const EXPECTED_SKILL_VERSIONS = { 'academic-paper': '3.3.1', 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1' }
+const EXPECTED_SKILL_VERSIONS = { 'academic-paper': '3.3.1', 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1', 'sr-screener': '1.0.0' }
 /** The one non-markdown vendored file: 4844 B, sha256 of the upstream git object. */
 const TEX_TEMPLATE = 'academic-paper/templates/latex_article_template.tex'
 const TEX_TEMPLATE_SHA256 = '1f9112782a501b605d17ce644598cdd5e5ef250560198677266976038ccbc3c9'
@@ -662,7 +662,7 @@ async function main() {
       assert.equal(candidate.path, join(repoRoot, 'vendor', skillName, 'SKILL.md'))
       assert.ok((await stat(candidate.path)).size > 0, candidate.path + ' must exist and be non-empty')
     }
-    ok('plugin mounted; all three vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
+    ok('plugin mounted; all four vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
 
     // Loading is the half that can dangle: the model follows SKILL.md and its
     // agent/reference files. Every body must arrive complete and frontmatter-free,
@@ -679,8 +679,8 @@ async function main() {
       assert.equal(definition.metadata.upstreamSkillVersion, EXPECTED_SKILL_VERSIONS[skillName])
       deliveredBytes += definition.content.length
     }
-    ok('all three skills load through the registry (academic-paper 3.3.1 + academic-paper-reviewer 1.11.1 '
-      + '+ deep-research 2.12.1), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
+    ok('all four skills load through the registry (academic-paper 3.3.1 + academic-paper-reviewer 1.11.1 '
+      + '+ deep-research 2.12.1 + sr-screener 1.0.0), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
 
     // deep-research and academic-paper are prompt-only in the tool sense: neither
     // may contribute a tool. Grep the registered names and descriptions (a count
@@ -696,9 +696,10 @@ async function main() {
       if (/deep[ _-]?research/iu.test(haystack)) offending.push('deep-research mention in ' + schema.name)
       if (/academic[ _-]?paper/iu.test(haystack)) offending.push('academic-paper mention in ' + schema.name)
       if (/research_|_research|deep-research|paper_/iu.test(schema.name)) offending.push('skill-shaped name ' + schema.name)
+      if (/sr[ _-]?screener|screening/iu.test(haystack)) offending.push('sr-screener mention in ' + schema.name)
     }
     assert.deepEqual(offending, [], 'a prompt-only skill leaked a tool onto the surface')
-    for (const narrowedSkill of ['deep-research', 'academic-paper']) {
+    for (const narrowedSkill of ['deep-research', 'academic-paper', 'sr-screener']) {
       const narrowed = await mountReviewPlugin({
         stateDir: STATE_DIR,
         workspaceRoot: runWorkspace,
@@ -708,8 +709,8 @@ async function main() {
       const narrowedSkills = (await narrowed.skills.list({ cwd: runWorkspace })).map(skill => skill.name)
       assert.deepEqual(narrowedSkills, [narrowedSkill], 'the narrowed mount serves only ' + narrowedSkill)
     }
-    ok('prompt-only skills add no tools: deep-research-only and academic-paper-only mounts each expose the same five '
-      + 'academic_review_* tools, and no tool name or description mentions either skill')
+    ok('prompt-only skills add no tools: deep-research-only, academic-paper-only and sr-screener-only mounts each '
+      + 'expose the same five academic_review_* tools, and no tool name or description mentions any of them')
 
     // The served payloads are the release artefact. Order matters as much as
     // presence: the write-policy block is only a pre-emptive rule if it comes
@@ -737,7 +738,16 @@ async function main() {
         assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the port notice must follow the body')
         assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
         assert.equal(after.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
-        assert.equal(Buffer.byteLength(content), 64978, 'the academic-paper payload moved')
+        assert.equal(Buffer.byteLength(content), 65113, 'the academic-paper payload moved')
+        assert.equal(Buffer.byteLength(before), 684, 'the prepended block moved')
+      } else if (skillName === 'sr-screener') {
+        // The same block, the same order - and no notice on this tree, because every
+        // path its own markdown names is vendored. If it ever earns one, the payload
+        // grows by exactly that notice and this pin moves deliberately.
+        assert.equal(before, renderWritePolicyBlock('sr-screener'), 'only the write-policy block may precede the body')
+        assert.equal(after, '', 'sr-screener earns no port notice on this tree')
+        assert.equal(Buffer.byteLength(before), 684, 'the prepended block moved')
+        assert.equal(Buffer.byteLength(content), 33212, 'the sr-screener payload moved')
       } else if (skillName === 'deep-research') {
         assert.equal(before, '', 'deep-research must carry nothing before the body')
         assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'deep-research keeps its own append notice')
@@ -751,8 +761,25 @@ async function main() {
       }
     }
     for (const line of payloadBytes) console.log('      payload ' + line)
-    ok('served payloads keep order and bytes: academic-paper = block + body + notice, deep-research = body + notice, '
-      + 'reviewer = body only (canary 47300 B)')
+    ok('served payloads keep order and bytes: academic-paper = block + body + notice, sr-screener = block + body, '
+      + 'deep-research = body + notice, reviewer = body only (canary 47300 B)')
+
+    // The payload is a class, not one template. Counting it here means a file that
+    // disappears from the tree fails the harness even if nothing else noticed, and
+    // the CR check is what catches a worktree copy converted on the way in.
+    const manifestFiles = Object.keys(manifest.files)
+    const payloadNames = manifestFiles.filter(name => name.endsWith('.md') === false)
+    assert.equal(manifestFiles.length, 279, 'the vendored file count moved')
+    assert.equal(payloadNames.length, 89, 'the non-markdown payload count moved')
+    let payloadCrFree = 0
+    for (const name of payloadNames) {
+      const bytes = await readFile(join(repoRoot, 'vendor', name))
+      assert.ok(bytes.length > 0, name + ' ships empty')
+      if (bytes.includes(0x0d) === false) payloadCrFree += 1
+    }
+    assert.equal(payloadCrFree, payloadNames.length, 'a payload file carries CR, so something text-converted it')
+    ok('the vendored payload is a class: ' + String(manifestFiles.length) + ' files, ' + String(payloadNames.length)
+      + ' non-markdown, every one present, non-empty and CR-free')
 
     // The one non-markdown vendored file has to be pinned, not assumed: a template
     // that ships as the CRLF-converted worktree copy would be a different file.

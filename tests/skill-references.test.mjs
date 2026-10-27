@@ -18,6 +18,17 @@
  * Template placeholders (shared/contracts/<domain>/<mode>.json), brace/star/$
  * patterns and a bare "shared/" are not references and are counted separately.
  *
+ * WHAT THIS SCANNER READS, AND WHAT IT DOES NOT (a fourth skill now ships payload):
+ * - it reads MARKDOWN ONLY - .md under vendor/. 89 of the 279 vendored files are
+ *   .json (79), .py (6), .js (2), .tex (1) and .yaml (1), and none of them is a
+ *   reference-bearing document: a path inside a Python docstring or a JSON-schema
+ *   string is data that a program consumes, not an instruction telling the agent to
+ *   open a file in this port. Reading them would manufacture references - the JSON
+ *   schemas alone contain shared/... names and ](...) regex fragments - and the
+ *   test below proves that exclusion is load-bearing rather than vacuous;
+ * - it does not follow links out of the tree, does not fetch anything, and does not
+ *   evaluate any payload: it is a text walk plus a stat() per reference.
+ *
  * Two kinds of target are distinguished:
  * - IN PORT: the target lives under a directory this port vendors. It must
  *   exist; a miss is a real defect and fails the test.
@@ -376,7 +387,7 @@ test('the deep-research tree references 34 distinct shared/ paths and every one 
   }
 })
 
-test('the served payload keeps its order and its byte counts for all three skills', async (t) => {
+test('the served payload keeps its order and its byte counts (reviewer canary, deep-research, academic-paper)', async (t) => {
   const { served } = await servedSkills()
 
   const reviewer = served.get(REVIEW_SKILL_NAME)
@@ -415,9 +426,9 @@ test('the served payload keeps its order and its byte counts for all three skill
     + ' = vendored body ' + String(byteLength(paperBody))
     + ' + write-policy block ' + String(byteLength(block))
     + ' + port notice ' + String(byteLength(notice)))
-  assert.equal(byteLength(paper.content), 64978, 'the academic-paper served payload moved')
+  assert.equal(byteLength(paper.content), 65113, 'the academic-paper served payload moved')
   assert.equal(byteLength(paperBody), 63857)
-  assert.equal(byteLength(block), 549)
+  assert.equal(byteLength(block), 684)
   assert.equal(byteLength(notice), 572)
 
   // deep-research: unchanged from the previous release apart from its own notice.
@@ -540,4 +551,45 @@ test('the scanner itself detects a dangling reference (it is not a rubber stamp)
     [...new Set(referencesIn('x.md', 'a ` dangling fence [l](shared/mode_spectrum.md)').map(entry => entry.raw))],
     ['shared/mode_spectrum.md'],
   )
+})
+
+test('the walk reads markdown only, and the payload really would be misread if it did not', async () => {
+  const all = await walkFiles(vendorDir)
+  const payload = all.filter(name => name.endsWith('.md') === false).sort()
+  const scan = await scanVendoredReferences()
+
+  // Nothing but markdown was read. This is the rule, stated as an assertion.
+  const nonMarkdownRead = scan.files.filter(name => name.endsWith('.md') === false)
+  assert.deepEqual(nonMarkdownRead, [], 'the walk must read markdown only, it also read: ' + nonMarkdownRead.join(', '))
+  const scanned = new Set(scan.files)
+
+  // ...and the rule has teeth: payload files contain plenty of text that the same
+  // patterns would treat as references, so an extension-agnostic walk would not be
+  // a harmless no-op - it would invent references and fail on paths that no skill
+  // instruction ever asks for.
+  let wouldBe = 0
+  let wouldBeDangling = 0
+  const carriers = []
+  for (const name of payload) {
+    const text = await readFile(join(vendorDir, name), 'utf8')
+    const found = referencesIn(name, text)
+    if (found.length === 0) continue
+    let dangling = 0
+    for (const reference of found) {
+      const raw = normalizeReference(reference.raw)
+      if (raw === '' || PLACEHOLDER.test(raw)) continue
+      if ((await existsInsideVendor(resolveReference(name, raw, reference.kind))) === false) dangling += 1
+    }
+    carriers.push({ name, count: found.length, dangling })
+    wouldBe += found.length
+    wouldBeDangling += dangling
+  }
+  assert.ok(wouldBe > 0, 'expected payload files to contain reference-shaped text; if none does, this test proves nothing')
+  assert.ok(carriers.length >= 5, 'expected several payload files to carry reference-shaped text, saw ' + String(carriers.length))
+  for (const carrier of carriers) {
+    assert.equal(scanned.has(carrier.name), false, carrier.name + ' is not markdown and must not be scanned')
+  }
+  console.log('# the walk read ' + String(scan.files.length) + ' markdown files and 0 of the ' + String(payload.length)
+    + ' payload files; ' + String(carriers.length) + ' payload files carry ' + String(wouldBe)
+    + ' reference-shaped string(s) (' + String(wouldBeDangling) + ' of them would dangle), so the exclusion is load-bearing')
 })
