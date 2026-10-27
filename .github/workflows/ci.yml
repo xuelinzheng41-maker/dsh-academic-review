@@ -90,6 +90,22 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # lib/ is committed, so a bundle that is not reproducible from the sources
+      # alone is a defect we would ship: the next clone would produce different
+      # bytes and every later diff would be noise. This rebuilds in a second
+      # directory with a different absolute path and requires byte equality.
+      - name: Build determinism (rebuild from another path)
+        run: pnpm test:build-determinism
+
+      # The gate above proves the rebuild is reproducible; this proves it matches
+      # what is committed. Untracked files count too: a new artifact appearing in
+      # lib/ is just as much a dirty tree as a modified one, and git diff alone
+      # would not notice it.
+      - name: The rebuild must not dirty lib/
+        run: |
+          git diff --exit-code -- lib/
+          test -z "$(git status --porcelain --untracked-files=all -- lib/)"
+
       - name: Pack, install and verify the shipped tarball
         # Deliberately unmasked: a tarball that cannot install, or that installs
         # without the vendored tree, is a release blocker.

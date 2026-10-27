@@ -14,6 +14,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -41,6 +42,24 @@ const REQUIRED_ENTRIES = [
 /** Paths that must never ship: sources, tests, tooling, local state. */
 const FORBIDDEN_PREFIXES = ['package/src/', 'package/tests/', 'package/scripts/', 'package/node_modules/', 'package/.git/', 'package/.github/', 'package/.pack/', 'package/.agent-teams/']
 const FORBIDDEN_ENTRIES = ['package/tsconfig.json', 'package/tsconfig.client.json', 'package/.npmrc', 'package/.gitattributes', 'package/package-lock.json']
+/**
+ * Which root-level markdown documents must ship, and why.
+ *
+ * npm always includes package.json, the README files, the LICENSE files and the
+ * file named by 'main', and nothing else: a root CHANGELOG.md ships only when it
+ * is listed in package.json 'files'. Both directions are asserted, so a document that starts
+ * or stops shipping fails the job instead of drifting quietly - and a new root
+ * document that nobody decided about fails too, because it is not in this table.
+ */
+const ROOT_DOC_POLICY = new Map([
+  ['README.md', { shipped: true, why: 'listed in files, and npm always ships README*' }],
+  ['README.zh-CN.md', { shipped: true, why: 'listed in files, and npm always ships README*' }],
+  ['THIRD_PARTY_NOTICES.md', { shipped: true, why: 'listed in files: the CC BY-NC 4.0 attribution travels with the package' }],
+  ['CHANGELOG.md', { shipped: false, why: 'root file, not listed in files, and npm does not auto-include CHANGELOG - only package.json, README*, LICENSE* and main' }],
+  ['CONTRIBUTING.md', { shipped: false, why: 'root file, not listed in files: contributor guide is repository-only' }],
+  ['MAINTENANCE.md', { shipped: false, why: 'root file, not listed in files: maintainer notes are repository-only' }],
+])
+
 /** The five review tools the plugin must register, sorted. */
 const TOOL_NAMES = [
   'academic_review_confirm',
@@ -145,7 +164,8 @@ async function main() {
     assert.equal(packed.length, 1, 'expected exactly one tarball, got ' + packed.join(', '))
     const tarball = join(packDir, packed[0])
     const bytes = statSync(tarball).size
-    const entries = tarballEntries(tarball).entries
+    const tarballParts = tarballEntries(tarball)
+    const entries = tarballParts.entries
     const paths = entries.map(entry => entry.path)
     const vendored = paths.filter(path => path.startsWith('package/vendor/'))
     const other = paths.filter(path => !path.startsWith('package/vendor/'))
@@ -163,6 +183,46 @@ async function main() {
       assert.ok(paths.includes(required), 'the tarball is missing a runtime file: ' + required)
     }
     ok('every runtime file is present (' + REQUIRED_ENTRIES.length + ' required entries)')
+
+    // Documents: npm auto-includes README*, but "auto" is not "verified". Assert the
+    // shipped bytes are the repo bytes, and assert the not-shipped ones stay out.
+    const rootDocs = readdirSync(repoRoot).filter(name => /\.md$/i.test(name) && statSync(join(repoRoot, name)).isFile())
+    for (const name of rootDocs) {
+      assert.ok(ROOT_DOC_POLICY.has(name), 'root document ' + name + ' has no shipping decision: add it to ROOT_DOC_POLICY')
+    }
+    console.log('root documents:')
+    for (const name of [...ROOT_DOC_POLICY.keys()].sort()) {
+      const policy = ROOT_DOC_POLICY.get(name)
+      const packedPath = 'package/' + name
+      const entry = tarballParts.entries.find(candidate => candidate.path === packedPath)
+      if (!policy.shipped) {
+        assert.equal(entry, undefined, packedPath + ' now ships, but ROOT_DOC_POLICY says it should not (' + policy.why + ')')
+        console.log('  ' + name + ': not shipped - ' + policy.why)
+        continue
+      }
+      assert.ok(entry !== undefined, 'the tarball is missing ' + name + ' (' + policy.why + ')')
+      const packedBytes = tarballParts.buffer.subarray(entry.dataOffset, entry.dataOffset + entry.size)
+      const packedDigest = createHash('sha256').update(packedBytes).digest('hex')
+      const repoDigest = createHash('sha256').update(readFileSync(join(repoRoot, name))).digest('hex')
+      assert.equal(packedDigest, repoDigest, packedPath + ' is not byte-identical to the repo copy: ' + packedDigest + ' != ' + repoDigest)
+      assert.ok(entry.size > 0, packedPath + ' ships empty')
+      console.log('  ' + name + ': shipped byte-identically (' + entry.size + ' B, ' + policy.why + ')')
+    }
+    ok('README.md and README.zh-CN.md ship byte-identically; the unlisted root docs stay out as documented')
+
+    // docs/ is shipped wholesale, so every page in it must travel byte-identically.
+    const repoDocs = readdirSync(join(repoRoot, 'docs')).filter(name => name.endsWith('.md'))
+    for (const name of repoDocs.sort()) {
+      const packedPath = 'package/docs/' + name
+      const entry = tarballParts.entries.find(candidate => candidate.path === packedPath)
+      assert.ok(entry !== undefined, 'the tarball is missing docs/' + name)
+      const packedDigest = createHash('sha256')
+        .update(tarballParts.buffer.subarray(entry.dataOffset, entry.dataOffset + entry.size))
+        .digest('hex')
+      const repoDigest = createHash('sha256').update(readFileSync(join(repoRoot, 'docs', name))).digest('hex')
+      assert.equal(packedDigest, repoDigest, packedPath + ' is not byte-identical to the repo copy')
+    }
+    ok('all ' + repoDocs.length + ' docs/*.md pages ship byte-identically (' + repoDocs.sort().join(', ') + ')')
 
     for (const forbidden of FORBIDDEN_PREFIXES) {
       const hits = paths.filter(path => path.startsWith(forbidden))
@@ -225,6 +285,32 @@ async function main() {
     )
     assert.equal(verification.fileCount, expectedVendor.length)
     ok('verify-vendor passes inside the installed package: ' + verification.fileCount + ' files byte-identical')
+
+    // The cheap mechanical form of the reproducibility rule: no shipped JS or
+    // source map may carry an absolute path. The 0.2.0-rc bundle had
+    // D:\Deepseek\... baked into a //#region comment by an absolute virtual module
+    // id, and this assertion fails on exactly that artifact.
+    const bundleFiles = []
+    const collectBundles = directory => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name)
+        if (entry.isDirectory()) collectBundles(path)
+        else if (/\.(?:js|map)$/.test(entry.name)) bundleFiles.push(path)
+      }
+    }
+    collectBundles(join(installed, 'lib'))
+    const driveLetter = /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]/m
+    for (const file of bundleFiles.sort()) {
+      const relative = file.slice(installed.length + 1).split(sep).join('/')
+      const source = readFileSync(file, 'utf8')
+      assert.ok(!driveLetter.test(source), 'absolute Windows path (drive letter) in shipped ' + relative)
+      assert.ok(!source.includes(repoRoot), 'build root leaked into shipped ' + relative)
+      assert.ok(!source.includes(installed), 'install path leaked into shipped ' + relative)
+    }
+    const clientBundle = join(installed, 'lib', 'client.js')
+    const clientDigest = createHash('sha256').update(readFileSync(clientBundle)).digest('hex')
+    console.log('  lib/client.js inside the package: sha256 ' + clientDigest + ', ' + statSync(clientBundle).size + ' B')
+    ok(bundleFiles.length + ' shipped JS/map files carry no absolute path (no drive letter, no build root, no install path)')
 
     const { Context } = await import('@deepseek-ai/cordis')
     const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
