@@ -1,3 +1,5 @@
+**English** | [简体中文](README.zh-CN.md)
+
 # dsh-academic-review
 
 [![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
@@ -58,6 +60,52 @@ nothing: whatever `web_search` / `web_fetch` / file tools your DSH host already
 gives the session are the only means it has to look things up. **Its output
 quality is therefore bounded by those host tools** — with no network access the
 skill can still reason, but it cannot verify sources.
+
+### What this port does not ship — the port notice
+
+A served skill is upstream text, and upstream text sometimes tells the agent to
+open a file that lives in a *different* ARS skill. This port cannot ship those,
+so it says so. When a served skill's **own** instructions name a file this
+package does not contain, the provider appends a delimited block to the served
+body — runtime text only, the vendored files themselves are never edited — and
+carries the full list in `metadata.unavailableReferences` /
+`metadata.unavailableReferenceCount`. The model is told, in the notice, not to
+fabricate the missing content.
+
+Today exactly **one** case exists:
+`deep-research/agents/bibliography_agent.md` points at
+`academic-pipeline/references/literature_corpus_consumers.md`, an upstream skill
+this port does not vendor. This is the block you will see appended to the
+`deep-research` body, verbatim:
+
+```text
+<!-- dsh-academic-review:port-notice:begin (not upstream text) -->
+**Port notice - not upstream text.** This DSH port does not ship 1 file that this skill's own instructions tell you to read:
+
+- `academic-pipeline/references/literature_corpus_consumers.md` - named by `agents/bibliography_agent.md`
+
+Do not fabricate or paraphrase the content of these files. If a step needs one, say the
+reference is unavailable in this port, continue with the material that is present, and
+tell the user which reference is missing.
+<!-- dsh-academic-review:port-notice:end -->
+```
+
+**The honest limitation.** The shared protocol files under `vendor/shared/` —
+which *both* served skills read — contain **14 distinct references** (22
+reference sites) to upstream areas this port does not vendor: 3 under
+`academic-paper/`, 4 under `academic-pipeline/`, 5 under `docs/design/`, 1 under
+`examples/` and 1 under `scripts/adapters/`. Those are surfaced in skill
+**metadata only** (`metadata.unavailableSharedReferences` /
+`metadata.unavailableSharedReferenceCount`), and deliberately **not** appended to
+the skill body: `shared/` is reached identically by every served skill, so a body
+notice derived from it would fire on the reviewer too and would change the
+reviewer's served bytes.
+
+Say it plainly: **`deep-research` inherits upstream cross-skill references that
+this port cannot satisfy.** It is served faithfully, minus those targets. A later
+round either vendors the referenced skills or extends the notice to cover the
+`shared/` scope; until then, the metadata is the complete record of what is
+missing and the notice is the in-conversation warning.
 
 ### Tools
 
@@ -136,15 +184,20 @@ prompt can relax it.**
    `editorial_decision.md` and `revision_roadmap.md` under
    `<workspace>/.academic-review/<review_id>/`, and the review id is generated
    fresh for every run — so a new review never lands on top of an existing
-   directory or file. Output documents are created, never appended to someone
-   else's file.
-2. **The manuscript is never overwritten, moved or deleted.** Not by a tool, not
-   by a slash command, not by the panel, not by a seat and not by the editorial
-   synthesizer. The plugin only ever reads it (it may hash it, to pin the bytes).
-3. **`deep-research` follows the same rule.** That skill has no write tool of
-   its own; anything a run produces (a report, notes, a bibliography) must go to
-   a new path, and everything it reads stays read-only.
-4. **Drift is reported, never repaired.** If the manuscript's bytes change
+   directory or file. Output documents are created, never appended to or
+   overwritten on top of someone else's file.
+2. **The manuscript is never overwritten, moved, renamed or deleted.** Not by a
+   tool, not by a slash command, not by the panel, not by a seat and not by the
+   editorial synthesizer. The plugin only ever reads it (it may hash it, to pin
+   the bytes).
+3. **`deep-research` outputs follow the same rule.** That skill has no write tool
+   of its own; anything a run produces (a report, notes, a bibliography) must go
+   to a new path, and everything it reads stays read-only.
+4. **An existing output path is refused, never clobbered.** If a command or a
+   run is pointed at a path that already exists, the correct behaviour is to
+   refuse or to pick a new name — never to write over it, append to it, or
+   rename it out of the way.
+5. **Drift is reported, never repaired.** If the manuscript's bytes change
    mid-review the plugin refuses with `paper_changed` and asks you to open a new
    review. It does not restore, rewrite, re-save or "fix" your file — the only
    copy it holds is the SHA-256 it pinned.

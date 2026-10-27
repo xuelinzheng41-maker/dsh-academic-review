@@ -44,3 +44,5 @@ stripping those headers breaks the licence terms.
 - [ ] New behaviour has a test, and the test fails without the change.
 - [ ] No secrets, tokens or real manuscript content are included in this PR.
 - [ ] Docs touched by this change are updated (README / docs/).
+- [ ] Any user-facing doc change updates **both** `README.md` and
+      `README.zh-CN.md` in this same PR (`pnpm test` enforces the parity).

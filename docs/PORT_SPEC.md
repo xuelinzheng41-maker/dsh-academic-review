@@ -99,6 +99,35 @@ it is served as a prompt-only skill on the session's own `web_search` /
 bounded by what the host provides, and there is no review state, no panel and
 no slash command behind it.
 
+**Served-body port notice (commit 4c84ffb).** A served skill is upstream text,
+and upstream text can name a file that lives in another ARS skill this port does
+not vendor. The provider therefore scans each served skill's *own* tree at load
+time (`src/references.ts`) and, when something it names is absent, appends a
+delimited block to the served body between
+`<!-- dsh-academic-review:port-notice:begin (not upstream text) -->` and
+`<!-- dsh-academic-review:port-notice:end -->`, listing at most 6 targets and
+instructing the model not to fabricate or paraphrase the missing content. The
+vendored files are never edited; the notice is runtime text only. The full list
+always travels in `metadata.unavailableReferences` (+
+`unavailableReferenceCount`).
+
+Today exactly one own-tree miss exists:
+`deep-research/agents/bibliography_agent.md` →
+`academic-pipeline/references/literature_corpus_consumers.md`. The reviewer's own
+tree is clean, so the reviewer never receives a notice.
+
+**Scope 2 — the shared closure — is metadata-only.** `vendor/shared/` is reached
+identically by every served skill and contains **14 distinct references** (22
+reference sites) to unvendored upstream areas (3 `academic-paper/`, 4
+`academic-pipeline/`, 5 `docs/design/`, 1 `examples/`, 1 `scripts/adapters/`). A
+body notice derived from that scope would fire on both skills and would change
+the reviewer's served bytes, so those misses are reported in
+`metadata.unavailableSharedReferences` (+ `unavailableSharedReferenceCount`) and
+**not** appended to any body. Consequence, stated plainly:
+`deep-research` inherits upstream cross-skill references this port cannot
+satisfy; a later round either vendors those skills or extends the notice to the
+shared scope deliberately.
+
 **`vendor-manifest.json` schemaVersion 2** is the single source of truth for
 what is vendored and what the pins are:
 
@@ -457,8 +486,10 @@ prompt or upstream instruction can relax it:
   `<workspace>/<stateDir>/<review_id>/` with a freshly generated `review_id`;
   `state.json`, `seats/<seat_id>.json`, `seats/<seat_id>.md`,
   `editorial_decision.md`, `revision_roadmap.md`), never onto an existing file;
-- the manuscript is **never overwritten, moved or deleted** — it is read, and
-  hashed to pin its bytes, and that is all;
+- the manuscript is **never overwritten, moved, renamed or deleted** — it is
+  read, and hashed to pin its bytes, and that is all;
+- an output path that already exists is **refused or renamed**, never clobbered
+  (no overwrite, no append, no "move it out of the way");
 - `deep-research` has no write tool: anything a run produces must go to a new
   path, and its inputs are read-only;
 - manuscript drift is reported (`paper_changed`), never repaired: the plugin

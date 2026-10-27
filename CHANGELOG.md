@@ -23,12 +23,23 @@ loading.
   `web_fetch` and file tools, so its output quality is bounded by what those
   host tools can reach.
 - `vendor/deep-research/` (53 files), vendored whole and byte-identical.
-- **Port notice.** When a served skill's own instructions name a file
-  this port does not ship, the served text says so and forbids fabricating it:
-  `deep-research/agents/bibliography_agent.md` points at
-  `academic-pipeline/references/literature_corpus_consumers.md`, which is not
-  vendored. Skill metadata additionally lists `shared/` references that are
-  unavailable here (`unavailableReferences`, `unavailableSharedReferences`).
+- **Port notice (commit 4c84ffb).** A served skill whose own instructions name
+  a file this port does not ship now gets a delimited block appended to its
+  served text — `<!-- dsh-academic-review:port-notice:begin (not upstream text) -->`
+  … `…:end -->` — naming the missing path and telling the model not to fabricate
+  or paraphrase its content. The vendored files are never edited; the full list
+  rides in `metadata.unavailableReferences` (+ `unavailableReferenceCount`).
+  Today exactly one case exists: `deep-research/agents/bibliography_agent.md`
+  points at `academic-pipeline/references/literature_corpus_consumers.md`, which
+  is not vendored. The `shared/` protocol files carry a further 14 distinct
+  references (22 sites) to unvendored upstream areas (academic-paper,
+  academic-pipeline, docs/design, examples, scripts/adapters); those are
+  metadata-only (`unavailableSharedReferences`,
+  `unavailableSharedReferenceCount`) and are **not** appended to any body, because
+  `shared/` is shared by every skill and a body notice would change the
+  reviewer's served bytes. So `deep-research` inherits upstream cross-skill
+  references this port cannot satisfy; a later round either vendors those skills
+  or extends the notice to the shared scope.
 
 ### Changed
 
@@ -52,9 +63,19 @@ loading.
 ### Note
 
 - **Write policy A — new paths only** is documented as a hard product rule, not
-  a default: every file a skill produces goes to a new path, and the manuscript
-  is never overwritten, moved or deleted. Manuscript drift is reported
-  (`paper_changed`), never repaired.
+  a default: every file a skill produces goes to a new path (`deep-research`
+  outputs included), and the manuscript is never overwritten, moved, renamed or
+  deleted. Pointing a command at an existing output path is refused or renamed,
+  never clobbered. Manuscript drift is reported (`paper_changed`), never
+  repaired.
+
+### Documentation
+
+- The README is now bilingual: **Simplified Chinese** (`README.zh-CN.md`) next to
+  the English one, with a language switch on line 1 of both, and
+  `tests/readme-language-parity.test.mjs` keeping the two structurally identical
+  (same code blocks, headings, tables, links and the legally load-bearing
+  attribution wording).
 
 ## [0.1.1] - 2026-10-27
 
