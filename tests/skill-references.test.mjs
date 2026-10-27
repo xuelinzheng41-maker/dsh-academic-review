@@ -388,7 +388,8 @@ test('the served payload keeps its order and its byte counts for all three skill
   assert.ok(bodyStart >= blockEnd, 'the vendored body must follow the write-policy block (block ends ' + String(blockEnd) + ', body starts ' + String(bodyStart) + ')')
   assert.equal(paper.content.slice(0, blockEnd), block.slice(0, blockEnd), 'the block must be served verbatim, in front')
   assert.equal(notice.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the appended port notice must come last, directly after the body')
-  assert.equal(notice.includes(PAPER_SKILL_NAME) || notice.includes('reference'), true, 'the notice must name what it is about')
+  assert.equal(notice.includes('academic-pipeline/references/literature_corpus_consumers.md'), true,
+    'the notice must name the file it is apologising for')
   assert.equal(notice.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
   assert.equal(paper.content.slice(noticeStart).includes(WRITE_POLICY_BEGIN), false, 'policy A must never appear after the body')
   assert.equal(paper.content.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
@@ -429,7 +430,9 @@ test('the one non-markdown vendored file is pinned, CR-free and shipped in the p
   // Byte-identical to the upstream git object (repository bytes, not the
   // CRLF-converted upstream worktree copy of the same file).
   const digest = createHash('sha256').update(bytes).digest('hex')
-  console.log('# .tex: ' + tex + ' ' + String(bytes.length) + ' bytes, sha256 ' + digest + ', CR bytes 0')
+  const carriageReturns = [...bytes].filter(byte => byte === 0x0d).length
+  console.log('# .tex: ' + tex + ' ' + String(bytes.length) + ' bytes, sha256 ' + digest
+    + ', CR bytes ' + String(carriageReturns) + ', LF bytes ' + String([...bytes].filter(byte => byte === 0x0a).length))
   assert.equal(bytes.length, 4844, 'the pinned upstream object is 4844 bytes')
   assert.equal(digest, '1f9112782a501b605d17ce644598cdd5e5ef250560198677266976038ccbc3c9',
     'the .tex must be byte-identical to the upstream object')
