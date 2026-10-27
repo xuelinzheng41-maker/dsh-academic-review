@@ -1,0 +1,6 @@
+# The vendored upstream tree is copied byte-for-byte and pinned by SHA-256 in
+# vendor-manifest.json. Disable git's text conversion for it: with
+# core.autocrlf=true (the Windows default) a checkout rewrites LF to CRLF in the
+# working tree, the recorded digests stop matching, and verify:vendor fails on
+# any clone that is not configured exactly like the machine that vendored it.
+vendor/** -text
