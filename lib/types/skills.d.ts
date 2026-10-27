@@ -20,11 +20,17 @@
  * from vendor-manifest.json, because neither SKILL.md declares a license of
  * its own - and the reported `licenseSource` says which of the two answered.
  *
+ * A served body that names a file this package does not ship gets a delimited
+ * port notice appended (and the full list in metadata), so a prompt-only skill
+ * can never silently teach the model to improvise over a missing reference. The
+ * notice is runtime text: the vendored files themselves are never edited.
+ *
  * Nothing here writes to vendor/: the provider is read-only and the vendored
  * tree stays byte-identical to upstream (docs/PORT_SPEC.md section 1.2).
  *
  * @module dsh-academic-review/skills
  */
+import { type MissingReference } from './references.ts';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider, SkillProviderControl, SkillResourceBase } from '@deepseek-ai/dsh-skill';
 /** Instruction file inside every vendored skill directory. */
@@ -136,6 +142,8 @@ export declare class VendoredSkillsProvider implements SkillProvider {
     readonly rank: number;
     /** Registration lifecycle, borrowed from the registry. */
     private readonly control;
+    /** Per-skill missing-reference cache; the vendored tree is pinned per install. */
+    private readonly missingBySkill;
     /** Lazily read repository pin, undefined when the manifest is unusable. */
     private manifest;
     constructor(config: ReviewSkillProviderConfig, control: SkillProviderControl, skillNames?: readonly string[]);
@@ -160,6 +168,13 @@ export declare class VendoredSkillsProvider implements SkillProvider {
      * @returns the complete skill definition, or undefined if the file vanished.
      */
     get(candidate: SkillCandidate, options?: SkillLookupOptions): Promise<SkillDefinition | undefined>;
+    /**
+     * References this skill's own tree names that this package does not contain.
+     * Cached per provider instance: the vendored tree is pinned by SHA-256.
+     * @param skillName - served skill name.
+     * @returns distinct missing targets with their referencing files.
+     */
+    missingReferencesOf(skillName: string): Promise<readonly MissingReference[]>;
     /** Map a candidate name back onto one served vendored skill. */
     private servedNameOf;
     /** Invocation-neutral fields shared by list() and get(). */
@@ -175,6 +190,23 @@ export declare class VendoredSkillsProvider implements SkillProvider {
     /** Read vendor-manifest.json once per provider instance. */
     private vendorManifest;
 }
+/** Opening marker of the port notice; it is not upstream text. */
+export declare const PORT_NOTICE_BEGIN = "<!-- dsh-academic-review:port-notice:begin (not upstream text) -->";
+/** Closing marker of the port notice. */
+export declare const PORT_NOTICE_END = "<!-- dsh-academic-review:port-notice:end -->";
+/**
+ * Render the port notice appended to one served skill body.
+ *
+ * Empty string when the skill's own tree names nothing missing, so a clean
+ * skill is served byte-for-byte as vendored. The notice is clearly delimited,
+ * says it is not upstream text, lists the paths, and gives exactly one
+ * instruction: do not invent the missing content. A long list is truncated in
+ * the body and carried in full in metadata.unavailableReferences.
+ * @param skillName - served skill name (used to shorten source paths).
+ * @param missing - missing targets with their referencing files.
+ * @returns the notice block, or '' when nothing is missing.
+ */
+export declare function renderPortNotice(skillName: string, missing: readonly MissingReference[]): string;
 /**
  * Read the repository-level vendored pin.
  * @param path - absolute vendor-manifest.json path.

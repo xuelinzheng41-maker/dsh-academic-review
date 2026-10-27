@@ -27,8 +27,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { posix } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -61,88 +60,20 @@ const UNVENDORED_UPSTREAM_AREAS = new Map([
   ['scripts', 'upstream repository scripts/: not vendored by this port'],
 ])
 
-/** Markdown link with an inline destination and optional title. */
-const MARKDOWN_LINK = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/gu
-/** Bare shared/... path, not part of a longer path or URL. */
-const BARE_SHARED_PATH = /(?<![A-Za-z0-9_./-])shared\/[A-Za-z0-9_./<>{}*$-]+/gu
-/** Angle brackets, braces, stars and $ mark a template placeholder, not a path. */
-const PLACEHOLDER = /[<>{}*$]/u
-
-/** Every file under a directory, as posix paths relative to it. */
-async function walkFiles(dir, prefix = '') {
-  const out = []
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
-    if (entry.isDirectory()) out.push(...(await walkFiles(join(dir, entry.name), relative)))
-    else out.push(relative)
-  }
-  return out
-}
+import {
+  PLACEHOLDER,
+  existsInside,
+  normalizeReference,
+  referencesIn,
+  resolveReference,
+  scanVendorReferences,
+} from '../lib/references.js'
 
 /** Whether a vendored relative path exists as a file or a directory. */
-async function existsInsideVendor(relative) {
-  try {
-    await stat(join(vendorDir, relative))
-    return true
-  } catch {
-    return false
-  }
-}
+const existsInsideVendor = relative => existsInside(vendorDir, relative)
 
-/** Strip a trailing sentence period and any #anchor from a raw reference. */
-function normalizeReference(raw) {
-  return raw.split('#')[0].replace(/[.,;:!?]+$/u, '').replace(/^</u, '').replace(/>$/u, '')
-}
-
-/** Resolve one reference to a vendor-relative path. */
-function resolveReference(file, raw, kind) {
-  if (kind === 'shared') return posix.normalize(raw)
-  const directory = posix.dirname(file)
-  return posix.normalize(posix.join(directory === '.' ? '' : directory, raw))
-}
-
-/** Every reference found in one markdown file, in file order. */
-function referencesIn(file, text) {
-  const found = []
-  for (const match of text.matchAll(MARKDOWN_LINK)) {
-    const raw = match[1]
-    if (/^(?:https?:|mailto:|tel:|#)/iu.test(raw)) continue
-    found.push({ file, raw, kind: 'link' })
-  }
-  for (const match of text.matchAll(BARE_SHARED_PATH)) {
-    found.push({ file, raw: match[0], kind: 'shared' })
-  }
-  return found
-}
-
-/** Scan the whole vendored tree and classify every reference. */
-async function scanVendoredReferences() {
-  const files = (await walkFiles(vendorDir)).filter(name => name.toLowerCase().endsWith('.md')).sort()
-  const resolved = []
-  const missing = []
-  let references = 0
-  let placeholders = 0
-  let links = 0
-  let sharedPaths = 0
-  for (const file of files) {
-    const text = await readFile(join(vendorDir, file), 'utf8')
-    for (const reference of referencesIn(file, text)) {
-      const raw = normalizeReference(reference.raw)
-      if (raw === '' || PLACEHOLDER.test(raw)) {
-        placeholders += 1
-        continue
-      }
-      references += 1
-      if (reference.kind === 'link') links += 1
-      else sharedPaths += 1
-      const target = resolveReference(file, raw, reference.kind)
-      const entry = { ...reference, target }
-      if (await existsInsideVendor(target)) resolved.push(entry)
-      else missing.push(entry)
-    }
-  }
-  return { files, references, links, sharedPaths, placeholders, resolved, missing }
-}
+/** Scan the whole vendored tree with the plugin's single scanner implementation. */
+const scanVendoredReferences = () => scanVendorReferences({ vendorBasePath: vendorRoot })
 
 test('every vendored markdown reference resolves inside vendor/, except the unvendored upstream areas', async () => {
   const scan = await scanVendoredReferences()
@@ -231,7 +162,7 @@ test('the deep-research tree references 34 distinct shared/ paths and every one 
   for (const entry of fromReviewer) assert.equal(await existsInsideVendor(entry.target), true, entry.target)
 })
 
-test('the deep-research frontmatter parses and the provider serves it clean', async () => {
+test('the deep-research frontmatter parses and the provider serves it with a port notice', async () => {
   const raw = await readFile(join(vendorDir, DEEP_RESEARCH_SKILL_NAME, 'SKILL.md'), 'utf8')
   assert.ok(raw.startsWith('---'), 'the vendored SKILL.md keeps its upstream frontmatter')
   const document = parseSkillDocument(raw)
@@ -262,6 +193,10 @@ test('the deep-research frontmatter parses and the provider serves it clean', as
   assert.equal(definition.resourceBase.kind, 'directory')
   assert.equal(definition.resourceBase.path, join(vendorRoot, DEEP_RESEARCH_SKILL_NAME))
   assert.equal(definition.metadata.upstreamSkillVersion, '2.12.1')
+  // The one reference this skill names but this port does not ship is disclosed
+  // at serve time (see tests/port-notice.test.mjs for the full contract).
+  assert.equal(definition.metadata.unavailableReferenceCount, 1)
+  assert.ok(definition.content.startsWith(parseSkillDocument(raw).body), 'upstream body must be served first, unmodified')
   assert.ok(existsInsideVendor(DEEP_RESEARCH_SKILL_NAME + '/SKILL.md'))
   assert.equal(await existsInsideVendor(DEEP_RESEARCH_SKILL_NAME + '/SKILL.md'), true)
 })
