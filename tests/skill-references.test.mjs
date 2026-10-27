@@ -396,15 +396,23 @@ test('the served payload keeps its order and its byte counts (reviewer canary, d
   const researchBody = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
   const paper = served.get(PAPER_SKILL_NAME)
   const paperBody = await vendoredBody(PAPER_SKILL_NAME)
-  const block = renderWritePolicyBlock(PAPER_SKILL_NAME)
+  const block = renderWritePolicyBlock()
 
-  // CANARY: the reviewer's served bytes are the vendored bytes, full stop. Two
-  // members have now added port text to served bodies; this is what catches a
-  // third one doing it to the skill that must not change.
-  assert.equal(reviewer.content, reviewerBody, 'the reviewer body must stay byte-identical to the vendored text')
+  // CANARY, RE-AIMED. It used to be "the reviewer is its vendored body, nothing prepended
+  // and nothing appended". Since 3f16ec3 the rule is attached to every served skill - the
+  // detector cannot prove a skill never writes, so nothing is selected any more - which
+  // means the reviewer legitimately starts with the block. What the canary must still
+  // catch is what it was always for: a third member adding port text to a served BODY.
+  // So the body is asserted byte-identical after the block, and the notice is asserted
+  // absent; the rule's presence is asserted as exactly one block, not as zero.
+  assert.equal(reviewer.content.startsWith(block), true, 'the write-policy block must be first, for every served skill')
+  assert.equal(reviewer.content.slice(block.length), reviewerBody, 'the reviewer body must stay byte-identical to the vendored text')
+  assert.equal(reviewer.content.includes(PORT_NOTICE_BEGIN), false, 'the reviewer must carry no port notice today')
+  assert.equal(reviewer.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block on the reviewer')
   t.diagnostic('served bytes  ' + REVIEW_SKILL_NAME + ': ' + String(byteLength(reviewer.content))
-    + ' = vendored body ' + String(byteLength(reviewerBody)) + ' (no block, no notice)')
-  assert.equal(byteLength(reviewer.content), 47300, 'the reviewer served payload moved')
+    + ' = write-policy block ' + String(byteLength(block)) + ' + vendored body ' + String(byteLength(reviewerBody)) + ' (no notice)')
+  assert.equal(byteLength(reviewer.content), 47984, 'the reviewer served payload moved')
+  assert.equal(byteLength(reviewerBody), 47300)
 
   // academic-paper: block, then body, then the appended port notice - in that order.
   assert.equal(paper.content.startsWith(WRITE_POLICY_BEGIN), true, 'the write-policy block must be first')
@@ -431,22 +439,26 @@ test('the served payload keeps its order and its byte counts (reviewer canary, d
   assert.equal(byteLength(block), 684)
   assert.equal(byteLength(notice), 572)
 
-  // deep-research: unchanged from the previous release apart from its own notice.
-  assert.equal(research.content.startsWith(researchBody), true, 'the vendored deep-research body must be served first, verbatim')
-  const researchNotice = research.content.slice(researchBody.length)
-  assert.equal(research.content.includes(WRITE_POLICY_BEGIN), false, 'deep-research must not carry policy A')
-  assert.equal(researchNotice.trimStart().startsWith(PORT_NOTICE_BEGIN), true)
+  // deep-research: block, then the vendored body verbatim, then its own notice.
+  assert.equal(research.content.startsWith(block), true, 'the write-policy block must be first, for every served skill')
+  assert.equal(research.content.slice(block.length, block.length + researchBody.length), researchBody,
+    'the vendored deep-research body must be served verbatim, directly after the block')
+  const researchNotice = research.content.slice(block.length + researchBody.length)
+  assert.equal(research.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block on deep-research')
   assert.equal(researchNotice.trimEnd().endsWith(PORT_NOTICE_END), true)
   assert.equal(research.content.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
   t.diagnostic('served bytes  ' + DEEP_RESEARCH_SKILL_NAME + ': ' + String(byteLength(research.content))
-    + ' = vendored body ' + String(byteLength(researchBody))
-    + ' + port notice ' + String(byteLength(researchNotice)) + ' (no write-policy block)')
-  assert.equal(byteLength(research.content), 51632, 'the deep-research served payload moved')
+    + ' = write-policy block ' + String(byteLength(block)) + ' + vendored body ' + String(byteLength(researchBody))
+    + ' + port notice ' + String(byteLength(researchNotice)))
+  assert.equal(byteLength(research.content), 52316, 'the deep-research served payload moved')
   assert.equal(byteLength(researchBody), 51069)
 
-  // The block travels with exactly the skill that writes: never the reviewer.
-  assert.equal(reviewer.content.includes(WRITE_POLICY_BEGIN), false, 'the reviewer must not carry policy A')
-  assert.equal(reviewer.content.includes(PORT_NOTICE_BEGIN), false, 'the reviewer must carry no port notice today')
+  // The block is attached to every served skill and to nothing else: it is not in the
+  // metadata twice, not in the notice, and never after the body.
+  assert.equal(paper.content.slice(block.length + paperBody.length).includes(WRITE_POLICY_BEGIN), false,
+    'the block must appear before the body and only there')
+  assert.equal(reviewer.content.split(WRITE_POLICY_BEGIN).length - 1, 1, 'the reviewer carries it exactly once')
+  assert.equal(research.content.split(WRITE_POLICY_BEGIN).length - 1, 1, 'deep-research carries it exactly once')
 })
 
 test('the one non-markdown vendored file is pinned, CR-free and shipped in the package', async () => {

@@ -729,40 +729,43 @@ async function main() {
       payloadBytes.push(skillName + ' ' + String(Buffer.byteLength(content)) + ' = body '
         + String(Buffer.byteLength(vendored)) + ' + head ' + String(Buffer.byteLength(before))
         + ' + tail ' + String(Buffer.byteLength(after)))
+      // Since 3f16ec3 the rule is ATTACHED to every served skill rather than selected by
+      // the detector (qa-gate's adversarial skills proved the detector has false negatives
+      // a table test cannot see), so the shape is uniform: block, then the vendored body
+      // verbatim, then whatever notice the tree earns. What differs per skill is the
+      // notice and the pinned total, not the presence of the rule.
+      const block = renderWritePolicyBlock()
+      assert.equal(before, block, skillName + ': exactly the write-policy block may precede the body')
+      assert.equal(before.split(WRITE_POLICY_BEGIN).length, 2, skillName + ': exactly one write-policy block')
+      assert.equal(content.split(WRITE_POLICY_BEGIN).length, 2, skillName + ': one block in the whole payload, so a double attachment fails here')
+      assert.equal(after.includes(WRITE_POLICY_BEGIN), false, skillName + ': policy A must never appear after the body')
+      assert.equal(Buffer.byteLength(before), 684, skillName + ': the prepended block moved')
       if (skillName === 'academic-paper') {
-        // block first, then body, then notice - in that order, one each.
-        assert.equal(before.startsWith(WRITE_POLICY_BEGIN), true, 'the write-policy block must be the first thing read')
-        assert.equal(before.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block')
-        assert.equal(before, renderWritePolicyBlock(skillName), 'only the write-policy block may precede the body')
-        assert.equal(after.includes(WRITE_POLICY_BEGIN), false, 'policy A must never appear after the body')
         assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the port notice must follow the body')
         assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
         assert.equal(after.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
         assert.equal(Buffer.byteLength(content), 65113, 'the academic-paper payload moved')
-        assert.equal(Buffer.byteLength(before), 684, 'the prepended block moved')
       } else if (skillName === 'sr-screener') {
-        // The same block, the same order - and no notice on this tree, because every
-        // path its own markdown names is vendored. If it ever earns one, the payload
-        // grows by exactly that notice and this pin moves deliberately.
-        assert.equal(before, renderWritePolicyBlock('sr-screener'), 'only the write-policy block may precede the body')
+        // No notice on this tree: every path its own markdown names is vendored. If it
+        // ever earns one the payload grows by exactly that notice and this pin moves.
         assert.equal(after, '', 'sr-screener earns no port notice on this tree')
-        assert.equal(Buffer.byteLength(before), 684, 'the prepended block moved')
         assert.equal(Buffer.byteLength(content), 33212, 'the sr-screener payload moved')
       } else if (skillName === 'deep-research') {
-        assert.equal(before, '', 'deep-research must carry nothing before the body')
         assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'deep-research keeps its own append notice')
-        assert.equal(Buffer.byteLength(content), 51632, 'the deep-research payload moved')
+        assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the notice must end the deep-research payload')
+        assert.equal(Buffer.byteLength(content), 52316, 'the deep-research payload moved')
       } else {
-        // The reviewer is the canary: its payload is the vendored bytes, untouched.
-        assert.equal(before, '', 'the reviewer must carry no prepended text')
+        // The reviewer is still the canary, but of the BODY: the rule now legitimately
+        // precedes it, so what must stay true is that nothing was added to the vendored
+        // text and nothing appended after it.
         assert.equal(after, '', 'the reviewer must carry no appended text')
-        assert.equal(content, vendored, 'the reviewer body must stay byte-identical to the vendored text')
-        assert.equal(Buffer.byteLength(content), 47300, 'the reviewer payload moved')
+        assert.equal(content, block + vendored, 'the reviewer payload must be exactly block + the untouched vendored body')
+        assert.equal(Buffer.byteLength(content), 47984, 'the reviewer payload moved')
       }
     }
     for (const line of payloadBytes) console.log('      payload ' + line)
-    ok('served payloads keep order and bytes: academic-paper = block + body + notice, sr-screener = block + body, '
-      + 'deep-research = body + notice, reviewer = body only (canary 47300 B)')
+    ok('served payloads keep order and bytes: every skill is block + body (+ notice where the tree names unvendored '
+      + 'areas) - academic-paper 65113, reviewer 47984 (canary: body untouched), deep-research 52316, sr-screener 33212')
 
     // The payload is a class, not one template. Counting it here means a file that
     // disappears from the tree fails the harness even if nothing else noticed, and

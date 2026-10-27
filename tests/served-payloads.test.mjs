@@ -13,9 +13,11 @@
  * - each payload file's bytes hash to the blob the index holds, computed by git
  *   itself with --no-filters: that is the "not normalised by any tooling" proof, and
  *   it is why a CRLF worktree copy cannot pass;
- * - the four served payloads keep their shape: the reviewer is its vendored body
- *   exactly, deep-research is body + notice, and both file-producing skills are
- *   block + body (+ notice), with two distinguishable reasons in metadata.
+ * - the four served payloads all carry policy A: block + body (+ a notice where the tree
+ *   names unvendored areas). The rule is attached to every skill rather than selected by
+ *   a detector, so the reviewer and deep-research gain the block and the two skills that
+ *   already had it do not move; the table survives as documentation of why each skill was
+ *   classified as it was.
  *
  * @module dsh-academic-review/tests/served-payloads
  */
@@ -55,14 +57,25 @@ const SERVED_SKILLS = ['academic-paper', 'academic-paper-reviewer', 'deep-resear
 const PRODUCERS = { 'academic-paper': 'prose-drafting', 'sr-screener': 'bundled-script' }
 
 /**
- * Measured on 1725f0f ("the block names the script shape"), not typed in from a
- * report: the block is 684 bytes and these are the served totals. They are pinned so
- * that a body reflow, a notice change or a block edit has to be a deliberate
- * re-pin. The relationships below also assert each total against its parts, so a
- * failure says which part moved.
+ * Measured at 3f16ec3 ("attach policy A to every served skill") with the provider's own
+ * output, not typed in from a report: the block is 684 bytes and these are the served
+ * totals. They are pinned so that a body reflow, a notice change or a block edit has to
+ * be a deliberate re-pin. The relationships below also assert each total against its
+ * parts, so a failure says which part moved.
  */
-const SERVED_BYTES = { 'academic-paper': 65113, 'academic-paper-reviewer': 47300, 'deep-research': 51632, 'sr-screener': 33212 }
+const SERVED_BYTES = { 'academic-paper': 65113, 'academic-paper-reviewer': 47984, 'deep-research': 52316, 'sr-screener': 33212 }
 const BLOCK_BYTES = 684
+
+/**
+ * The totals as they stood while the rule was SELECTED (two producers only), and the
+ * change each skill was allowed to make when it became ATTACHED (all four). The delta is
+ * asserted separately from the total because a total can be right for the wrong reason:
+ * a double attachment shows as +1368, a missing block on a producer shows as -684, and
+ * both would leave 'block + body + notice' arithmetically satisfied if the block were
+ * counted twice on one side.
+ */
+const PREVIOUS_PIN = { 'academic-paper': 65113, 'academic-paper-reviewer': 47300, 'deep-research': 51632, 'sr-screener': 33212 }
+const DELTA = { 'academic-paper': 0, 'academic-paper-reviewer': BLOCK_BYTES, 'deep-research': BLOCK_BYTES, 'sr-screener': 0 }
 
 /** The vendored file count and how many of them are payload rather than markdown. */
 const VENDORED_FILES = 279
@@ -178,7 +191,7 @@ test('every payload file is the object the index holds: git hashes the bytes wit
     + 'and git reports text:unset for every one')
 })
 
-test('the four served payloads: block, body, notice, and two distinguishable reasons', async () => {
+test('all four served payloads carry the rule: block + body (+ notice), and the table is documentation', async () => {
   const ctx = new Context()
   const registry = new SkillRegistry(ctx)
   registerReviewSkillProvider(ctx, { providerName: 'academic-review', vendorBasePath: vendorRoot })
@@ -192,107 +205,98 @@ test('the four served payloads: block, body, notice, and two distinguishable rea
     bodies.set(skill, parseSkillDocument(await readFile(join(vendorDir, skill, 'SKILL.md'), 'utf8')).body)
   }
 
-  // The reviewer is the canary: nothing may be prepended or appended, so its served
-  // payload is its vendored body and nothing else.
-  const reviewer = served.get('academic-paper-reviewer')
-  assert.equal(reviewer.content, bodies.get('academic-paper-reviewer'), 'the reviewer payload must be its vendored body exactly')
-  assert.equal(reviewer.content.includes(WRITE_POLICY_BEGIN), false, 'the reviewer must carry no write-policy block')
-  assert.equal(reviewer.metadata.writePolicy, undefined, 'the reviewer must not advertise a write policy')
-  assert.equal(byteLength(reviewer.content), SERVED_BYTES['academic-paper-reviewer'])
-
-  // deep-research carries its own append notice and no block.
-  const research = served.get('deep-research')
-  assert.equal(research.content.startsWith(bodies.get('deep-research')), true, 'deep-research is served verbatim after nothing')
-  assert.equal(research.content.includes(WRITE_POLICY_BEGIN), false, 'deep-research must carry no write-policy block')
-  assert.equal(byteLength(research.content), SERVED_BYTES['deep-research'])
-  const researchNotice = research.content.slice(bodies.get('deep-research').length)
-  assert.equal(researchNotice.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'deep-research keeps its append notice')
-  assert.equal(researchNotice.trimEnd().endsWith(PORT_NOTICE_END), true, 'the notice must end the deep-research payload')
-  assert.equal(research.metadata.writePolicy, undefined, 'deep-research must not advertise a write policy')
-
-  // Both producers: the canonical block for that skill first, then the body, then
-  // whatever notice the tree earns. The relationship is asserted as well as the
-  // total, so a moved byte says which part moved.
-  const blocks = new Map()
-  for (const [skill, basis] of Object.entries(PRODUCERS)) {
-    const definition = served.get(skill)
-    const block = renderWritePolicyBlock(skill)
-    blocks.set(skill, block)
-    const body = bodies.get(skill)
-    assert.equal(block.includes(WRITE_POLICY_BEGIN), true, skill + ': the block must open with its marker')
-    assert.equal(block.includes(WRITE_POLICY_END), true, skill + ': the block must close with its marker')
-    assert.equal(definition.content.startsWith(block), true, skill + ': the block must be the first thing read')
-    assert.equal(definition.content.includes(block + body), true, skill + ': the block must be followed immediately by the body')
-    assert.equal(definition.content.split(WRITE_POLICY_BEGIN).length, 2, skill + ': exactly one write-policy block')
-    const notice = definition.content.slice(block.length + body.length)
-    assert.equal(byteLength(block), BLOCK_BYTES, skill + ': the prepended block moved')
-    assert.equal(byteLength(definition.content), BLOCK_BYTES + byteLength(body) + byteLength(notice),
-      skill + ': the served payload must be block + body + notice')
-    assert.equal(byteLength(definition.content), SERVED_BYTES[skill], skill + ': the served payload moved')
-
-    // The two reasons are not the same reason wearing two hats: the table records a
-    // distinct basis per skill, and the metadata mirrors the table.
-    const entry = fileProducingEntry(skill)
-    assert.ok(entry !== undefined, skill + ' must have a table entry')
-    assert.equal(entry.basis, basis, skill + ' must qualify on ' + basis)
-    // The metadata is the table's own output, not a second opinion about it.
-    const declared = writePolicyMetadataOf(skill)
-    assert.equal(definition.metadata.writePolicy, declared.writePolicy, skill + ': metadata must mirror the table')
-    assert.equal(definition.metadata.writePolicyEnforced, declared.writePolicyEnforced,
-      skill + ': the enforcement flag must mirror the table')
-    // The instrument is disclosed to the model, not only recorded in this repository.
-    // This assertion exists because the gap was real until 8f3b0aa: the metadata used
-    // to say "a policy applies" without saying which measurement qualified the skill,
-    // so a reader could not tell prose drafting from bundled scripts. Closing a gap
-    // deserves an assertion; deleting the note would have been a silence.
-    assert.equal(definition.metadata.writePolicyBasis, declared.writePolicyBasis,
-      skill + ': the served metadata must mirror the basis in the table')
-    assert.equal(definition.metadata.writePolicyBasis, entry.basis,
-      skill + ': the served basis must be the instrument this skill actually qualified on')
-    assert.equal(typeof entry.reason, 'string', skill + ': the table must carry a reason')
-    assert.equal(entry.reason.trim().includes(' '), true, skill + ': the reason must be a sentence, not a label')
-  }
-
-  // The two qualifications are different reasons - drafting prose versus running
-  // bundled scripts - and the table records which is which, with its own sentence.
-  // The BLOCK, by contrast, is one rule for both carriers: it is the same 684 bytes
-  // whichever reason qualified the skill, because a rule the model has to
-  // reinterpret per skill is weaker than one rule stated once.
-  const bases = Object.values(PRODUCERS)
-  assert.equal(new Set(bases).size, 2, 'the two producers must qualify for two different reasons')
-  const reasons = ['academic-paper', 'sr-screener'].map(skill => fileProducingEntry(skill).reason)
-  assert.equal(new Set(reasons).size, 2, 'each entry needs its own reason, not a shared one')
-  assert.equal(blocks.get('academic-paper'), blocks.get('sr-screener'),
-    'the block is one rule for both carriers, so the two must be byte-identical')
-  console.log('# qualifications differ in the table: academic-paper -> ' + fileProducingEntry('academic-paper').basis
-    + ', sr-screener -> ' + fileProducingEntry('sr-screener').basis
-    + '; the prepended block is the same ' + String(BLOCK_BYTES) + ' bytes for both')
-  console.log('# the served metadata now discloses the instrument (writePolicyBasis): academic-paper -> '
-    + String(served.get('academic-paper').metadata.writePolicyBasis) + ', sr-screener -> '
-    + String(served.get('sr-screener').metadata.writePolicyBasis)
-    + '; the reviewer and deep-research carry none of the three keys, and adding the key moved no payload byte')
-
-  // ...and the two skills that produce nothing carry no trace of the policy, in any
-  // of the three keys: a stray writePolicy on the reviewer would tell the model it is
-  // held to a rule that was never prepended to its body.
-  for (const skill of SERVED_SKILLS.filter(name => PRODUCERS[name] === undefined)) {
-    const definition = served.get(skill)
-    for (const key of ['writePolicy', 'writePolicyEnforced', 'writePolicyBasis']) {
-      assert.equal(key in definition.metadata, false, skill + ' must not carry metadata.' + key)
-    }
-  }
+  // THE RULE IS ATTACHED, NOT SELECTED. renderWritePolicyBlock() takes no argument and
+  // does not consult the table even when a name is offered: a skill the table has never
+  // heard of gets the same 684 bytes. Why: qa-gate built adversarial skills against the
+  // old detector and produced three guaranteed false negatives - a skill that writes
+  // through shell commands it does not ship, one that writes with inline python -c, and
+  // one whose prose says 'generate the deliverable' (generate is not a writing verb) -
+  // and its structural point decided the design: a both-directions table test cannot see
+  // a SHARED blind spot, because when the rule misses a skill the rule and the table
+  // agree on 'no'. So the block is unconditional and the detector survives as
+  // documentation of why each skill was ever classified the way it was.
+  const block = renderWritePolicyBlock()
+  assert.equal(renderWritePolicyBlock.length, 0, 'the renderer must take no skill name: the rule is attached, not selected')
+  assert.equal(byteLength(block), BLOCK_BYTES, 'the prepended block moved')
+  assert.equal(renderWritePolicyBlock('no-such-skill'), block, 'the block must not depend on the skill name')
+  assert.equal(renderWritePolicyBlock('academic-paper-reviewer'), block, 'not even the reviewer gets a different rule')
 
   for (const skill of SERVED_SKILLS) {
     const definition = served.get(skill)
     const body = bodies.get(skill)
-    const block = blocks.get(skill) ?? ''
+    assert.equal(definition.content.startsWith(block), true, skill + ': the block must be the first thing read')
+    assert.equal(definition.content.includes(block + body), true, skill + ': the block must be followed immediately by the body')
+    // Exactly one block. A second attachment would still 'start with the block' and
+    // would show in the delta below as +1368 instead of +684.
+    assert.equal(definition.content.split(WRITE_POLICY_BEGIN).length - 1, 1, skill + ': exactly one write-policy block')
     const notice = definition.content.slice(block.length + body.length)
+    if (notice.trim() === '') {
+      assert.equal(notice, '', skill + ': a tree that earns no notice must contribute no bytes at all')
+    } else {
+      assert.equal(notice.trimStart().startsWith(PORT_NOTICE_BEGIN), true, skill + ': whatever follows the body must be an append notice')
+      assert.equal(notice.trimEnd().endsWith(PORT_NOTICE_END), true, skill + ': the notice must end the payload')
+    }
+    assert.equal(byteLength(definition.content), BLOCK_BYTES + byteLength(body) + byteLength(notice),
+      skill + ': the served payload must be block + body + notice')
+    assert.equal(byteLength(definition.content), SERVED_BYTES[skill], skill + ': the served payload moved')
+    // The DELTA is the component check: a total can be right while a component is
+    // wrong, and the two skills that gained the rule this round must gain exactly one
+    // block while the two that already had it must not move at all.
+    assert.equal(SERVED_BYTES[skill] - PREVIOUS_PIN[skill], DELTA[skill],
+      skill + ': the change since the previous pin must be exactly ' + String(DELTA[skill]) + ' byte(s)')
+
+    // The policy is advertised for every skill now, because it is prepended to every
+    // skill; the enforcement flag still tells the truth, and the basis - the instrument
+    // that put the skill in the table - is present only where the table names one.
+    const definitionMetadata = definition.metadata
+    const declared = writePolicyMetadataOf(skill)
+    assert.equal(definitionMetadata.writePolicy, 'new-paths-only', skill + ': every served skill carries policy A')
+    assert.equal(definitionMetadata.writePolicyEnforced, false, skill + ': the rule is an instruction, not an interlock')
+    assert.equal(definitionMetadata.writePolicyEnforced, declared.writePolicyEnforced, skill + ': the enforcement flag must mirror the table output')
+    const inTable = PRODUCERS[skill] !== undefined
+    assert.equal(definitionMetadata.writePolicyBasis, inTable ? declared.writePolicyBasis : undefined,
+      skill + (inTable ? ': the served metadata must mirror the basis' : ': a skill the table does not name has no basis to disclose'))
+
     console.log('# payload ' + skill.padEnd(24) + ' ' + String(byteLength(definition.content)).padStart(6)
       + ' = body ' + String(byteLength(body)).padStart(6)
       + ' + block ' + String(byteLength(block)).padStart(3)
       + ' + notice ' + String(byteLength(notice)).padStart(3)
-      + (PRODUCERS[skill] === undefined ? '' : '  [' + PRODUCERS[skill] + ']'))
+      + '   delta ' + String(DELTA[skill]).padStart(4)
+      + (inTable ? '  [' + PRODUCERS[skill] + ']' : ''))
   }
-  console.log('# reviewer = body exactly, deep-research = body + notice, academic-paper = block + body + notice, '
+
+  // The notice is a property of the tree, not of the skill: the two trees whose own
+  // markdown names paths this port does not vendor carry one, the other two carry none.
+  for (const skill of ['academic-paper-reviewer', 'sr-screener']) {
+    const definition = served.get(skill)
+    // Slice by CHARACTER offset (block.length + body.length); byteLength is for the
+    // arithmetic only, and the two differ the moment a body holds a non-ASCII character.
+    assert.equal(definition.content.slice(block.length + bodies.get(skill).length), '',
+      skill + ' earns no port notice: every path its own markdown names is vendored')
+  }
+  for (const skill of ['academic-paper', 'deep-research']) {
+    const definition = served.get(skill)
+    const notice = definition.content.slice(block.length + bodies.get(skill).length)
+    assert.notEqual(notice.trim(), '', skill + ' must still carry the notice for the areas this port does not vendor')
+  }
+
+  // The table's two entries still describe two different measurements with two
+  // different reasons. That is now documentation rather than a condition - the rule's
+  // presence no longer depends on it - so a third skill arriving with a new reason is a
+  // table edit and nothing else.
+  const bases = Object.values(PRODUCERS)
+  assert.equal(new Set(bases).size, 2, 'the table must keep two different reasons on record')
+  const reasons = Object.keys(PRODUCERS).map(skill => fileProducingEntry(skill).reason)
+  assert.equal(new Set(reasons).size, 2, 'each table entry needs its own reason, not a shared one')
+  for (const reason of reasons) {
+    assert.equal(typeof reason, 'string', 'a table entry must carry a reason')
+    assert.equal(reason.trim().includes(' '), true, 'the reason must be a sentence, not a label')
+  }
+  for (const skill of Object.keys(PRODUCERS)) {
+    assert.equal(fileProducingEntry(skill).basis, PRODUCERS[skill], skill + ' must still qualify on ' + PRODUCERS[skill])
+  }
+  console.log('# attached rule: ' + String(BLOCK_BYTES) + ' bytes on all four skills; table reasons differ '
+    + '(academic-paper -> ' + PRODUCERS['academic-paper'] + ', sr-screener -> ' + PRODUCERS['sr-screener'] + ') and are documentation now')
+  console.log('# reviewer = block + body, deep-research = block + body + notice, academic-paper = block + body + notice, '
     + 'sr-screener = block + body (no notice on this tree)')
 })
