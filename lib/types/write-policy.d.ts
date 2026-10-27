@@ -9,9 +9,10 @@
  * so policy A cannot be technically enforced: there is no interlock, no guard
  * rail, no refusal. What this module does is put the rule in front of the model
  * at the one moment it matters - as the first thing in the served body of a
- * skill that produces files - and mirror it in metadata so a caller can inspect
- * it without parsing prose. The guarantee is an instruction the model is told to
- * follow, not a constraint the runtime applies.
+ * skill that produces files - and mirror it in metadata (`writePolicy`,
+ * `writePolicyEnforced: false` and the qualifying `writePolicyBasis`) so a caller
+ * can inspect it without parsing prose. The guarantee is an instruction the model
+ * is told to follow, not a constraint the runtime applies.
  *
  * We also ship the skills' scripts verbatim and never execute or audit them:
  * nothing here runs a vendored program, and a served body is text.
@@ -44,9 +45,21 @@
  * Why rule 2 cannot be satisfied by a skill that merely mentions python:
  * - mentioning "python" in prose has no interpreter-plus-script invocation, so
  *   (a) and (b) never both hold on one line;
- * - naming a script the skill does not ship fails (b), because existence is
- *   resolved from the vendored tree - this is what keeps academic-paper-reviewer
- *   out, since it instructs python3 scripts/... that this port does not vendor;
+ * - naming a script that does not resolve inside THAT SKILL'S OWN vendored
+ *   directory fails (b), because the check is a location check against the disk,
+ *   not an existence check against the repository. This is what keeps
+ *   academic-paper-reviewer out, and the reason is location first: it instructs
+ *   python3 scripts/audit_panel_claims.py, and that script lives upstream at the
+ *   REPOSITORY ROOT (beside scripts/test_audit_panel_claims.py), not in the
+ *   reviewer's skill directory - the reviewer's own tree ships no .py file at
+ *   all. (This port also does not vendor the root scripts/ directory, so the
+ *   invocation resolves to nothing here either, but the rule would refuse it even
+ *   if we did vendor root scripts: the executable has to live where the skill can
+ *   ship it.) The contrast that makes the rule legible is sr-screener's
+ *   qualifying line - python $S/build_outputs.py --work sr_work --out
+ *   Screening_TA --config screening_config.json - which carries the same
+ *   interpreter and the same kind of output argument and gets the opposite
+ *   verdict, decided purely by where the executable lives;
  * - running a shipped script with only read-side arguments (--inputs, --config,
  *   --from) fails (c), because an invocation is only file-producing when it is
  *   told where to put an output;
@@ -205,6 +218,19 @@ export declare function scriptExecutionSignals(body: string, skillDirectory: str
 export declare function runsBundledScripts(body: string, skillDirectory: string): boolean;
 /**
  * Qualify one skill as file-producing under either instrument.
+ *
+ * The two instruments are deliberately different in kind, and the script one turns
+ * on LOCATION: the executable a line names must resolve inside that skill's own
+ * vendored directory. The cleanest proof that this is a location rule is the pair
+ * of lines it separates - sr-screener qualifies with
+ * `python $S/build_outputs.py --work sr_work --out Screening_TA --config
+ * screening_config.json`, while academic-paper-reviewer does not with
+ * `python3 scripts/audit_panel_claims.py ... --out-dir ...`: same interpreter,
+ * same kind of output argument, opposite verdict, decided only by whether the
+ * executable lives where the skill can ship it. (audit_panel_claims.py exists
+ * upstream at the repository root, not inside the reviewer's directory, which
+ * ships no .py file at all; this port vendors neither the root script nor a
+ * reading of it. The rule needs no root-script logic to refuse it.)
  * @param input.skillName - served skill name, for the verdict line.
  * @param input.body - the vendored body (frontmatter already stripped).
  * @param input.skillDirectory - absolute skill directory.
@@ -246,11 +272,24 @@ export declare function renderWritePolicyBlock(skillName: string): string;
 /**
  * Metadata a served skill advertises about policy A.
  *
- * `writePolicyEnforced: false` is deliberate and permanent: it is the machine-
- * readable version of the honesty boundary at the top of this module, so a UI or
- * a downstream consumer cannot read `writePolicy: 'new-paths-only'` and believe
- * the runtime stops overwrites.
+ * PUBLIC SURFACE, AND WE ARE PROMISING IT STAYS. These keys are how a caller -
+ * a panel, a report, a docs table - inspects the policy without parsing the served
+ * prose, so they are part of the plugin's contract to the host, not an internal
+ * detail. Three keys, and a skill either carries all three or none:
+ *
+ * - `writePolicy: 'new-paths-only'` - the rule that applies;
+ * - `writePolicyEnforced: false` - deliberate and permanent, the machine-readable
+ *   version of the honesty boundary at the top of this module, so a consumer
+ *   cannot read the policy name and believe the runtime stops overwrites;
+ * - `writePolicyBasis: 'prose-drafting' | 'bundled-script'` - WHICH instrument
+ *   qualified the skill, so "why does sr-screener carry this?" is answerable from
+ *   the served metadata instead of from this source file. It is read off the
+ *   {@link FILE_PRODUCING_SKILLS} entry, never typed here a second time, so the
+ *   advertisement cannot drift from the table that decides it.
+ *
+ * A skill that produces files by no instrument carries none of the three: an
+ * empty basis would be a claim with no measurement behind it.
  * @param skillName - served skill name.
- * @returns the two keys for a file-producing skill, or an empty object otherwise.
+ * @returns the three keys for a file-producing skill, or an empty object otherwise.
  */
 export declare function writePolicyMetadataOf(skillName: string): Record<string, unknown>;

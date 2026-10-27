@@ -325,21 +325,129 @@ test('the block is truthful for both shapes, names the script shape, and is iden
   }
 })
 
-test('write policy is mirrored in metadata for both producers, and only them', async () => {
+/** The metadata keys policy A promises. A carrier has all of them, a non-carrier none. */
+const WRITE_POLICY_KEYS = ['writePolicy', 'writePolicyEnforced', 'writePolicyBasis']
+
+/**
+ * Whether one served metadata object is an honest advertisement for one table entry.
+ * Kept as a predicate so the mutation tests below can prove it rejects: the point is
+ * that the served basis cannot disagree with the table, cannot be missing, and cannot
+ * name an instrument the rule did not measure.
+ */
+function basisProblems(metadata, entry, measuredBases) {
+  const problems = []
+  const advertised = Object.keys(metadata).filter(key => key.startsWith('writePolicy'))
+  if (entry === undefined) {
+    if (advertised.length > 0) problems.push('advertises a write policy without an entry: ' + advertised.join(', '))
+    return problems
+  }
+  for (const key of WRITE_POLICY_KEYS) {
+    if (!(key in metadata)) problems.push('missing ' + key)
+  }
+  for (const key of advertised) {
+    if (!WRITE_POLICY_KEYS.includes(key)) problems.push('unexpected key ' + key)
+  }
+  if (metadata.writePolicy !== WRITE_POLICY_NEW_PATHS_ONLY) problems.push('wrong writePolicy: ' + String(metadata.writePolicy))
+  if (metadata.writePolicyEnforced !== false) problems.push('claims enforcement it does not have')
+  if (metadata.writePolicyBasis === undefined) problems.push('states no qualifying basis')
+  else if (metadata.writePolicyBasis !== entry.basis) {
+    problems.push('basis disagrees with the table: served ' + String(metadata.writePolicyBasis) + ', table ' + entry.basis)
+  }
+  if (measuredBases !== undefined && !measuredBases.includes(metadata.writePolicyBasis)) {
+    problems.push('basis names an instrument the rule did not measure: ' + String(metadata.writePolicyBasis))
+  }
+  return problems
+}
+
+test('write policy is mirrored in metadata for both producers, with the instrument that qualified it', async (t) => {
+  // Every carrier: all three keys, and the basis is the table's basis, which is also
+  // one of the instruments the rule actually measured on that skill's body.
   for (const skill of [PAPER_SKILL_NAME, SCREENER_SKILL_NAME]) {
     const definition = await served(skill)
-    assert.equal(definition.metadata.writePolicy, WRITE_POLICY_NEW_PATHS_ONLY, skill)
-    assert.equal(definition.metadata.writePolicyEnforced, false, skill)
+    const entry = fileProducingEntry(skill)
+    assert.ok(entry !== undefined, skill + ' must be in the table')
+    const qualification = await qualifies(skill)
+    assert.equal(qualification.qualifies, true)
+    assert.deepEqual(basisProblems(definition.metadata, entry, qualification.bases), [],
+      skill + ' advertises policy A dishonestly: ' + basisProblems(definition.metadata, entry, qualification.bases).join('; '))
+    // The served value IS the table value - never a second, typed copy.
+    assert.equal(definition.metadata.writePolicyBasis, entry.basis, skill)
+    assert.equal(qualification.bases.includes(definition.metadata.writePolicyBasis), true,
+      skill + ' metadata basis must be an instrument the rule measured: ' + JSON.stringify(qualification.bases))
+    t.diagnostic(skill + ' metadata: ' + JSON.stringify(
+      { writePolicy: definition.metadata.writePolicy, writePolicyEnforced: definition.metadata.writePolicyEnforced, writePolicyBasis: definition.metadata.writePolicyBasis }))
   }
+  // The two carriers state DIFFERENT instruments, which is the whole reason the key
+  // exists: without it, the only way to answer 'why does sr-screener carry this?' is
+  // to read the source table.
+  assert.equal((await served(PAPER_SKILL_NAME)).metadata.writePolicyBasis, 'prose-drafting')
+  assert.equal((await served(SCREENER_SKILL_NAME)).metadata.writePolicyBasis, 'bundled-script')
+  assert.notEqual((await served(PAPER_SKILL_NAME)).metadata.writePolicyBasis,
+    (await served(SCREENER_SKILL_NAME)).metadata.writePolicyBasis)
+
+  // Non-carriers: all three keys absent - not null, not an empty basis.
   for (const skill of [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME]) {
     const definition = await served(skill)
-    assert.equal(definition.metadata.writePolicy, undefined, skill + ' must not advertise a write policy')
-    assert.equal(definition.metadata.writePolicyEnforced, undefined)
+    for (const key of WRITE_POLICY_KEYS) {
+      assert.equal(key in definition.metadata, false, skill + ' must not advertise ' + key)
+      assert.equal(definition.metadata[key], undefined, skill + ' ' + key)
+      assert.equal(definition.metadata[key] ?? null, null, skill + ' ' + key + ' must be absent or null, never a value')
+    }
     assert.equal(definition.content.includes(WRITE_POLICY_BEGIN), false, skill + ' must not carry the block')
+    assert.deepEqual(basisProblems(definition.metadata, fileProducingEntry(skill)), [],
+      skill + ' is a non-carrier and must advertise nothing')
   }
   assert.equal(renderWritePolicyBlock(REVIEW_SKILL_NAME), '')
   assert.equal(renderWritePolicyBlock(DEEP_RESEARCH_SKILL_NAME), '')
   assert.equal(renderWritePolicyBlock('not-a-skill'), '')
+
+  // The predicate bites. MUTATION 1: a carrier that states no basis.
+  const honest = { writePolicy: WRITE_POLICY_NEW_PATHS_ONLY, writePolicyEnforced: false, writePolicyBasis: 'bundled-script' }
+  const entry = fileProducingEntry(SCREENER_SKILL_NAME)
+  assert.deepEqual(basisProblems(honest, entry, ['bundled-script']), [])
+  const noBasis = { writePolicy: WRITE_POLICY_NEW_PATHS_ONLY, writePolicyEnforced: false }
+  assert.equal(basisProblems(noBasis, entry, ['bundled-script']).includes('states no qualifying basis'), true,
+    'a file-producing skill with no basis must fail the suite')
+  // MUTATION 2: the served basis disagrees with the table.
+  const wrongBasis = { ...honest, writePolicyBasis: 'prose-drafting' }
+  assert.equal(basisProblems(wrongBasis, entry, ['prose-drafting', 'bundled-script'])
+    .some(problem => problem.startsWith('basis disagrees with the table')), true,
+    'a served basis that is not the table basis must fail')
+  // MUTATION 3: the basis names an instrument the rule did not measure.
+  assert.equal(basisProblems(honest, entry, ['prose-drafting'])
+    .some(problem => problem.startsWith('basis names an instrument the rule did not measure')), true,
+    'a basis the rule never measured must fail')
+  // MUTATION 4: a non-carrier advertising a policy, and a carrier claiming enforcement.
+  assert.equal(basisProblems(honest, undefined).length > 0, true, 'a non-carrier must not advertise')
+  assert.equal(basisProblems({ ...honest, writePolicyEnforced: true }, entry, ['bundled-script'])
+    .includes('claims enforcement it does not have'), true,
+    'the honesty flag must not be able to flip')
+})
+
+test('every table entry names a real instrument, so a qualifying skill cannot lack a basis', async (t) => {
+  const instruments = ['prose-drafting', 'bundled-script']
+  // The table shape itself: no entry may exist without a basis.
+  for (const entry of FILE_PRODUCING_SKILLS) {
+    assert.equal(instruments.includes(entry.basis), true, entry.skill + ' has basis ' + JSON.stringify(entry.basis))
+  }
+  // And the served metadata of every qualifying vendored skill must state the basis
+  // that the rule measured - so adding a producer without one fails here.
+  for (const skill of discoverVendoredSkills(vendorRoot)) {
+    const qualification = await qualifies(skill)
+    const definition = await served(skill)
+    t.diagnostic(skill + ': qualifies=' + String(qualification.qualifies)
+      + ' measured=' + JSON.stringify(qualification.bases)
+      + ' advertised=' + JSON.stringify(definition.metadata.writePolicyBasis ?? null))
+    if (!qualification.qualifies) {
+      assert.equal(definition.metadata.writePolicyBasis ?? null, null, skill + ' does not qualify but advertises a basis')
+      continue
+    }
+    assert.ok(definition.metadata.writePolicyBasis !== undefined,
+      skill + ' qualifies (' + JSON.stringify(qualification.bases) + ') but its served metadata states no basis')
+    assert.equal(qualification.bases.includes(definition.metadata.writePolicyBasis), true,
+      skill + ' advertises ' + String(definition.metadata.writePolicyBasis) + ' but the rule measured ' + JSON.stringify(qualification.bases))
+    assert.equal(definition.metadata.writePolicyBasis, fileProducingEntry(skill)?.basis, skill)
+  }
 })
 
 test('served bytes: the three older payloads do not move, sr-screener gains the block', async (t) => {
