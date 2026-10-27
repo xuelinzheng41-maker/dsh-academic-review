@@ -7,60 +7,74 @@ store, so a checkout made with any `core.autocrlf` setting is equivalent).
 Skill version 1.11.1 (2026-08-15); repo plugin.json version 3.23.2.
 License: CC BY-NC 4.0.
 
+**What the numbers in this file are — read this before editing one.** Every byte
+count below is a **repository byte count**: the size of the blob in the pinned
+commit's git object store, which is exactly what the vendoring pipeline copies into
+`vendor/`. It is never the size of a checkout. A `core.autocrlf=true` checkout
+inflates every file by its line count, because each LF arrives as CRLF, and that is
+how the previous edition of this table went wrong — by exactly one byte per line,
+on all 58 rows, the 44 vendored files and the 14 upstream-only scripts alike. To
+re-derive any row, `git cat-file -s <commit>:<path>` in the upstream clone, or
+`stat` the file under `vendor/`; the two must agree, because the pipeline reads
+the object store too. `tests/release-invariants.test.mjs` re-measures the 44
+vendored rows on every run, so that column cannot drift silently again; the 14
+upstream-only sizes are not in this package and are recorded here from the same
+object store.
+
 ## academic-paper-reviewer/ (28 files, all vendored unmodified)
 
 | File | Bytes |
 |---|---|
-| SKILL.md | 49,098 |
-| agents/field_analyst_agent.md | 11,731 |
-| agents/eic_agent.md | 29,146 |
-| agents/methodology_reviewer_agent.md | 45,498 |
-| agents/domain_reviewer_agent.md | 34,589 |
-| agents/perspective_reviewer_agent.md | 34,939 |
-| agents/devils_advocate_reviewer_agent.md | 43,461 |
-| agents/editorial_synthesizer_agent.md | 43,301 |
-| references/calibration_mode_protocol.md | 16,096 |
-| references/changelog.md | 1,406 |
-| references/editorial_decision_standards.md | 13,378 |
-| references/guided_mode_protocol.md | 2,070 |
-| references/integration_guide.md | 695 |
-| references/quality_rubrics.md | 6,484 |
-| references/reviewer_sprint_prompt_source.md | 49,344 |
-| references/review_criteria_framework.md | 6,433 |
-| references/review_panel_provenance_protocol.md | 9,853 |
-| references/review_quality_thinking.md | 3,395 |
-| references/re_review_mode_protocol.md | 53,555 |
-| references/sprint_contract_protocol.md | 33,153 |
-| references/statistical_reporting_standards.md | 31,016 |
-| references/top_journals_by_field.md | 13,122 |
-| templates/editorial_decision_template.md | 11,903 |
-| templates/peer_review_report_template.md | 15,489 |
-| templates/revision_response_template.md | 7,843 |
-| examples/hei_paper_review_example.md | 35,048 |
-| examples/interdisciplinary_review_example.md | 28,561 |
-| examples/subclaim_decomposition_example.md | 8,608 |
+| SKILL.md | 48,548 |
+| agents/field_analyst_agent.md | 11,494 |
+| agents/eic_agent.md | 28,807 |
+| agents/methodology_reviewer_agent.md | 45,049 |
+| agents/domain_reviewer_agent.md | 34,167 |
+| agents/perspective_reviewer_agent.md | 34,502 |
+| agents/devils_advocate_reviewer_agent.md | 43,018 |
+| agents/editorial_synthesizer_agent.md | 42,807 |
+| references/calibration_mode_protocol.md | 15,840 |
+| references/changelog.md | 1,396 |
+| references/editorial_decision_standards.md | 13,142 |
+| references/guided_mode_protocol.md | 2,036 |
+| references/integration_guide.md | 680 |
+| references/quality_rubrics.md | 6,400 |
+| references/reviewer_sprint_prompt_source.md | 49,020 |
+| references/review_criteria_framework.md | 6,335 |
+| references/review_panel_provenance_protocol.md | 9,656 |
+| references/review_quality_thinking.md | 3,337 |
+| references/re_review_mode_protocol.md | 53,211 |
+| references/sprint_contract_protocol.md | 32,853 |
+| references/statistical_reporting_standards.md | 30,511 |
+| references/top_journals_by_field.md | 12,916 |
+| templates/editorial_decision_template.md | 11,650 |
+| templates/peer_review_report_template.md | 15,184 |
+| templates/revision_response_template.md | 7,595 |
+| examples/hei_paper_review_example.md | 34,657 |
+| examples/interdisciplinary_review_example.md | 28,262 |
+| examples/subclaim_decomposition_example.md | 8,528 |
 
 (Total: 1 SKILL.md + 7 agents + 14 references + 3 templates + 3 examples =
 28 files.)
 
 ## shared/ files referenced by the reviewer tree (vendor unmodified)
 
-- shared/ground_truth_isolation_pattern.md (16,644)
-- shared/handoff_schemas.md (99,731)
-- shared/cross_model_verification.md (86,039)
-- shared/mode_spectrum.md (5,357)
-- shared/model_tiering.md (12,882)
-- shared/sprint_contract.schema.json (19,905)
-- shared/references/routing_core.md (5,213)
-- shared/references/intent_clarification_protocol.md (11,734)
-- shared/references/review_criteria_consumer_protocol.md (10,101)
-- shared/contracts/reviewer/full.json (3,896)
-- shared/contracts/reviewer/methodology_focus.json (2,307)
-- shared/contracts/reviewer/review_panel_provenance.schema.json (8,301)
-- shared/contracts/reviewer/review_panel_provenance_input.schema.json (3,713)
-- shared/contracts/reviewer/review_panel_provenance_carrier.schema.json (4,333)
-- shared/contracts/revision/revision_roadmap.schema.json (11,833)
-- shared/contracts/re_review/traceability.schema.json (39,527) + precommitment,
+- shared/ground_truth_isolation_pattern.md (16,356)
+- shared/handoff_schemas.md (98,506)
+- shared/cross_model_verification.md (85,267)
+- shared/mode_spectrum.md (5,292)
+- shared/model_tiering.md (12,791)
+- shared/sprint_contract.schema.json (19,423)
+- shared/references/routing_core.md (5,181)
+- shared/references/intent_clarification_protocol.md (11,564)
+- shared/references/review_criteria_consumer_protocol.md (9,863)
+- shared/contracts/reviewer/full.json (3,782)
+- shared/contracts/reviewer/methodology_focus.json (2,232)
+- shared/contracts/reviewer/review_panel_provenance.schema.json (8,038)
+- shared/contracts/reviewer/review_panel_provenance_input.schema.json (3,593)
+- shared/contracts/reviewer/review_panel_provenance_carrier.schema.json (4,211)
+- shared/contracts/revision/revision_roadmap.schema.json (11,499)
+- shared/contracts/re_review/traceability.schema.json (38,611) + precommitment,
   verdict_record, input_manifest, and legacy/v1_0/ (4 files)
 - Transitive (review-target binding): shared/contracts/review_target/*
   (7 schemas), shared/review_criteria_registry.json,
@@ -69,14 +83,14 @@ License: CC BY-NC 4.0.
 
 ## scripts/ referenced (advisory checkers; optional in Phase 1)
 
-check_panel_synthesis.py (50,960), check_acronyms.py (59,031),
-verify_panel_recommendations.py (19,706), audit_panel_claims.py (18,003),
-check_pipeline_integrity.py (13,812), review_panel_provenance.py (26,177),
-check_sprint_contract.py (15,986), check_phase_conformance.py (99,283),
-revision_roadmap.py (87,615), ars_write_scope_guard.py (31,333),
-check_re_review_synthesis.py (151,760),
-check_reviewer_sprint_prompt_sync.py (17,023),
-recompute_receipts.py (58,463), review_criteria_binding.py (39,289).
+check_panel_synthesis.py (49,629), check_acronyms.py (57,950),
+verify_panel_recommendations.py (19,279), audit_panel_claims.py (17,678),
+check_pipeline_integrity.py (13,472), review_panel_provenance.py (25,433),
+check_sprint_contract.py (15,615), check_phase_conformance.py (97,103),
+revision_roadmap.py (85,648), ars_write_scope_guard.py (30,786),
+check_re_review_synthesis.py (148,996),
+check_reviewer_sprint_prompt_sync.py (16,614),
+recompute_receipts.py (57,049), review_criteria_binding.py (38,385).
 
 ## Referencing map (which reviewer file references which shared/scripts path)
 
