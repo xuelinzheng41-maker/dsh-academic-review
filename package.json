@@ -1,6 +1,6 @@
 {
   "name": "dsh-academic-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Unofficial DSH port of Academic Research Skills' academic-paper-reviewer: a 5-seat journal peer-review panel driven by review-state tools (Phase 1: reviewer only).",
   "type": "module",
@@ -59,7 +59,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test tests/*.test.mjs",
     "verify:vendor": "node scripts/vendor-upstream.mjs --check",
-    "vendor": "node scripts/vendor-upstream.mjs"
+    "vendor": "node scripts/vendor-upstream.mjs",
+    "test:e2e": "node scripts/e2e.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",

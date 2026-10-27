@@ -94,6 +94,23 @@ silent fallback).
 - **Two human checkpoints**: before the panel starts and before the final
   editorial decision closes the review.
 
+## Commands
+
+Two human slash commands sit on the same state layer as the tools. They are
+thin adapters (`src/commands.ts`) over `ReviewStore`, so a review opened from a
+command is the same record the five tools and the read-only panel see — same
+directory, same `state.json`, same checkpoints, no second write path.
+
+| Command | Hint | What it does |
+| --- | --- | --- |
+| `/ars-review` | `[quick|full] <path-to-manuscript>` | Opens a review, then prints the review id, mode and seat list, the resolved review directory, and the exact `academic_review_confirm(action="attach", …)` call that comes next. `.pdf`, missing or unreadable files, unknown modes and missing arguments are refused in one actionable line each, with no state left behind. |
+| `/ars-review-status` | `[review_id]` | Read-only. Reports the newest review in the workspace (or the named one): lifecycle status, per-seat state with verdicts, the pending human checkpoint, the advisory decision, and the next call to make. |
+
+Full grammar, rendered output and refusal texts: [`docs/COMMANDS.md`](docs/COMMANDS.md).
+The commands need a host that provides the DSH command registry. The service is
+resolved lazily, so a composition without one still mounts the five tools and
+the skill.
+
 ## Documentation
 
 - [`docs/PORT_SPEC.md`](docs/PORT_SPEC.md) — port specification: upstream
@@ -106,9 +123,12 @@ silent fallback).
   inventory of the vendored upstream tree.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — verification records:
   how vendored bytes, tool behavior, and the UI were validated.
+- [`docs/COMMANDS.md`](docs/COMMANDS.md) — the two slash commands: argument
+  grammar, rendered output, and the exact tool calls they hand off to.
 - [`MAINTENANCE.md`](MAINTENANCE.md) — upstream sync policy and release
   maintenance.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute.
+- [`CHANGELOG.md`](CHANGELOG.md) — release history in Keep a Changelog form.
 
 ## Install
 
@@ -147,6 +167,7 @@ pnpm typecheck       # tsc -p tsconfig.json --noEmit
 pnpm test            # node --test tests/*.test.mjs
 pnpm build           # tsc + browser entrypoint
 pnpm verify:vendor   # SHA-256 check of every vendored file
+pnpm test:e2e        # deterministic end-to-end harness (scripts/e2e.mjs)
 ```
 
 Re-vendoring from a local ARS checkout (never edit vendored files by hand):
@@ -158,6 +179,89 @@ pnpm vendor -- --upstream <path to an ARS checkout>
 The vendored tree is byte-identical to upstream and is checked against
 `vendor-manifest.json` (commit `1ec249df`) by both the test suite and
 `pnpm verify:vendor`.
+
+## Upgrade
+
+### 0.1.0 → 0.1.1
+
+0.1.1 is a hardening release: no review-state format change, nothing to
+migrate. Reviews already under `<workspace>/.academic-review/` keep loading.
+
+1. Replace the package with the 0.1.1 build, using the same install source as
+   before (git install, pinned tag, or the release tarball):
+   `dsh plugin --profile <profile> add <same-source-at-0.1.1>`.
+2. Restart the DSH session so the new bundle patch and plugin code load.
+3. Optional check: `/ars-review-status` in the workspace still reports the
+   reviews it reported before the upgrade.
+
+What changed between the two versions (details in [`CHANGELOG.md`](CHANGELOG.md)):
+
+- GitHub Actions CI (Ubuntu + Windows × Node 22/24) with issue forms and a PR
+  template.
+- `/ars-review` and `/ars-review-status` slash commands.
+- GUI panel: a pending-checkpoint card with the exact next call, and the
+  editorial decision letter rendered natively (no raw HTML).
+- `pnpm test:e2e`, a deterministic end-to-end harness over the real tool
+  registry and the real host prefix matcher.
+- Vendored bytes are now taken from the upstream git object store, so
+  `pnpm verify:vendor` passes on any checkout regardless of `core.autocrlf`.
+
+## Troubleshooting
+
+### GitHub reports `NOASSERTION` (or "Other") for the license
+
+That is GitHub's license detector, not the license. [`LICENSE`](LICENSE) is the
+**verbatim CC BY-NC 4.0 legalcode**, unmodified; the detector cannot fingerprint
+the canonical text and therefore declines to assert a license. The repository,
+the package manifest (`"license": "CC-BY-NC-4.0"`) and
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) all state CC BY-NC 4.0, and
+the license is verified in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+Nothing here is relicensable: no MIT, Apache-2.0, or BSD terms apply.
+
+### A PDF manuscript is refused
+
+By design, and it is the only format refusal. Phase 1 does not parse PDFs and
+runs no OCR, so `academic_review_create` (and `/ars-review`) reject `.pdf` with
+`unsupported_format` and a message telling you to extract the text first.
+Convert to `.md`, `.tex`, or `.txt` with any tool you already use, then open the
+review again. The refusal happens before any state directory is created.
+
+### Why are there five tools?
+
+One tool per state transition, so the model can see exactly what it is allowed
+to do next and branch on a machine-readable error code instead of prose:
+
+| Tool | Transition it owns |
+| --- | --- |
+| `academic_review_create` | pins the manuscript, opens the review and the panel |
+| `academic_review_confirm` | human checkpoint 1 only — the single path out of `created` |
+| `academic_review_submit` | one immutable seat card per call |
+| `academic_review_report` | synthesis, then the approval-gated close |
+| `academic_review_status` | read-only summary, including the pending checkpoint |
+
+They are adapters: every validation, schema check and atomic write lives in
+`src/state.ts`, which the slash commands drive through the same store.
+Splitting them keeps the dangerous operation (`confirm`) separate from the
+routine ones, and leaves no single "do everything" call that could skip a gate.
+
+### Why are there two human checkpoints?
+
+Both come from the upstream protocol's iron rules and are enforced in state,
+never by prompt text:
+
+1. **After the field analysis, before any seat is dispatched**
+   (`field_analysis_attachment` → `panel_confirmation`). The field analyst
+   proposes the discipline, paradigm, methodology, tier and maturity plus one
+   reviewer configuration card per peer seat. Panel composition is the user's
+   call, so `academic_review_confirm(action="confirm")` must record their
+   approval; `academic_review_submit` refuses with `panel_not_confirmed`
+   until then, and nothing self-confirms.
+2. **Before the editorial decision closes the review** (`report_approval`).
+   Synthesis writes a draft letter and roadmap; closing requires
+   `academic_review_report(approve=true)`, and if the Devil's Advocate raised a
+   CRITICAL finding, every such finding must carry an explicit adjudication
+   (`da_adjudication_required` otherwise). The plugin never approves its own
+   output and a DA-CRITICAL issue cannot be silently bypassed.
 
 ## Trademark and endorsement disclaimer
 

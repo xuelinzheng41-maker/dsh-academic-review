@@ -207,3 +207,197 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Pending-checkpoint card: the prominent "you must confirm" surface. */
+
+.checkpointCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgb(154 103 0 / 0.55);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: rgb(154 103 0 / 0.08);
+}
+
+.checkpointHeading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a6700;
+}
+
+.checkpointBody {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.checkpointRequirement {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.checkpointLabel {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.callBlock {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgb(128 128 128 / 0.35);
+  border-radius: 6px;
+  background: rgb(128 128 128 / 0.1);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.checkpointActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.copyButton {
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  opacity: 0.8;
+}
+
+.copyButton[data-copy-state='copied'] {
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.copyButton[data-copy-state='failed'] {
+  color: #cf222e;
+  border-color: #cf222e;
+}
+
+/* Rendered editorial decision letter (React nodes, never injected HTML). */
+
+.letterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(128 128 128 / 0.25);
+}
+
+.letterHeading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.letter {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.letter h1 {
+  margin: 10px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.letter h2 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.letter h3,
+.letter h4,
+.letter h5,
+.letter h6 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.letter p {
+  margin: 0 0 6px;
+}
+
+.letter ul,
+.letter ol {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.letter li {
+  margin: 2px 0;
+}
+
+.letter blockquote {
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  border-left: 3px solid rgb(128 128 128 / 0.5);
+  opacity: 0.85;
+}
+
+.letter table {
+  width: 100%;
+  margin: 4px 0 8px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.letter th,
+.letter td {
+  padding: 4px 6px;
+  border-top: 1px solid rgb(128 128 128 / 0.25);
+  text-align: left;
+  vertical-align: top;
+}
+
+.letter code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgb(128 128 128 / 0.15);
+  font-family: ui-monospace, monospace;
+}
+
+.letter pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border: 1px solid rgb(128 128 128 / 0.3);
+  border-radius: 6px;
+  background: rgb(128 128 128 / 0.1);
+  overflow-x: auto;
+}
+
+.letter pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.letter hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px solid rgb(128 128 128 / 0.35);
+}

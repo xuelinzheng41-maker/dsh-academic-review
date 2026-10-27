@@ -29,7 +29,13 @@ export interface ReviewSummary {
   status: string
   seats: SeatSummary[]
   updated_at: string
-  pending_checkpoint: boolean
+  /**
+   * Checkpoint the review is waiting on. The backend currently serves a
+   * boolean; the string form (the checkpoint name used by
+   * academic_review_status) is accepted too so a finer-grained server needs no
+   * client change. Absent means "derive it from the status".
+   */
+  pending_checkpoint?: boolean | string | null
 }
 
 /** Outcome of a reviews-list fetch. */
@@ -53,9 +59,137 @@ export type ReportLoad =
   | { kind: 'unauthorized' }
   | { kind: 'error'; message: string }
 
+/** The three human checkpoints the review state machine reports. */
+export const REVIEW_CHECKPOINTS = [
+  'field_analysis_attachment',
+  'panel_confirmation',
+  'report_approval',
+] as const
+
+/** One human checkpoint name. */
+export type ReviewCheckpoint = (typeof REVIEW_CHECKPOINTS)[number]
+
 /** Narrow an unknown thrown value to a message. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Checkpoint implied by a lifecycle status, or null when the review is not
+ * waiting on a human (mirrors pendingCheckpointOf in src/state.ts).
+ */
+const CHECKPOINT_BY_STATUS: Record<string, ReviewCheckpoint> = {
+  created: 'field_analysis_attachment',
+  panel_configured: 'field_analysis_attachment',
+  awaiting_panel_confirmation: 'panel_confirmation',
+  awaiting_synthesis_approval: 'report_approval',
+}
+
+/**
+ * The checkpoint one review is waiting on, or null when it is not blocked on a
+ * human. A string `pending_checkpoint` from the server wins; otherwise the
+ * status decides, so the panel still shows the right card against a backend
+ * that only serves a boolean.
+ * @param review - review summary.
+ * @returns checkpoint name or null.
+ */
+export function checkpointOf(review: Pick<ReviewSummary, 'status' | 'pending_checkpoint'>): ReviewCheckpoint | null {
+  const declared = review.pending_checkpoint
+  if (typeof declared === 'string' && (REVIEW_CHECKPOINTS as readonly string[]).includes(declared)) {
+    return declared as ReviewCheckpoint
+  }
+  return CHECKPOINT_BY_STATUS[review.status] ?? null
+}
+
+/** What the model must call next: the exact call text plus its caveats. */
+export interface NextCall {
+  /** Copy-ready call text naming the exact tool and arguments. */
+  readonly call: string
+  /** Whether every Devil's Advocate CRITICAL finding must be adjudicated first. */
+  readonly requiresDevilsAdvocateAdjudication: boolean
+}
+
+/** Quote one argument value for the call text (JSON string form). */
+function q(value: string): string {
+  return JSON.stringify(value)
+}
+
+/**
+ * The exact next call that clears one checkpoint.
+ *
+ * The panel never performs it: the text is shown so the user can hand it to
+ * the model in the session, which keeps this surface strictly read-only.
+ *
+ * @param review - review summary (id plus seats, for the card count).
+ * @param checkpoint - checkpoint being reported.
+ * @returns exact call text and its requirement flags.
+ */
+export function nextCallFor(
+  review: Pick<ReviewSummary, 'review_id' | 'seats'>,
+  checkpoint: ReviewCheckpoint,
+): NextCall {
+  const reviewId = q(review.review_id)
+  switch (checkpoint) {
+    case 'field_analysis_attachment': {
+      const seats = review.seats
+        .map(seat => seat.seat_id)
+        .filter(seatId => seatId !== 'da')
+      const cardSeats = seats.length > 0 ? seats : ['eic', 'methodology', 'domain', 'perspective']
+      const cards = cardSeats.map(seatId => '    { seat: ' + q(seatId)
+        + ', identity: "<role identity>", expertise: "<expertise>", focus: "<review focus>" }')
+      return {
+        call: [
+          'academic_review_confirm({',
+          '  review_id: ' + reviewId + ',',
+          '  action: "attach",',
+          '  primary_discipline: "<primary discipline from the field analysis>",',
+          '  secondary_disciplines: ["<secondary discipline>"],',
+          '  research_paradigm: "<research paradigm>",',
+          '  methodology_type: "<methodology type>",',
+          '  target_journal_tier: "<target journal tier>",',
+          '  paper_maturity: "<paper maturity>",',
+          '  configuration_cards: [',
+          cards.join(',\n'),
+          '  ]',
+          '})',
+          '// then, once the user has seen and approved the cards:',
+          'academic_review_confirm({',
+          '  review_id: ' + reviewId + ',',
+          '  action: "confirm"',
+          '})',
+        ].join('\n'),
+        requiresDevilsAdvocateAdjudication: false,
+      }
+    }
+    case 'panel_confirmation':
+      return {
+        call: [
+          'academic_review_confirm({',
+          '  review_id: ' + reviewId + ',',
+          '  action: "confirm"',
+          '  // configuration_cards: [ ... ]  // optional, only when the user edits a card',
+          '})',
+        ].join('\n'),
+        requiresDevilsAdvocateAdjudication: false,
+      }
+    case 'report_approval':
+      return {
+        call: [
+          'academic_review_report({',
+          '  review_id: ' + reviewId + ',',
+          '  approve: true,',
+          '  da_adjudications: [',
+          '    {',
+          '      finding_id: "<Devil\'s Advocate CRITICAL finding id>",',
+          '      outcome: "validated",  // validated | rejected | unresolved',
+          '      rationale: "<why the finding holds, or why it does not>"',
+          '    }',
+          '  ]',
+          '})',
+        ].join('\n'),
+        requiresDevilsAdvocateAdjudication: true,
+      }
+  }
 }
 
 /**

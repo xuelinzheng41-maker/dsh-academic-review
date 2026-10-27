@@ -1,7 +1,27 @@
-/** Academic Review panel: review id, seats, findings tally, checkpoints. */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+/**
+ * Academic Review panel: review id, seats, findings tally, the pending human
+ * checkpoint and (once approved) the rendered editorial decision letter.
+ *
+ * The panel is strictly read-only: it issues GET requests to the plugin's
+ * three read-only routes, never calls a write path, and shows the exact tool
+ * call the user still has to run in the session.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { fetchReviews, openReport, SEAT_IDS, type ReviewSummary, type ReviewsLoad, type SeatSummary } from './review-data.ts'
+import {
+  checkpointOf,
+  fetchReport,
+  fetchReviews,
+  nextCallFor,
+  openReport,
+  SEAT_IDS,
+  type ReportLoad,
+  type ReviewCheckpoint,
+  type ReviewSummary,
+  type ReviewsLoad,
+  type SeatSummary,
+} from './review-data.ts'
+import { renderLetter } from './letter-markdown.tsx'
 import css from './AcademicReviewPanel.module.css'
 
 /** Locale prop contract for the panel. */
@@ -9,6 +29,9 @@ export type AcademicReviewPanelProps = PropsLocale<'academicReview'>
 
 /** Poll cadence while the panel is visible (ms). */
 const POLL_MS = 10_000
+
+/** How long the copy button keeps its result label (ms). */
+const COPY_FEEDBACK_MS = 2_400
 
 /** Seats the synthesizer section stands in for (not a panel seat). */
 const SYNTHESIS_STATUSES = new Set(['all_submitted', 'awaiting_synthesis_approval', 'report_ready'])
@@ -30,6 +53,24 @@ function subscribeVisibility(onChange: () => void): () => void {
 type Translate = PropsLocale<'academicReview'>['t']
 type LooseTranslate = (key: string, values?: Record<string, string | number>) => string
 
+/**
+ * Copy text to the clipboard. Browser-only, best effort: a host without the
+ * async clipboard API reports failure so the caller can ask for a manual copy.
+ * @param value - text to copy.
+ * @returns whether the clipboard accepted it.
+ */
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined') return false
+    const clipboard = navigator.clipboard
+    if (clipboard === undefined || typeof clipboard.writeText !== 'function') return false
+    await clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Format the update timestamp in the viewer's locale, best effort. */
 function formatTime(iso: string): string {
   const date = new Date(iso)
@@ -39,6 +80,59 @@ function formatTime(iso: string): string {
   } catch {
     return iso
   }
+}
+
+/** Copy-to-clipboard button for one call text. */
+function CopyButton({ text, t }: { text: string; t: LooseTranslate }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const timer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+  }, [])
+  const onCopy = useCallback(() => {
+    void (async () => {
+      const copied = await copyText(text)
+      setState(copied ? 'copied' : 'failed')
+      if (timer.current !== null) window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setState('idle'), COPY_FEEDBACK_MS)
+    })()
+  }, [text])
+  const label = state === 'copied'
+    ? t('checkpoint.copied')
+    : state === 'failed' ? t('checkpoint.copyFailed') : t('checkpoint.copy')
+  return (
+    <button
+      type="button"
+      className={css.copyButton}
+      data-testid="copy-call"
+      data-copy-state={state}
+      onClick={onCopy}
+    >{label}</button>
+  )
+}
+
+/** Prominent card naming the pending checkpoint and the exact next call. */
+function CheckpointCard({ review, checkpoint, t }: {
+  review: ReviewSummary
+  checkpoint: ReviewCheckpoint
+  t: LooseTranslate
+}) {
+  const call = nextCallFor(review, checkpoint)
+  return (
+    <div className={css.checkpointCard} data-testid="checkpoint-card" data-checkpoint={checkpoint}>
+      <p className={css.checkpointHeading}>{t('checkpoint.heading.' + checkpoint)}</p>
+      <p className={css.checkpointBody}>{t('checkpoint.body.' + checkpoint)}</p>
+      {call.requiresDevilsAdvocateAdjudication
+        ? <p className={css.checkpointRequirement} data-testid="checkpoint-requirement">{t('checkpoint.daRequirement')}</p>
+        : null}
+      <p className={css.checkpointLabel}>{t('checkpoint.nextCall')}</p>
+      <pre className={css.callBlock} data-testid="next-call"><code>{call.call}</code></pre>
+      <div className={css.checkpointActions}>
+        <CopyButton text={call.call} t={t} />
+        <span className={css.muted}>{t('checkpoint.readOnlyNote')}</span>
+      </div>
+    </div>
+  )
 }
 
 /** One seat row: role name, status chip, findings tally. */
@@ -60,7 +154,38 @@ function SeatRow({ seat, t }: { seat: SeatSummary; t: LooseTranslate }) {
   )
 }
 
-/** One review card: header facts, seat table, synthesis row, report action. */
+/** The editorial decision letter, fetched once and rendered as React nodes. */
+function ReportLetter({ reviewId, t }: { reviewId: string; t: LooseTranslate }) {
+  const [load, setLoad] = useState<ReportLoad | null>(null)
+  useEffect(() => {
+    let disposed = false
+    void (async () => {
+      const result = await fetchReport(reviewId)
+      if (!disposed) setLoad(result)
+    })()
+    return () => { disposed = true }
+  }, [reviewId])
+  return (
+    <section className={css.letterSection} data-testid="report-letter" data-state={load === null ? 'loading' : load.kind}>
+      <h4 className={css.letterHeading}>{t('report.heading')}</h4>
+      {load === null
+        ? <p className={css.stateText} data-state="report-loading">{t('report.loading')}</p>
+        : load.kind === 'ok'
+          ? (load.markdown.trim() === ''
+              ? <p className={css.muted} data-state="report-empty">{t('report.empty')}</p>
+              : <div className={css.letter} data-testid="letter-body">{renderLetter(load.markdown)}</div>)
+          : load.kind === 'not-ready'
+            ? <p className={css.muted} data-state="report-not-ready">{t('error.reportNotReady')}</p>
+            : load.kind === 'not-found'
+              ? <p className={css.muted} data-state="report-not-found">{t('error.notFound')}</p>
+              : load.kind === 'unauthorized'
+                ? <p className={css.muted} data-state="report-unauthorized">{t('panel.error')}</p>
+                : <p className={css.stateText} data-state="report-error">{t('error.reportLoadFailed', { message: load.message })}</p>}
+    </section>
+  )
+}
+
+/** One review card: header facts, checkpoint card, seat table, report. */
 function ReviewCard({ review, t, onOpenReport, reportBusy }: {
   review: ReviewSummary
   t: Translate
@@ -73,15 +198,17 @@ function ReviewCard({ review, t, onOpenReport, reportBusy }: {
     return SEAT_IDS.map(id => byId.get(id)).filter((seat): seat is SeatSummary => seat !== undefined)
   }, [review.seats])
   const reportReady = review.status === 'report_ready'
+  const checkpoint = checkpointOf(review)
   return (
     <section className={css.reviewCard} data-review-id={review.review_id} data-status={review.status}>
       <header className={css.reviewHeader}>
         <h3 className={css.reviewTitle}>{review.review_id}</h3>
         <span className={css.statusChip} data-status={review.status}>{translate('status.' + review.status)}</span>
-        {review.pending_checkpoint
-          ? <span className={css.checkpointBadge} title={translate('review.checkpointHint')}>⏸ {translate('review.checkpoint')}</span>
-          : null}
+        {checkpoint === null
+          ? null
+          : <span className={css.checkpointBadge} title={translate('review.checkpointHint')}>⏸ {translate('review.checkpoint')}</span>}
       </header>
+      {checkpoint === null ? null : <CheckpointCard review={review} checkpoint={checkpoint} t={translate} />}
       <dl className={css.facts}>
         <div><dt>{translate('review.mode')}</dt><dd>{review.mode}</dd></div>
         <div><dt>{translate('review.updated')}</dt><dd>{formatTime(review.updated_at)}</dd></div>
@@ -107,6 +234,7 @@ function ReviewCard({ review, t, onOpenReport, reportBusy }: {
               onClick={() => onOpenReport(review.review_id)}>{translate('review.openReport')}</button>
           : <span className={css.muted}>{translate('review.noReport')}</span>}
       </footer>
+      {reportReady ? <ReportLetter reviewId={review.review_id} t={translate} /> : null}
     </section>
   )
 }

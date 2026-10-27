@@ -279,13 +279,18 @@ tool call; any mismatch fails the call with `paper_changed`.
 
 ### Tool API (all names prefixed `academic_review_`)
 
+This table is authoritative and mirrors `src/tools.ts`: every row is one
+`ctx.tools.register(defineTool(...))` call, and the registered names are exactly
+`academic_review_create`, `academic_review_status`, `academic_review_confirm`,
+`academic_review_submit`, `academic_review_report` — five tools, no more.
+
 | Tool | Args | Behavior |
 |---|---|---|
 | `create` | `paper_path`, `mode?` | Validates extension ∈ {.md,.tex,.txt} (reject .pdf and others with a clear error + guidance), computes SHA-256, writes initial state, status=`created` |
 | `status` | `review_id` | Returns state summary: status, per-seat status, decision, advisory checks, pending checkpoint |
 | `confirm` | `review_id`, `action` ∈ {`attach`,`confirm`}; when `action=attach`: `primary_discipline`, `secondary_disciplines[]`, `research_paradigm`, `methodology_type`, `target_journal_tier`, `paper_maturity`, `configuration_cards[]` (one per peer seat: `{seat, identity, expertise, focus}`; the DA seat takes none) | Checkpoint-1 tool surface. `action=attach` stores the field-analysis record (including `analyst_run_at`) and moves `created` → `awaiting_panel_confirmation`; `action=confirm` requires an attached analysis, accepts optional user-edited `configuration_cards`, records `checkpoints.panel_confirmed_at`, and moves → `in_review`. `confirm` is the **only** transition that makes a review submittable — the review never self-confirms. Refuses unknown ids (`review_not_found`), a manuscript edited mid-review (`paper_changed`), and out-of-order calls such as confirm-before-attach or a second attach (`state_conflict`) |
 | `submit` | `review_id`, `seat_id`, `report` (findings+evidence+verdict+provenance) | Accepts a seat's committed report; validates seat_id, severity enum, ≥1 evidence per finding; sets seat status=`submitted`, timestamp; refuses if seat already submitted or panel not confirmed; when all 5 submitted → status=`all_submitted` |
-| `report` | `review_id`, `--approve`? | Phase 2 entry: runs the synthesizer subagent over the 5 cards, writes decision letter + roadmap, records DA-CRITICAL adjudications; final render/delivery requires an explicit human approval flag — the tool refuses to mark `report_ready` without it (checkpoint per §4) |
+| `report` | `review_id`, `approve?: boolean`, `da_adjudications?: [{finding_id, outcome, rationale}]` | Phase 2 entry: runs the synthesizer subagent over the 5 cards, writes decision letter + roadmap, records DA-CRITICAL adjudications; final render/delivery requires an explicit human approval flag — the tool refuses to mark `report_ready` without it (checkpoint per §4) |
 
 Field-analysis attach and the panel-confirmation record are **tool-surface**
 operations, reached only through `academic_review_confirm`
@@ -298,6 +303,69 @@ Remaining supporting operations are not separate tools: advisory-check result
 attach and the DA-CRITICAL adjudication record ride on the `status` and
 `report` calls. All state mutations are append-friendly timestamps; seat reports
 are immutable once submitted.
+
+### Slash commands (`/ars-review`, `/ars-review-status`)
+
+Two human commands sit on the same state layer as the five tools. They are thin
+adapters in `src/commands.ts` over `ReviewStore` — no transition, schema check,
+atomic write or lifecycle guard is re-implemented, and no write path was added
+to the web surface.
+
+| Command | Hint | Reads / writes |
+|---|---|---|
+| `/ars-review` | `[quick|full] <path-to-manuscript>` | writes: `ReviewStore.create`; prints review id, mode, seats, review dir and the exact `academic_review_confirm(action="attach", …)` call that comes next |
+| `/ars-review-status` | `[review_id]` | reads only: `ReviewStore.list` / `read` / `status`; defaults to the newest review by `updated_at` |
+
+- Registration shape (verified against `@deepseek-ai/dsh-commands` typings and
+  the installed 0.2.1-rc.2 runtime, not guessed):
+  `ctx.commands.register({ name, description, input: { hint }, handler })`;
+  the handler returns `{ kind: 'success' | 'error', text }`. Names must match
+  `/^[a-z][a-z0-9_-]*$/u`, so no leading slash is passed.
+- The registry is resolved lazily (`commands` is deliberately not a required
+  `inject`): a composition without a command registry still mounts the tools
+  and the skill, and a registry that appears later is picked up through the
+  `internal/service` event.
+- A review opened by `/ars-review` is the same record
+  `academic_review_status` and the panel routes report — same directory, same
+  `state.json`, same checkpoints.
+- Refusals (PDF, missing/unreadable file, unimplemented mode, bad usage) are one
+  actionable line each and leave no state behind.
+- Grammar, rendered output and refusal texts: `docs/COMMANDS.md`; coverage:
+  `tests/commands.test.mjs`.
+
+### End-to-end harness (`pnpm test:e2e`)
+
+`scripts/e2e.mjs` is a deterministic end-to-end check that needs no model and
+no network. It mounts the plugin on a real cordis `Context`
+(`tests/helpers.mjs` → `mountReviewPlugin`) inside a throwaway OS-temp
+workspace with a temp state dir, then drives everything through `ctx.tools`
+only:
+
+1. `create` → `confirm(action=attach)` with four configuration cards →
+   `confirm(action=confirm)` → five `submit` calls with fixture seat cards →
+   `report(approve=false)` → `report(approve=true)` + a DA adjudication →
+   `report_ready`.
+2. Every transition is asserted twice: on the tool result the model would read
+   and on the `state.json` the store wrote.
+3. The artifact set is asserted (`state.json`, `seats/<seat>.json` +
+   `seats/<seat>.md` for all five seats, `editorial_decision.md`,
+   `revision_roadmap.md`).
+4. The three read-only routes (`/plugins/dsh-academic-review/reviews`,
+   `/reviews/<id>`, `/reviews/<id>/report`) are resolved through the real host
+   prefix semantics (`tests/host-prefix-matcher.mjs`) and driven end to end:
+   200 for list/detail/report, 404 for an unknown id, 401 unauthenticated,
+   405 for POST.
+5. Both negative gates run: `.pdf` refused with `unsupported_format` (no review
+   directory written) and a one-byte manuscript edit after checkpoint 1 refused
+   with `paper_changed` (no seat written).
+6. Isolation: `globalThis.fetch` is trapped and must stay at zero calls; no
+   model client exists in the process; every run uses a unique temp root that is
+   removed at the end, so no review state ever lands in the repository.
+
+Determinism comes from fixed fixtures plus pattern-asserted clock values (the
+review id is `rev-YYYYMMDD-8hex`; timestamps are produced by the plugin's own
+`nowIso()`). Exit code 0 when every check passes, 1 otherwise. The unit suite
+is `pnpm test` (`node --test tests/*.test.mjs`).
 
 ---
 
@@ -314,7 +382,7 @@ are immutable once submitted.
    manuscript, patches, or edits. Revision Roadmap is advisory text only.
 4. **Human checkpoints**: (a) after Phase 0 — user confirms/edits the 4
    configuration cards; (b) before the final report is delivered — the user
-   must explicitly approve (`report --approve`). No unattended
+   must explicitly approve (`academic_review_report(approve=true)`). No unattended
    create→report pipeline; the plugin never auto-approves its own output.
 5. **Untrusted-material boundary**: manuscript and any reviewer comments are
    data, not instructions (vendored canonical block). Prompt-injection-like
@@ -370,7 +438,7 @@ T2 — vendoring + implementation:
 4. .pdf/.docx inputs rejected at create; .md/.tex/.txt accepted.
 5. 7 DSH subagent prompt wrappers wired to vendored agent files; seats cannot
    see peer cards; synthesizer runs only after 5 submits.
-6. Human checkpoints enforced (panel confirmation; `report --approve`).
+6. Human checkpoints enforced (panel confirmation; `academic_review_report(approve=true)`).
 7. GUI panel can create a review, show seat statuses, show the final decision.
 8. No plugin code writes into `vendor/`.
 
