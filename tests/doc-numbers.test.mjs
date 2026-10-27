@@ -1,103 +1,217 @@
 /**
- * The numbers the docs quote must equal the numbers the code measures (t25).
+ * The numbers the docs quote must equal the numbers the code measures (t25, t26).
  *
- * README.md and docs/PORT_SPEC.md both state that academic-paper's body holds
- * "85 writing verbs and 46 drafting verbs", and PORT_SPEC adds "against 24 / 4
- * for the reviewer and 18 / 4 for deep-research". Those sentences are useful and
- * they are also a copy of a measurement, which is the shape of defect that has
- * already cost two rounds: a stale byte count in a report, then a stale verb
- * count inside src/write-policy.ts itself.
+ * English and Chinese documents are parsed alike: the docs quote three kinds of
+ * measurement in prose - file-production verb counts, the repository-byte size of
+ * a skill's SKILL.md, and the shared-scope "N distinct references (M sites)" - and
+ * every one of those is a copy of something the code computes. Rounds one to three
+ * were all spent on copies of measurements that stopped being true.
  *
- * So the docs are PARSED here (tests/doc-quoted-numbers.mjs) and compared with
- * fileProductionSignals() at run time, for whichever skills the docs happen to
- * name. This file contains no copy of the expected string - if it did, it would
- * just be a second place to rot.
+ * t25 was monolingual: README.zh-CN.md:69 says the same thing in Chinese
+ * ("85 `个写作动词`、46 `个起草动词`"), the parser only knew English, so that
+ * document could disagree with README.md and with the measurement and the whole
+ * suite stayed green. The clauses are now derived per language in
+ * tests/doc-quoted-numbers.mjs - same numeric tokens, language-specific separators -
+ * and this file asserts that a Chinese document is read as Chinese, not tolerated.
  *
- * A document that stops quoting numbers is not a bug: it is skipped with a
- * diagnostic. A document that quotes a number the code disagrees with is.
+ * Skip semantics are deliberate: a document that stops quoting a number is not a
+ * bug, so it is skipped with a diagnostic instead of failing.
  *
  * @module dsh-academic-review/tests/doc-numbers
  */
 
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { parseSkillDocument } from '../lib/skills.js'
+import {
+  PLACEHOLDER,
+  existsInside,
+  missingReferencesByScope,
+  normalizeReference,
+  referencesIn,
+  resolveReference,
+} from '../lib/references.js'
+import { defaultVendorBasePath, parseSkillDocument } from '../lib/skills.js'
 import { fileProductionSignals } from '../lib/write-policy.js'
 import { claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+const vendorBasePath = defaultVendorBasePath()
 
-/** The documents that describe this port to a human, by path relative to the repo. */
-const QUOTING_DOCS = ['README.md', join('docs', 'PORT_SPEC.md')]
+/** Every document that quotes a measurement in prose, English and Chinese alike. */
+const QUOTING_DOCS = ['README.md', 'README.zh-CN.md', join('docs', 'PORT_SPEC.md'), 'CHANGELOG.md']
 
 /** fileProductionSignals() for one skill, measured from its vendored body. */
-async function measure(skillName) {
-  const raw = await readFile(join(repoRoot, 'vendor', skillName, 'SKILL.md'), 'utf8')
+async function measureFileProduction(skillName) {
+  const raw = await readFile(join(vendorBasePath, skillName, 'SKILL.md'), 'utf8')
   return fileProductionSignals(parseSkillDocument(raw).body)
 }
 
-test('every file-production number the docs quote equals what fileProductionSignals() measures', async (t) => {
+/** The real on-disk size of a skill's SKILL.md - not a number typed into a test. */
+async function measureRepositoryBytes(skillName) {
+  const info = await stat(join(vendorBasePath, skillName, 'SKILL.md'))
+  return { bytes: info.size }
+}
+
+const scopeCache = new Map()
+/** The shared/ closure the provider itself walks: distinct misses and the sites naming them. */
+async function measureSharedScope() {
+  const cached = scopeCache.get('shared')
+  if (cached !== undefined) return cached
+  const scopes = await missingReferencesByScope({ vendorBasePath, skillName: 'academic-paper-reviewer' })
+  const targets = new Set()
+  let sites = 0
+  for (const file of scopes.sharedFiles) {
+    const text = await readFile(join(vendorBasePath, file), 'utf8')
+    for (const reference of referencesIn(file, text)) {
+      const raw = normalizeReference(reference.raw)
+      if (raw === '' || PLACEHOLDER.test(raw)) continue
+      const target = resolveReference(file, raw, reference.kind)
+      if (await existsInside(vendorBasePath, target)) continue
+      sites += 1
+      targets.add(target)
+    }
+  }
+  const measured = { distinct: scopes.shared.length, sites }
+  assert.equal(targets.size, scopes.shared.length, 'the provider and this counter must agree on the distinct targets')
+  scopeCache.set('shared', measured)
+  return measured
+}
+
+/** The measurement a claim is about, taken from live code. */
+async function measure(claim) {
+  if (claim.kind === 'file-production') return measureFileProduction(claim.skill)
+  if (claim.kind === 'repository-bytes') return measureRepositoryBytes(claim.skill)
+  return measureSharedScope()
+}
+
+/** Every claim the documents make, with per-document skip diagnostics. */
+async function collectClaims(log) {
   const claims = []
   for (const doc of QUOTING_DOCS) {
     const text = await readFile(join(repoRoot, doc), 'utf8')
     const found = quotedClaims(text, doc)
     if (found.length === 0) {
-      console.log('# ' + doc + ' quotes no file-production counts; nothing to pin there')
+      log('# ' + doc + ' quotes no measurement this test knows; nothing to pin there')
       continue
     }
-    for (const claim of found) console.log('# ' + doc + ':' + String(claim.line) + ' claims ' + claim.skill
-      + ' = ' + String(claim.writingVerbs) + ' writing / ' + String(claim.draftingVerbs) + ' drafting')
+    for (const claim of found) {
+      log('# ' + doc + ':' + String(claim.line) + ' [' + claim.language + '] claims ' + claim.kind + ' '
+        + (claim.skill ?? 'shared-scope') + ' = ' + JSON.stringify(claim.quote).slice(0, 96))
+    }
     claims.push(...found)
   }
+  return claims
+}
 
+test('every number the docs quote, in any language, equals what the code measures', async (t) => {
+  const claims = await collectClaims(line => console.log(line))
   if (claims.length === 0) {
-    t.skip('no document quotes file-production counts any more, so there is nothing to keep in sync')
+    t.skip('no document quotes a measurement any more, so there is nothing to keep in sync')
     return
   }
 
   for (const claim of claims) {
-    const measured = await measure(claim.skill)
+    const measured = await measure(claim)
     const drift = claimDrift(claim, measured)
     assert.equal(drift, undefined, drift ?? '')
-    console.log('# ' + claim.doc + ':' + String(claim.line) + ' agrees with the measurement: '
-      + claim.skill + ' = ' + String(measured.writingVerbs) + ' writing / ' + String(measured.draftingVerbs) + ' drafting')
+    console.log('# ' + claim.doc + ':' + String(claim.line) + ' [' + claim.language + '] agrees: '
+      + claim.kind + ' ' + (claim.skill ?? 'shared-scope') + ' = ' + JSON.stringify(measured))
   }
 
-  // The docs describe the body the model reads, not the file on disk (which still
-  // carries the frontmatter). Say so out loud, because "85" is only correct for one
-  // of the two and a future editor will otherwise measure the wrong one.
-  const paper = await measure('academic-paper')
-  assert.equal(typeof paper.writingVerbs, 'number')
-  console.log('# measurement is taken from the parsed body (frontmatter removed), the same text the provider serves')
+  // A Chinese document must be read as Chinese. If the clauses were English-only,
+  // this file would fall through to "quotes nothing" and skip - indistinguishable
+  // in the log from a document that legitimately stopped quoting numbers. So the
+  // Chinese document is required to yield Chinese claims whenever it yields any,
+  // and the self-check below proves the Chinese clauses match Chinese prose.
+  for (const doc of QUOTING_DOCS.filter(name => name.includes('.zh-CN.'))) {
+    const fromDoc = claims.filter(claim => claim.doc === doc)
+    if (fromDoc.length === 0) {
+      console.log('# ' + doc + ' is Chinese but quoted nothing this parser understands - see the self-check test')
+      continue
+    }
+    assert.deepEqual([...new Set(fromDoc.map(claim => claim.language))], ['Chinese'],
+      doc + ' must be parsed as Chinese, not silently skipped by an English-only clause')
+  }
 })
 
-test('the doc parser is not a rubber stamp: a doctored sentence produces the drift message', async () => {
-  // Same wording as the docs, one number changed. If this did not fail, the test
-  // above would be measuring nothing.
-  const doctored = '`academic-paper` is the only vendored skill that instructs the model to write files - '
-    + '84 writing verbs and 46 drafting verbs in its own body - which is why it is the single entry.'.split('`').join(String.fromCharCode(96))
-  const claims = quotedClaims(doctored, 'README.md')
-  assert.equal(claims.length, 1)
-  assert.equal(claims[0].skill, 'academic-paper', 'the skill is taken from the nearest preceding name, not from the numbers')
-  assert.equal(claims[0].writingVerbs, 84)
-  assert.equal(claims[0].draftingVerbs, 46)
+test('the parser reads both languages and is not a rubber stamp in either', async () => {
+  // English: one wrong number, and the message names the file, the line, the
+  // language, both values and the measuring function.
+  const englishClaim = quotedClaims('`academic-paper` is the only vendored skill that writes - 84 writing verbs and 46 drafting verbs in its own body.', 'README.md')[0]
+  assert.equal(englishClaim.language, 'English')
+  assert.equal(englishClaim.skill, 'academic-paper')
+  const englishDrift = claimDrift(englishClaim, await measureFileProduction('academic-paper'))
+  assert.match(englishDrift, /README\.md:1 \(English\) says academic-paper is 84\/46 \(writing\/drafting\), but fileProductionSignals\(academic-paper\) measures 85\/46/u)
+  console.log('# English drift: ' + englishDrift)
 
-  const measured = await measure(claims[0].skill)
-  const drift = claimDrift(claims[0], measured)
-  assert.ok(drift !== undefined, 'a wrong number must produce a message')
-  console.log('# drift message: ' + drift)
-  assert.match(drift, /README\.md:\d+ says 84\/46 \(writing\/drafting\) for academic-paper, but fileProductionSignals\(academic-paper\) measures \d+\/\d+/u)
+  // Chinese: the same sentence translated, one wrong number, phrased with no
+  // spaces and an ideographic comma - the shape t25 could not see at all.
+  const chinese = '`academic-paper` 是本移植中唯一会写文件的技能 —— 其正文里有 86 个写作动词、46 个起草动词 —— 所以它带着策略 A。'
+  const chineseClaim = quotedClaims(chinese, 'README.zh-CN.md')[0]
+  assert.equal(chineseClaim.language, 'Chinese', 'the Chinese clause must match Chinese prose')
+  assert.equal(chineseClaim.skill, 'academic-paper')
+  assert.deepEqual([chineseClaim.writingVerbs, chineseClaim.draftingVerbs], [86, 46])
+  const chineseDrift = claimDrift(chineseClaim, await measureFileProduction('academic-paper'))
+  assert.match(chineseDrift, /README\.zh-CN\.md:1 \(Chinese\) says academic-paper is 86\/46 \(writing\/drafting\), but fileProductionSignals\(academic-paper\) measures 85\/46/u)
+  console.log('# Chinese drift: ' + chineseDrift)
 
-  // A sentence that quotes nothing is not a claim, and a doc that quotes nothing at
-  // all must make the suite skip, not fail.
+  // The two languages do not read each other's prose: an English sentence yields
+  // no Chinese claim and a Chinese sentence yields no English claim.
+  assert.deepEqual(quotedClaims(chinese, 'x'), quotedClaims(chinese, 'x').filter(claim => claim.language === 'Chinese'))
+  assert.equal(quotedClaims(chinese, 'x').every(claim => claim.language === 'Chinese'), true)
+  assert.equal(quotedClaims('85 writing verbs and 46 drafting verbs', 'x').every(claim => claim.language === 'English'), true)
+
+  // Repository bytes, both languages, with thousands separators as the docs write them.
+  // A claim must still name its skill: a size with no skill in the sentence is
+  // skipped, not attributed to whichever skill happens to be nearby.
+  const bytesEnglish = quotedClaims('`academic-paper` ships 63 files and its `SKILL.md`, 65,335 repository bytes)', 'README.md')[0]
+  assert.equal(bytesEnglish.bytes, 65335)
+  assert.equal(claimDrift(bytesEnglish, { bytes: 65335 }), undefined)
+  const bytesDrift = claimDrift({ ...bytesEnglish, bytes: 65330 }, { bytes: 65335 })
+  assert.match(bytesDrift, /says SKILL.md of academic-paper is 65330 repository bytes, but the vendored vendor\/academic-paper\/SKILL\.md measures 65335/u)
+  const bytesChinese = quotedClaims('`academic-paper` 的 `SKILL.md`，仓库字节数 65,335）', 'README.zh-CN.md')[0]
+  assert.equal(bytesChinese.language, 'Chinese')
+  assert.equal(bytesChinese.bytes, 65335)
+
+  // Shared scope: both numbers, both languages.
+  const scopeEnglish = quotedClaims('contain **11 distinct references** (16 reference sites) to upstream areas', 'README.md')[0]
+  assert.deepEqual([scopeEnglish.distinct, scopeEnglish.sites], [11, 16])
+  const scopeDrift = claimDrift({ ...scopeEnglish, sites: 14 }, { distinct: 11, sites: 16 })
+  assert.match(scopeDrift, /README\.md:1 \(English\) says the shared\/ scope is 11 distinct references over 14 reference sites, but missingReferencesByScope\(\) measures 11 distinct references over 16 reference sites/u)
+  const scopeChinese = quotedClaims('含有 **11 个不同**\n引用（16 处引用位置）指向本移植未随附的上游目录', 'README.zh-CN.md')[0]
+  assert.equal(scopeChinese.language, 'Chinese')
+  assert.deepEqual([scopeChinese.distinct, scopeChinese.sites], [11, 16])
+
+  // A document that quotes none of the three kinds is not a claim and must not
+  // fail: this is the skip path, exercised here so it cannot rot.
   assert.deepEqual(quotedClaims('It is the only vendored skill that writes files into the workspace.', 'README.md'), [])
-  assert.deepEqual(quotedClaims('The reviewer drafts nothing.', 'README.md'), [])
-  // The "against N / M for the reviewer and N / M for deep-research" clause is read
-  // as two claims, both attributed to the skills it names.
-  const against = quotedClaims('`academic-paper` is the writer - 85 writing verbs and 46 drafting verbs in its own body, against 24 / 4 for the reviewer and 18 / 4 for deep-research - so it carries policy A.', 'docs/PORT_SPEC.md')
-  assert.deepEqual(against.map(claim => claim.skill), ['academic-paper', 'academic-paper-reviewer', 'deep-research'])
-  assert.deepEqual(against.slice(1).map(claim => [claim.writingVerbs, claim.draftingVerbs]), [[24, 4], [18, 4]])
+  assert.deepEqual(quotedClaims('它是唯一会写文件的技能。', 'README.zh-CN.md'), [])
+})
+
+test('the Chinese README is parsed as Chinese, not tolerated as a monolingual blind spot', async () => {
+  // The t25 hole, stated as an assertion: README.zh-CN.md quotes the same three
+  // measurements in Chinese, and a monolingual parser reported "quotes nothing"
+  // for it - which looked exactly like a document that had stopped quoting
+  // numbers, and left the bilingual pair free to disagree with itself.
+  const doc = 'README.zh-CN.md'
+  assert.ok(QUOTING_DOCS.includes(doc), doc + ' must be one of the parsed documents')
+
+  const claims = quotedClaims(await readFile(join(repoRoot, doc), 'utf8'), doc)
+  assert.ok(claims.length >= 3, doc + ' should quote all three kinds of measurement, saw ' + String(claims.length))
+  assert.deepEqual([...new Set(claims.map(claim => claim.language))], ['Chinese'],
+    doc + ' must be read by the Chinese clauses, never by an English-only pass')
+
+  // Each kind is present and each one is compared, so a Chinese number cannot be
+  // collected and then quietly left unchecked.
+  for (const kind of ['file-production', 'repository-bytes', 'shared-scope']) {
+    const fromKind = claims.filter(claim => claim.kind === kind)
+    assert.equal(fromKind.length, 1, doc + ' should state exactly one ' + kind + ' claim, saw ' + String(fromKind.length))
+    const claim = fromKind[0]
+    const drift = claimDrift(claim, await measure(claim))
+    assert.equal(drift, undefined, drift ?? '')
+    console.log('# ' + doc + ':' + String(claim.line) + ' ' + kind + ' (' + claim.skill + ') checked in Chinese')
+  }
 })

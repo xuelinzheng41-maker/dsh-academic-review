@@ -1,21 +1,30 @@
 /**
- * Parse the file-production numbers the docs quote, so a test can compare them
- * with what the code measures instead of trusting them.
+ * Parse the numbers the docs quote, in every language the docs are written in,
+ * so a test can compare them with what the code measures instead of trusting them.
  *
- * Two rounds have now been spent on stale numbers in prose (a byte count in a
- * report, then a verb count inside src/write-policy.ts itself). The docs are
- * allowed to quote the measurement - it is useful to a reader - but a quoted
- * number nobody recomputes is a number that rots. This module turns the prose
- * back into data:
+ * Three rounds have now been spent on numbers that nobody recomputes: a byte count
+ * in a report, a verb count inside src/write-policy.ts, and then the same verb
+ * counts quoted in English only, which let README.zh-CN.md drift unnoticed because
+ * the parser was monolingual. So this module is language-aware by construction:
+ * each language supplies its own word list and its own separator policy, and they
+ * are joined onto ONE set of numeric tokens. No sentence is duplicated here - the
+ * only numbers in this file are the ones read out of the documents.
  *
- *   README.md          "... 85 writing verbs and 46 drafting verbs in its own body ..."
- *   docs/PORT_SPEC.md  "... 85 writing verbs and 46 drafting verbs in its own body,
- *                       against 24 / 4 for the reviewer and 18 / 4 for `deep-research`"
+ *   English  README.md:81        "... 85 writing verbs and 46 drafting verbs ..."
+ *   Chinese  README.zh-CN.md:69  "... 85 \u4e2a\u5199\u4f5c\u52a8\u8bcd\u300146 \u4e2a\u8d77\u8349\u52a8\u8bcd ..."
  *
- * The skill a clause is about comes from the nearest preceding skill name, not
- * from column position, so the docs can be reordered without breaking the test.
- * Nothing here duplicates an expected value: the only numbers in this file are
- * the ones read out of the documents.
+ * Separator policy, which is the part that cannot be shared: English separates
+ * words with whitespace, so a clause needs at least one space (and the docs wrap
+ * mid-sentence, so exactly one line break is allowed); Chinese writes words with
+ * no separator at all, so spaces are optional and only the line break has to be
+ * tolerated. A [ \t]+ rule carried over to Chinese would match nothing and the
+ * test would silently pass while a whole document rotted - which is precisely the
+ * bug this module now exists to prevent.
+ *
+ * Three kinds of claim are read:
+ * - file-production: writing/drafting verb counts for a named skill;
+ * - repository-bytes: the on-disk size of a skill's SKILL.md;
+ * - shared-scope: distinct missing shared/ targets and the number of sites naming them.
  *
  * @module dsh-academic-review/tests/doc-quoted-numbers
  */
@@ -29,28 +38,102 @@ const SKILL_TOKENS = [
 ]
 
 /**
- * A clause separator: whitespace, or a single line break. The docs wrap inside a
- * sentence ("85 writing verbs\nand 46 drafting verbs"), so a plain [ \t]+ would
- * quietly stop matching the day someone reflowed the paragraph. One newline is
- * allowed, never a blank line, so a clause cannot be stitched across paragraphs.
+ * The numeric tokens every language is built from. Written with String.raw so a
+ * regex escape reaches the RegExp constructor as an escape: in a plain string
+ * literal '`\d`' silently becomes '`d`', which compiles and matches nothing.
  */
-const SEP = '(?:[ \t]+|[ \t]*\n[ \t]*)'
+const NUMERIC = {
+  /** A count of verbs, references or sites. */
+  count: String.raw`(\d{1,4})`,
+  /** A byte size, possibly written with thousands separators: 65,335. */
+  bytes: String.raw`([\d,]{3,})`,
+}
 
-/** "85 writing verbs and 46 drafting verbs". */
-const WRITING_CLAUSE = new RegExp(
-  '(\\d{1,4})' + SEP + 'writing verbs' + SEP + 'and' + SEP + '(\\d{1,4})' + SEP + 'drafting verbs',
-  'giu',
-)
+/** Whitespace policy per language. See the module note: this is what differs. */
+const SEPARATOR = {
+  /** At least one space; the docs wrap, so one line break is allowed too. */
+  English: String.raw`(?:[ \t]+|[ \t]*\n[ \t]*)`,
+  /** Chinese writes words with no separator: spaces optional, one line break tolerated. */
+  Chinese: String.raw`(?:[ \t]*\n?[ \t]*)`,
+}
 
-/** One ratio as the docs write it: '24 / 4', and the docs do wrap between the two numbers. */
-const RATIO = '(\\d{1,4})[ \t]*(?:\n[ \t]*)?\\/[ \t]*(\\d{1,4})'
+/** Join one clause's words with a language's separator policy. */
+function clause(language, ...words) {
+  return words.join(SEPARATOR[language])
+}
 
-/** "against 24 / 4 for the reviewer and 18 / 4 for deep-research", name optional in backticks. */
-const AGAINST_CLAUSE = new RegExp(
-  'against' + SEP + RATIO + SEP + 'for' + SEP + '(?:the' + SEP + ')?reviewer' + SEP + 'and' + SEP
-    + RATIO + SEP + 'for' + SEP + '`?deep-research`?',
-  'giu',
-)
+/**
+ * Punctuation is written tight: "(16" and "\uff0816" have no space before the number.
+ * Around punctuation the language separator cannot be used, so this token allows
+ * optional spaces and, in English, one line break.
+ */
+const TIGHT = {
+  English: String.raw`[ \t]*(?:\n[ \t]*)?`,
+  Chinese: SEPARATOR.Chinese,
+}
+
+/**
+ * The clauses each language can express, built from the shared NUMERIC tokens and
+ * that language's own glue. The recipe is the same in both languages - words joined
+ * by the language separator, punctuation written tight - only the words differ.
+ * The Chinese ideographic comma (\u3001) and full-width parentheses (\uff08...\uff09)
+ * appear in that prose and are not separators.
+ */
+const CLAUSES = [
+  {
+    kind: 'file-production',
+    language: 'English',
+    pattern: clause('English', NUMERIC.count, 'writing', 'verbs', 'and', NUMERIC.count, 'drafting', 'verbs'),
+    fields: ['writingVerbs', 'draftingVerbs'],
+  },
+  {
+    kind: 'file-production',
+    language: 'Chinese',
+    pattern: clause('Chinese', NUMERIC.count, '\u4e2a\u5199\u4f5c\u52a8\u8bcd', String.raw`\u3001?`, NUMERIC.count, '\u4e2a\u8d77\u8349\u52a8\u8bcd'),
+    fields: ['writingVerbs', 'draftingVerbs'],
+  },
+  {
+    kind: 'repository-bytes',
+    language: 'English',
+    pattern: clause('English', NUMERIC.bytes, 'repository', 'bytes'),
+    fields: ['bytes'],
+  },
+  {
+    kind: 'repository-bytes',
+    language: 'Chinese',
+    pattern: clause('Chinese', '\u4ed3\u5e93\u5b57\u8282\u6570', NUMERIC.bytes),
+    fields: ['bytes'],
+  },
+  {
+    kind: 'shared-scope',
+    language: 'English',
+    // "**11 distinct references** (16\nreference sites)" - bold markers and a
+    // wrapped line are both ordinary prose here, and "(16" is written tight.
+    pattern: [
+      NUMERIC.count,
+      'distinct',
+      String.raw`references?` + TIGHT.English + String.raw`\*{0,2}` + TIGHT.English + String.raw`\(?` + TIGHT.English + NUMERIC.count,
+      'reference',
+      String.raw`sites?\)?`,
+    ].join(SEPARATOR.English),
+    fields: ['distinct', 'sites'],
+  },
+  {
+    kind: 'shared-scope',
+    language: 'Chinese',
+    // "**11 \u4e2a\u4e0d\u540c**\n\u5f15\u7528\uff0816 \u5904\u5f15\u7528\u4f4d\u7f6e\uff09"
+    pattern: [
+      NUMERIC.count,
+      String.raw`\u4e2a\u4e0d\u540c` + TIGHT.Chinese + String.raw`\*{0,2}`,
+      String.raw`\u5f15\u7528` + TIGHT.Chinese + String.raw`\*{0,2}` + TIGHT.Chinese + String.raw`[\uff08(]` + TIGHT.Chinese + NUMERIC.count,
+      String.raw`\u5904\u5f15\u7528\u4f4d\u7f6e`,
+    ].join(SEPARATOR.Chinese),
+    fields: ['distinct', 'sites'],
+  },
+]
+
+/** The claim kinds this module understands. */
+export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope']
 
 /** The doc line a match starts on, 1-based, for the failure message. */
 function lineOf(text, index) {
@@ -71,59 +154,90 @@ function skillBefore(text, index) {
   return best?.skill
 }
 
+/** Byte sizes are quoted in prose: strip the thousands separators before comparing. */
+function toCount(raw) {
+  return Number(String(raw).replace(/[,_\s]/gu, ''))
+}
+
 /**
- * Every claim a document makes about file-production counts, as
- * { doc, line, skill, writingVerbs, draftingVerbs, quote }.
- * A number whose sentence names no skill is skipped rather than guessed at: the
- * docs may add prose about other numbers without this test inventing an owner.
+ * Every claim a document makes, as
+ * { doc, line, kind, language, skill?, ...numbers, quote }.
+ *
+ * A clause whose sentence names no skill is skipped rather than guessed at, so the
+ * docs may add prose about numbers elsewhere without this test inventing an owner.
  */
 export function quotedClaims(text, docName) {
   const claims = []
-  for (const match of text.matchAll(WRITING_CLAUSE)) {
-    const skill = skillBefore(text, match.index)
-    if (skill === undefined) continue
-    claims.push({
-      doc: docName,
-      line: lineOf(text, match.index),
-      skill,
-      writingVerbs: Number(match[1]),
-      draftingVerbs: Number(match[2]),
-      quote: match[0],
-    })
+  for (const definition of CLAUSES) {
+    const regex = new RegExp(definition.pattern, 'giu')
+    for (const match of text.matchAll(regex)) {
+      const claim = {
+        doc: docName,
+        line: lineOf(text, match.index),
+        kind: definition.kind,
+        language: definition.language,
+        quote: match[0].replace(/\s+/gu, ' '),
+      }
+      definition.fields.forEach((field, offset) => {
+        claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
+      })
+      if (definition.kind !== 'shared-scope') {
+        const skill = skillBefore(text, match.index)
+        if (skill === undefined) continue
+        claim.skill = skill
+      }
+      claims.push(claim)
+    }
   }
-  for (const match of text.matchAll(AGAINST_CLAUSE)) {
-    claims.push({
-      doc: docName,
-      line: lineOf(text, match.index),
-      skill: 'academic-paper-reviewer',
-      writingVerbs: Number(match[1]),
-      draftingVerbs: Number(match[2]),
-      quote: match[0],
-    })
-    claims.push({
-      doc: docName,
-      line: lineOf(text, match.index),
-      skill: 'deep-research',
-      writingVerbs: Number(match[3]),
-      draftingVerbs: Number(match[4]),
-      quote: match[0],
-    })
-  }
-  return claims.sort((left, right) => left.line - right.line || left.skill.localeCompare(right.skill))
+  return claims.sort((left, right) => left.line - right.line
+    || left.kind.localeCompare(right.kind)
+    || (left.skill ?? '').localeCompare(right.skill ?? ''))
+}
+
+/** How a measurement is named in a failure message. */
+const MEASUREMENT_OF = {
+  'file-production': (claim) => 'fileProductionSignals(' + claim.skill + ')',
+  'repository-bytes': (claim) => 'the vendored vendor/' + claim.skill + '/SKILL.md',
+  'shared-scope': () => 'missingReferencesByScope()',
+}
+
+/** What was measured, rendered for a failure message. */
+function rendered(kind, measured) {
+  if (kind === 'file-production') return String(measured.writingVerbs) + '/' + String(measured.draftingVerbs) + ' (writing/drafting)'
+  if (kind === 'repository-bytes') return String(measured.bytes) + ' repository bytes'
+  return String(measured.distinct) + ' distinct references over ' + String(measured.sites) + ' reference sites'
+}
+
+/** What the document said, rendered for a failure message. */
+function quoted(claim) {
+  if (claim.kind === 'file-production') return String(claim.writingVerbs) + '/' + String(claim.draftingVerbs) + ' (writing/drafting)'
+  if (claim.kind === 'repository-bytes') return String(claim.bytes) + ' repository bytes'
+  return String(claim.distinct) + ' distinct references over ' + String(claim.sites) + ' reference sites'
+}
+
+/** Whether a claim and a measurement agree, per claim kind. */
+function agrees(claim, measured) {
+  if (claim.kind === 'file-production') return claim.writingVerbs === measured.writingVerbs && claim.draftingVerbs === measured.draftingVerbs
+  if (claim.kind === 'repository-bytes') return claim.bytes === measured.bytes
+  return claim.distinct === measured.distinct && claim.sites === measured.sites
 }
 
 /**
  * The sentence a claim makes, checked against a measurement: undefined when they
- * agree, otherwise the message to show the next person - the doc and line, the
- * numbers it states, the function that measures them, and the numbers it measured,
- * so nobody has to go looking for either side.
+ * agree, otherwise the message to show the next person - the doc, the line, the
+ * language the parser was reading, what the document says, what the code measures
+ * and where to fix it.
  */
 export function claimDrift(claim, measured) {
-  if (claim.writingVerbs === measured.writingVerbs && claim.draftingVerbs === measured.draftingVerbs) return undefined
-  return claim.doc + ':' + String(claim.line) + ' says '
-    + String(claim.writingVerbs) + '/' + String(claim.draftingVerbs) + ' (writing/drafting) for '
-    + claim.skill + ', but fileProductionSignals(' + claim.skill + ') measures '
-    + String(measured.writingVerbs) + '/' + String(measured.draftingVerbs)
-    + ' - update the document to the measured numbers (or, if the verb lists and thresholds in '
-    + 'src/write-policy.ts are what changed, update every document that quotes this skill)'
+  if (agrees(claim, measured)) return undefined
+  const where = claim.doc + ':' + String(claim.line) + ' (' + claim.language + ')'
+  const subject = claim.kind === 'shared-scope'
+    ? 'the shared/ scope'
+    : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+  return where + ' says ' + subject + ' is ' + quoted(claim)
+    + ', but ' + MEASUREMENT_OF[claim.kind](claim) + ' measures ' + rendered(claim.kind, measured)
+    + ' - update the document to the measured numbers, in every language'
+    + (claim.doc === 'CHANGELOG.md'
+      ? ' (CHANGELOG.md is a release record: if the size changed legitimately in a newer release, the old entry is history and this pin needs a deliberate decision, not a silent edit)'
+      : '')
 }
