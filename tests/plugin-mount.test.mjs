@@ -34,7 +34,7 @@ async function workspace() {
   return { root, paper, cleanup: async () => { await rm(root, { recursive: true, force: true }) } }
 }
 
-test('applying the plugin registers five tools and one skill', async t => {
+test('applying the plugin registers five tools and both vendored skills', async t => {
   const space = await workspace()
   t.after(space.cleanup)
   const { skills, tools } = mount({ stateDir: '.academic-review', workspaceRoot: space.root })
@@ -49,10 +49,14 @@ test('applying the plugin registers five tools and one skill', async t => {
   ])
 
   const summaries = await skills.list({ cwd: space.root })
-  assert.equal(summaries.length, 1)
-  assert.equal(summaries[0].name, 'academic-paper-reviewer')
+  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper-reviewer', 'deep-research'])
   assert.equal(summaries[0].provider, 'academic-review')
+  assert.equal(summaries[1].provider, 'academic-review')
+  // Both resource bases are absolute directories under the packaged vendor tree.
   assert.equal(summaries[0].resourceBase.path, join(process.cwd(), 'vendor', 'academic-paper-reviewer'))
+  assert.equal(summaries[1].resourceBase.path, join(process.cwd(), 'vendor', 'deep-research'))
+  // deep-research is prompt-only: the plugin adds no tool for it.
+  assert.equal(tools.schemas().filter(schema => schema.name.includes('research')).length, 0)
 })
 
 test('a create call runs end to end through the tool registry', async t => {
@@ -120,4 +124,28 @@ test('a refused submit reports the failure code to the model', async t => {
   assert.equal(refused.isError, true)
   const rendered = refused.content.map(block => block.text ?? '').join('\n')
   assert.match(rendered, /panel_not_confirmed/)
+})
+
+test('a narrowed skills config serves only the named skill', async t => {
+  const space = await workspace()
+  t.after(space.cleanup)
+  const { skills } = mount({ stateDir: '.academic-review', workspaceRoot: space.root, skills: ['deep-research'] })
+  const summaries = await skills.list({ cwd: space.root })
+  assert.deepEqual(summaries.map(summary => summary.name), ['deep-research'])
+  const loaded = await skills.get('deep-research', { cwd: space.root })
+  assert.equal(loaded.name, 'deep-research')
+  assert.equal(loaded.metadata.upstreamSkillVersion, '2.12.1')
+  assert.equal(await skills.get('academic-paper-reviewer', { cwd: space.root }), undefined)
+})
+
+test('an unknown skills config entry fails the mount with a clear message', async () => {
+  const space = await workspace()
+  try {
+    assert.throws(
+      () => mount({ stateDir: '.academic-review', workspaceRoot: space.root, skills: ['deep-resarch'] }),
+      /unknown vendored skill "deep-resarch": available skills are academic-paper-reviewer, deep-research/u,
+    )
+  } finally {
+    await space.cleanup()
+  }
 })

@@ -4,8 +4,9 @@
  *
  * The plugin registers two contributions into the host composition:
  *
- * 1. a skill provider (ctx.skills) that advertises and loads the vendored
- *    upstream skill text unmodified from vendor/academic-paper-reviewer;
+ * 1. a skill provider (ctx.skills) that advertises and loads every vendored
+ *    upstream skill text unmodified from vendor/ (today academic-paper-reviewer
+ *    and deep-research), each with its own absolute resource base;
  * 2. five review-state tools (ctx.tools): academic_review_create,
  *    academic_review_status, academic_review_confirm, academic_review_submit,
  *    academic_review_report;
@@ -32,8 +33,9 @@ import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
 import {
   REVIEW_SKILL_NAME,
-  defaultResourceBasePath,
+  defaultVendorBasePath,
   registerReviewSkillProvider,
+  resolveSkillSelection,
 } from './skills.ts'
 import { registerAcademicReviewCommands } from './commands.ts'
 import { registerAcademicReviewTools } from './tools.ts'
@@ -58,10 +60,16 @@ export interface Config {
   /** Provider name registered on the skill registry (default academic-review). */
   skillProviderName?: string
   /**
-   * Absolute directory of the vendored skill. Defaults to
-   * <package root>/vendor/academic-paper-reviewer and is normally left unset.
+   * Absolute directory holding the vendored skills. Defaults to
+   * <package root>/vendor and is normally left unset.
    */
-  resourceBasePath?: string
+  vendorBasePath?: string
+  /**
+   * Vendored skills to advertise. Defaults to every vendored skill present
+   * under vendorBasePath; an unknown name fails the mount instead of serving
+   * nothing.
+   */
+  skills?: string[]
   /** Fixed workspace root for review state; defaults to the calling session cwd. */
   workspaceRoot?: string
   /** Manuscript size above which seats are told to read in sections (default 1 MiB). */
@@ -76,7 +84,8 @@ export interface Config {
 export const Config = z.object({
   stateDir: z.string().default('.academic-review'),
   skillProviderName: z.string().default('academic-review'),
-  resourceBasePath: z.string(),
+  vendorBasePath: z.string(),
+  skills: z.array(z.string()),
   workspaceRoot: z.string(),
   maxPaperBytes: z.number().default(1024 * 1024),
   upstreamSkillVersion: z.string().default('1.11.1'),
@@ -91,10 +100,18 @@ export const Config = z.object({
 export function apply(ctx: Context, config: Config = {}): void {
   const stateDir = trimmed(config.stateDir) ?? '.academic-review'
   const providerName = trimmed(config.skillProviderName) ?? 'academic-review'
-  const resourceBasePath = trimmed(config.resourceBasePath) === undefined
-    ? defaultResourceBasePath()
-    : resolve(trimmed(config.resourceBasePath) as string)
-  registerReviewSkillProvider(ctx, { providerName, resourceBasePath })
+  const vendorBasePath = trimmed(config.vendorBasePath) === undefined
+    ? defaultVendorBasePath()
+    : resolve(trimmed(config.vendorBasePath) as string)
+  // Resolve the served set here as well so the mount log names exactly what the
+  // provider will advertise; an unknown configured name throws right here.
+  const requestedSkills = config.skills === undefined ? undefined : [...config.skills]
+  const skillNames = resolveSkillSelection(vendorBasePath, requestedSkills)
+  registerReviewSkillProvider(ctx, {
+    providerName,
+    vendorBasePath,
+    ...(requestedSkills === undefined ? {} : { skills: requestedSkills }),
+  })
   // One resolved binding feeds the tools and the slash commands, so both
   // address exactly the same review root and the same state layer.
   const reviewBinding = {
@@ -109,8 +126,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   registerAcademicReviewCommands(ctx, reviewBinding)
   // Read-only panel data surface (three GET routes under /plugins/dsh-academic-review/reviews).
   registerAcademicReviewWebRoutes(ctx, { stateDir, ...(trimmed(config.workspaceRoot) === undefined ? {} : { workspaceRoot: resolve(trimmed(config.workspaceRoot) as string) }) })
-  ctx.logger.info('academic-review: skill "' + REVIEW_SKILL_NAME + '" served from ' + resourceBasePath
-    + '; review state under <workspace>/' + stateDir + '/<review_id>')
+  ctx.logger.info('academic-review: ' + String(skillNames.length) + ' skill(s) served from ' + vendorBasePath
+    + ' [' + skillNames.join(', ') + ']; review state under <workspace>/' + stateDir + '/<review_id>')
 }
 
 /** Trim an optional string, treating blank as absent. */
@@ -133,7 +150,16 @@ export type {
 export { REVIEW_SEAT_METADATA } from './tools.ts'
 export { summarizeReview, REVIEWS_ROUTE_ROOT } from './web.ts'
 export type { ReviewSummary, SeatSummary } from './web.ts'
-export { REVIEW_SKILL_NAME, REVIEW_SKILL_RANK } from './skills.ts'
+export {
+  DEEP_RESEARCH_SKILL_NAME,
+  REVIEW_SKILL_NAME,
+  REVIEW_SKILL_RANK,
+  defaultResourceBasePath,
+  defaultVendorBasePath,
+  discoverVendoredSkills,
+  skillResourceBasePath,
+} from './skills.ts'
+export type { ReviewSkillProviderConfig, SkillDocument } from './skills.ts'
 export {
   REVIEW_COMMAND,
   REVIEW_COMMAND_HINT,

@@ -4,8 +4,9 @@
  *
  * The plugin registers two contributions into the host composition:
  *
- * 1. a skill provider (ctx.skills) that advertises and loads the vendored
- *    upstream skill text unmodified from vendor/academic-paper-reviewer;
+ * 1. a skill provider (ctx.skills) that advertises and loads every vendored
+ *    upstream skill text unmodified from vendor/ (today academic-paper-reviewer
+ *    and deep-research), each with its own absolute resource base;
  * 2. five review-state tools (ctx.tools): academic_review_create,
  *    academic_review_status, academic_review_confirm, academic_review_submit,
  *    academic_review_report;
@@ -42,10 +43,16 @@ export interface Config {
     /** Provider name registered on the skill registry (default academic-review). */
     skillProviderName?: string;
     /**
-     * Absolute directory of the vendored skill. Defaults to
-     * <package root>/vendor/academic-paper-reviewer and is normally left unset.
+     * Absolute directory holding the vendored skills. Defaults to
+     * <package root>/vendor and is normally left unset.
      */
-    resourceBasePath?: string;
+    vendorBasePath?: string;
+    /**
+     * Vendored skills to advertise. Defaults to every vendored skill present
+     * under vendorBasePath; an unknown name fails the mount instead of serving
+     * nothing.
+     */
+    skills?: string[];
     /** Fixed workspace root for review state; defaults to the calling session cwd. */
     workspaceRoot?: string;
     /** Manuscript size above which seats are told to read in sections (default 1 MiB). */
@@ -59,7 +66,8 @@ export interface Config {
 export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     stateDir: z<string, string, "defined">;
     skillProviderName: z<string, string, "defined">;
-    resourceBasePath: z<string, string, "plain">;
+    vendorBasePath: z<string, string, "plain">;
+    skills: z<string[], string[], "plain">;
     workspaceRoot: z<string, string, "plain">;
     maxPaperBytes: z<number, number, "defined">;
     upstreamSkillVersion: z<string, string, "defined">;
@@ -67,7 +75,8 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
 }>>, Schemastery.ObjectT<NoInfer<{
     stateDir: z<string, string, "defined">;
     skillProviderName: z<string, string, "defined">;
-    resourceBasePath: z<string, string, "plain">;
+    vendorBasePath: z<string, string, "plain">;
+    skills: z<string[], string[], "plain">;
     workspaceRoot: z<string, string, "plain">;
     maxPaperBytes: z<number, number, "defined">;
     upstreamSkillVersion: z<string, string, "defined">;
@@ -84,6 +93,7 @@ export type { ReviewState, SeatId, SeatReport, ReviewStatus, ReviewMode, Verdict
 export { REVIEW_SEAT_METADATA } from './tools.ts';
 export { summarizeReview, REVIEWS_ROUTE_ROOT } from './web.ts';
 export type { ReviewSummary, SeatSummary } from './web.ts';
-export { REVIEW_SKILL_NAME, REVIEW_SKILL_RANK } from './skills.ts';
+export { DEEP_RESEARCH_SKILL_NAME, REVIEW_SKILL_NAME, REVIEW_SKILL_RANK, defaultResourceBasePath, defaultVendorBasePath, discoverVendoredSkills, skillResourceBasePath, } from './skills.ts';
+export type { ReviewSkillProviderConfig, SkillDocument } from './skills.ts';
 export { REVIEW_COMMAND, REVIEW_COMMAND_HINT, REVIEW_STATUS_COMMAND, REVIEW_STATUS_COMMAND_HINT, registerAcademicReviewCommands, } from './commands.ts';
 export type { AcademicReviewCommandsConfig, ReviewCommandInput } from './commands.ts';
