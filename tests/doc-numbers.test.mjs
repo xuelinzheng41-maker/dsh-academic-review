@@ -342,27 +342,75 @@ test('a number quoted about the fourth skill is measured against the fourth skil
   }
   console.log('# ' + String(shapes.length) + ' sr-screener/neighbour shapes all attributed to the skill the sentence names')
 
-  // The mutation, kept in the suite so it cannot rot: doctor a COPY of the real README
-  // (never the document) with one wrong sr-screener number and require the failure to
-  // name sr-screener and its own file. If attribution ever regresses, this assertion
-  // fails here rather than in a release.
-  const realReadme = await readFile(join(repoRoot, 'README.md'), 'utf8')
-  const doctored = realReadme + '\n`sr-screener` ships 25 files and its `SKILL.md`, 33,844 repository bytes.\n'
-  const claims = quotedClaims(doctored, 'README.md')
-  const srBytes = claims.find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
-  assert.ok(srBytes !== undefined, 'the doctored sentence must be a claim about sr-screener')
+  // THE MUTATION, kept in the suite so it cannot rot - and built so that it cannot
+  // depend on WHAT the document currently says.
+  //
+  // The first version appended a wrong 33,844 to a copy of the README. It proved the
+  // point only while the document quoted no sr-screener size at all: the day the true
+  // 33,843 came back (t36), the appended sentence was a second claim on the same
+  // subject, the parser kept one of them, and claimDrift returned undefined - a
+  // mutation that passes. A proof whose validity depends on the state of the thing it
+  // is testing proves nothing. So this one reads whatever the document says: if it
+  // quotes a size for the fourth skill it REWRITES that number in the copy, if it does
+  // not it inserts the sentence, and EITHER WAY it asserts the text actually changed
+  // before it asserts anything about the failure. A silent no-op fails here, at the
+  // mutation site, with a message saying the fixture is stale rather than the pinner.
+  //
+  // DSH_DOC_FIXTURE_README exists so this can be run against another version of the
+  // same document (git show HEAD:README.md materialised to a temp file) and shown
+  // green in both states. It affects nothing else in this file.
+  const fixtureDoc = process.env.DSH_DOC_FIXTURE_README ?? join(repoRoot, 'README.md')
+  const fixtureName = fixtureDoc.split(/[\\/]/u).pop() ?? 'README.md'
+  const fixtureReadme = await readFile(fixtureDoc, 'utf8')
+  const measuredBytes = (await measureRepositoryBytes('sr-screener')).bytes
+
+  /** The document with sr-screener's quoted size set to `bytes`; inserts a claim if it quotes none. */
+  const doctorSrBytes = (text, bytes) => {
+    const quoted = quotedClaims(text, fixtureName)
+      .find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
+    if (quoted === undefined) {
+      return {
+        text: text + '\n`sr-screener` ships 25 files and its `SKILL.md`, ' + String(bytes) + ' repository bytes.\n',
+        how: 'inserted a claim in',
+      }
+    }
+    // By offset, not by searching for the quote: the quote is whitespace-collapsed for
+    // messages and need not appear in the raw text (the docs wrap lines mid-phrase).
+    const raw = text.slice(quoted.index, quoted.index + quoted.length)
+    const rewritten = raw.replace(/[\d,]{3,}/u, String(bytes))
+    assert.notEqual(rewritten, raw, 'the sr-screener size claim ' + JSON.stringify(quoted.quote)
+      + ' carries no number to rewrite - the fixture is stale, not the pinner')
+    return {
+      text: text.slice(0, quoted.index) + rewritten + text.slice(quoted.index + quoted.length),
+      how: 'rewrote the claim in',
+    }
+  }
+
+  const doctored = doctorSrBytes(fixtureReadme, measuredBytes + 1)
+  assert.notEqual(doctored.text, fixtureReadme,
+    'the mutation changed nothing: it could not find sr-screener\'s repository-bytes claim to doctor,'
+    + ' so this proof would assert nothing - the fixture is stale, not the pinner')
+  const srBytes = quotedClaims(doctored.text, fixtureName)
+    .find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
+  assert.ok(srBytes !== undefined, 'the doctored document must still yield a sr-screener size claim')
+  assert.equal(srBytes.bytes, measuredBytes + 1,
+    'the doctor did not take effect: the claim reads ' + String(srBytes.bytes) + ', not ' + String(measuredBytes + 1))
   const srDrift = claimDrift(srBytes, await measure(srBytes))
   assert.match(srDrift, /sr-screener/u, 'the failure must name sr-screener: ' + srDrift)
   assert.match(srDrift, /vendor\/sr-screener\/SKILL\.md/u, 'the failure must name sr-screener\'s own file: ' + srDrift)
-  assert.match(srDrift, /33844/u)
+  assert.match(srDrift, new RegExp(String(measuredBytes + 1), 'u'))
   assert.doesNotMatch(srDrift, /academic-paper/u, 'a sr-screener claim must never be validated against academic-paper: ' + srDrift)
-  console.log('# doctored sr-screener bytes -> ' + srDrift)
+  console.log('# ' + doctored.how + ' ' + fixtureName + ' to ' + String(measuredBytes + 1) + ' -> ' + srDrift)
 
-  // ...and the same sentence with the measured number is clean, so the shape this
-  // reports to docs-writer is a shape that passes.
-  const corrected = realReadme + '\n`sr-screener` ships 25 files and its `SKILL.md`, 33,843 repository bytes.\n'
-  const correctedClaim = quotedClaims(corrected, 'README.md').find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
-  assert.equal(claimDrift(correctedClaim, await measure(correctedClaim)), undefined)
+  // ...and the same copy with the measured number is clean, so the shape reported to
+  // docs-writer is a shape that passes. Taken from the same document, not from a
+  // sentence typed here, so it stays true across a re-write of the prose.
+  const corrected = doctorSrBytes(fixtureReadme, measuredBytes)
+  const correctedClaim = quotedClaims(corrected.text, fixtureName)
+    .find(claim => claim.kind === 'repository-bytes' && claim.skill === 'sr-screener')
+  assert.ok(correctedClaim !== undefined, 'the corrected copy must still yield a sr-screener size claim')
+  assert.equal(claimDrift(correctedClaim, await measure(correctedClaim)), undefined,
+    'the measured number must be clean in the same sentence that the doctored number fails')
 
   // Verb counts, same shape, same guarantee, English and Chinese.
   const english = quotedClaims('`sr-screener` qualifies by running its scripts: 24 writing verbs and 4 drafting verbs in its own body.', 'README.md')[0]

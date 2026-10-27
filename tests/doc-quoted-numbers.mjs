@@ -224,7 +224,12 @@ export function quotedClaims(text, docName) {
         line: lineOf(text, match.index),
         kind: definition.kind,
         language: definition.language,
+        // 'quote' is collapsed to one line for messages, so it is NOT a substring of
+        // the document; 'index' and 'length' are, which is what lets a test doctor a
+        // copy of the document and be sure it doctored the claim it found.
         quote: match[0].replace(/\s+/gu, ' '),
+        index: match.index,
+        length: match[0].length,
       }
       definition.fields.forEach((field, offset) => {
         claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
