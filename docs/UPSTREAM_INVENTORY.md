@@ -118,9 +118,11 @@ recompute_receipts.py (58,463), review_criteria_binding.py (39,289).
 Skills this port does not serve (`academic-pipeline`), and the upstream
 repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
 `.claude/`, `.github/`, `tools/`, and the repo-root `scripts/` directory. The
-root `scripts/` entry is the reason the reviewer stays out of the file-producing
-table: those scripts exist upstream but live outside every skill tree, and this
-port vendors the four skill trees plus `shared/`, nothing else.
+root `scripts/` entry is one of the two reasons the reviewer is not a
+*demonstrated* file producer: those scripts exist upstream but live outside every
+skill tree, and this port vendors the four skill trees plus `shared/`, nothing
+else. It is not a reason to withhold the write-policy block — every served skill
+carries it, unconditionally.
 
 `deep-research/` and `academic-paper/` **are** vendored as of 0.2.0, and
 `sr-screener/` as of 0.4.0, each in its own tree and inventoried by

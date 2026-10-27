@@ -33,7 +33,10 @@
      `.json` are pinned the same way.
 - **Non-goals**: upstream areas this port does not serve (`academic-pipeline`,
   and the upstream repository's root `scripts/` directory) are not vendored;
-  revisit only when that skill is added. `deep-research`, `academic-paper` and
+  revisit only when that skill is added. The absent root `scripts/` is also one of
+  the two reasons `academic-paper-reviewer` is not a *demonstrated* file producer —
+  a reason to record, never a reason to deny a skill the write-policy block, which
+  every served skill now carries unconditionally. `deep-research`, `academic-paper` and
   `sr-screener` **are** vendored and served, prompt-only (no tool, no state, no
   panel).
 

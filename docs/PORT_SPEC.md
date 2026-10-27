@@ -109,12 +109,13 @@ no slash command behind it.
 **3.3.1**, SKILL.md `last_updated` 2026-08-15, **63 files**, SKILL.md 65,335
 repository bytes). It is the first vendored skill that *instructs the model to
 write files* — 85 writing verbs and 46 drafting verbs in its own body, against 24
-/ 4 for the reviewer and 18 / 4 for `deep-research` — so it is one of the two
-entries in `src/write-policy.ts`'s `FILE_PRODUCING_SKILLS` table, qualified by
-**prose drafting**. Policy A is **prepended** to its served body (684 bytes) so
-the rule is read before the drafting instructions, and mirrored in metadata as
-`writePolicy: 'new-paths-only'`, `writePolicyEnforced: false` and
-`writePolicyBasis: 'prose-drafting'`. Its tree holds
+/ 4 for the reviewer and 18 / 4 for `deep-research` — so `src/write-policy.ts`'s
+`FILE_PRODUCING_SKILLS` table records it as a **demonstrated** file producer, by
+**prose drafting**. That record is documentation and decides nothing about serving:
+policy A is **prepended** to every served body (the same 684 bytes) so the rule is
+read before the drafting instructions, and mirrored in metadata as
+`writePolicy: 'new-paths-only'` and `writePolicyEnforced: false` on all four
+skills, with `writePolicyBasis: 'prose-drafting'` on this one. Its tree holds
 `templates/latex_article_template.tex`, pinned byte-for-byte from the upstream git
 object (4,844 B; the CRLF worktree copy would have been 5,043 B and wrong) — the
 only non-Markdown file in the three trees vendored before `sr-screener`, and the
@@ -123,16 +124,16 @@ vendoring pipeline is extension-agnostic.
 
 `sr-screener` is upstream's protocol-driven screening pipeline for systematic,
 scoping and rapid reviews (8 modes, version **1.0.0**, SKILL.md `last_updated`
-2026-09-29, **25 files**). It is the second entry in the table, and it qualifies
-by a **different instrument**: its body instructs the model to execute its own
-bundled Python with output arguments (`python $S/build_outputs.py --work sr_work
---out Screening_TA --config screening_config.json`), so it qualifies by
+2026-09-29, **25 files**). It is the second **demonstrated** producer, by a
+**different instrument**: its body instructs the model to execute its own bundled
+Python with output arguments (`python $S/build_outputs.py --work sr_work
+--out Screening_TA --config screening_config.json`), so the record lists it by
 **bundled-script execution** rather than by drafting vocabulary. Same prepended
-block (684 bytes, one block for both skills), same three metadata keys, with
-`writePolicyBasis: 'bundled-script'`.
+block (684 bytes, one block, all four skills), the same two metadata keys on every
+skill, and `writePolicyBasis: 'bundled-script'` on this one.
 
-**How a skill qualifies — the OR of two instruments.** A vendored skill qualifies
-when EITHER holds, measured on its parsed body:
+**Demonstrated, never gated — the OR of two instruments.** A skill is *recorded*
+as a file producer when EITHER holds, measured on its parsed body:
 
 1. **prose drafting** — writing verbs ≥ 40 **and** drafting verbs ≥ 20;
 2. **bundled-script execution** — a single line that carries an interpreter
@@ -140,16 +141,16 @@ when EITHER holds, measured on its parsed body:
    own* directory (resolved against the disk, not the text), **and** carries an
    output argument.
 
-Two shapes must NOT qualify, and they are what make the rule trustworthy rather
-than a rubber stamp:
+Two shapes are recorded as non-producers even though they write files, and they
+are why this record cannot be trusted with the serving decision:
 
-- **a glossary mention of `python` does not qualify** — no interpreter-plus-shipped-script
-  invocation sits on one line, so (2) never holds;
-- **an output argument on a script the skill does not ship does not qualify** —
+- **a glossary mention of `python` demonstrates nothing** — no
+  interpreter-plus-shipped-script invocation sits on one line, so (2) never holds;
+- **an output argument on a script the skill does not ship demonstrates nothing** —
   (2) fails on **location**, and for the reviewer it fails for a second,
   independent reason. The reviewer's own body carries `python3
-  scripts/audit_panel_claims.py … --out-dir`, and it stays out of the table
-  because (a) the rule requires the executable to resolve to a file this package
+  scripts/audit_panel_claims.py … --out-dir`, and it is absent from the table
+  because (a) the instrument requires the executable to resolve to a file this package
   ships inside `academic-paper-reviewer/`, and that file lives at the upstream
   repository **root**, not in the reviewer's tree — it fails on location, not on
   existence: upstream really ships it, and this port records it as an unvendored
@@ -157,6 +158,19 @@ than a rubber stamp:
   part of the upstream root `scripts/` directory, so the file is also absent here.
   Both halves matter: a reader who checks upstream at `1ec249df` will find the
   file, and 'we do not ship it' would be true but incomplete.
+
+**Absence from the table means "we could not show that it writes", never "it does
+not write" — and since 0.4.0 it has no bearing on serving.** An adversarial pass
+built three skills that write and that neither instrument detects — one writing
+through shell commands it does not ship (`mkdir -p exports && ls >
+out/inventory.md`), one through inline `python -c`, one through prose that says
+"generate the deliverable" (no verb in the list) — and all three received no policy
+under the old rule. They are now fixtures in `tests/write-policy.test.mjs` and
+they receive the block like every other skill. The both-directions table check is
+kept, and it is worth keeping precisely because it is weak: it proves the record
+matches the detector, never that the detector is right. When the detector misses a
+skill, the detector and the table agree that it does not produce files, so the test
+passes on a shared blind spot.
 
 **Served-body port notice (commit 4c84ffb).** A served skill is upstream text,
 and upstream text can name a file that lives in another ARS skill this port does
@@ -330,8 +344,9 @@ mechanisms (§2) and need not be ported in Phase 1.
 
 Last changed in 0.4.0: `sr-screener/` left this list when it became a served
 skill, and the upstream root `scripts/` directory was named here explicitly,
-because it is half the reason the reviewer stays out of the file-producing table
-(§1.2). The list is a fence, so it describes the field as it is today.
+because its absence is one of the two reasons the reviewer is not a *demonstrated*
+file producer (§1.2). It is not a reason to withhold the block — every served skill
+carries it. The list is a fence, so it describes the field as it is today.
 
 Skills this port does not serve (`academic-pipeline/`), and the upstream
 repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
@@ -622,14 +637,15 @@ prompt or upstream instruction can relax it:
   read, and hashed to pin its bytes, and that is all;
 - an output path that already exists is **refused or renamed**, never clobbered
   (no overwrite, no append, no "move it out of the way");
-- `deep-research` has no write tool: anything a run produces must go to a new
-  path, and its inputs are read-only;
-- `academic-paper` writes with the host's file tools and `sr-screener` writes by
-  running its own bundled scripts, and this plugin sees neither: for both skills
-  the rule travels as the prepended policy block plus `writePolicy` /
-  `writePolicyEnforced: false` / `writePolicyBasis` in metadata, and the model is
-  told to treat every output as a new path — including the `--out` target, the
-  work directory, the log and the workbook that a script writes;
+- none of the four served skills has a write tool: anything a run produces must go
+  to a new path, and its inputs are read-only;
+- `academic-paper` writes with the host's file tools, `sr-screener` by running its
+  own bundled scripts, and the reviewer and `deep-research` with whatever the host
+  gives them; this plugin sees none of those writes. For all four the rule travels
+  as the prepended policy block plus `writePolicy` / `writePolicyEnforced: false`
+  in metadata (`writePolicyBasis` only where an instrument measured it), and the
+  model is told to treat every output as a new path — including the `--out` target,
+  the work directory, the log and the workbook that a script writes;
 - manuscript drift is reported (`paper_changed`), never repaired: the plugin
   does not restore or rewrite the file, it asks for a new review.
 
@@ -640,15 +656,18 @@ here: a skill body is prompt text, the model writes with the host's file tools,
 and this plugin never sees those calls. So for a skill that produces files — by drafting
 (`academic-paper`) or by running its own scripts (`sr-screener`) — the rule
 travels as a **684-byte block prepended** to the served body plus
-`metadata.writePolicy = 'new-paths-only'`, `metadata.writePolicyEnforced =
-false` and `metadata.writePolicyBasis`, which names the instrument that qualified
-the skill. Instruction with an audit trail, never an interlock. The block is
+`metadata.writePolicy = 'new-paths-only'` and `metadata.writePolicyEnforced =
+false` on every skill, plus `metadata.writePolicyBasis` on the two an instrument
+measured. Instruction with an audit trail, never an interlock. The block is
 prepended, not appended, so it is the first thing the model reads, before any
-drafting instruction or command line. The table itself (`src/write-policy.ts`) is
-checked in both directions — a vendored skill that starts producing files by
-either instrument must be listed, and a listed skill that stops matching fails the
-suite — so the two entries (`academic-paper` by prose drafting, `sr-screener` by
-bundled-script execution) cannot rot into a rubber stamp.
+drafting instruction or command line. It is also **unconditional**: since 0.4.0
+`renderWritePolicyBlock()` takes no parameter and does not consult the table, so
+there is no path that serves a skill without it, and the suite proves that by
+calling the renderer with a name in no table. The table itself
+(`src/write-policy.ts`) is still checked in both directions — a vendored skill the
+detector calls a producer must be listed, and a listed skill that stops matching
+fails the suite — but that check proves the record matches the detector, never that
+the detector is right, which is why it no longer gates anything.
 
 1. **Input formats**: only `.md`, `.tex`, `.txt`. The adapter performs no PDF
    parsing or OCR — a PDF input is rejected at `create` with instructions to

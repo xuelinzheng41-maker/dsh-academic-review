@@ -14,9 +14,9 @@
 > release. Reviewer input is `.md` / `.tex` / `.txt` only: there is no PDF
 > parsing and no OCR.
 > The plugin's own tools and commands never rewrite your manuscript (see
-> [Write policy A](#write-policy-a--new-paths-only)). Skills that write files —
-> `academic-paper` by drafting, `sr-screener` by running its scripts — carry the
-> same rule as an *instruction*: it is not enforcement.
+> [Write policy A](#write-policy-a--new-paths-only)). All four served skills carry
+> the same rule as an *instruction* prepended to the body — the same 684 bytes in
+> every skill, whether or not it writes. It is not enforcement.
 
 An **unofficial DSH port** of the Academic Research Skills (ARS) skills
 `academic-paper-reviewer`, `deep-research` and `academic-paper` for DeepSeek
@@ -34,13 +34,14 @@ and no GUI**: `deep-research` runs on the host's own `web_search` /
 tools can actually reach; `academic-paper` drafts with the same host file tools,
 and `sr-screener` writes by running its own bundled Python through the host's
 shell — which is why [Write policy A](#write-policy-a--new-paths-only) is
-prepended to both served bodies as text the model is told to follow.
+prepended to all four served bodies as text the model is told to follow.
 
 ## Attribution and license
 
 - Upstream work: Academic Research Skills, skills `academic-paper-reviewer`
   v1.11.1, `deep-research` v2.12.1 and `academic-paper` v3.3.1 (each SKILL.md
-  last_updated 2026-08-15) by **Cheng-I Wu**
+  last_updated 2026-08-15), and `sr-screener` v1.0.0 (SKILL.md last_updated
+  2026-09-29), by **Cheng-I Wu**
   (ORCID https://orcid.org/0009-0008-9523-0103),
   https://github.com/Imbad0202/academic-research-skills, vendored at commit
   `1ec249df98728682dfbbdfb940a658338bfd6f80`.
@@ -56,17 +57,25 @@ prepended to both served bodies as text the model is told to follow.
 
 ### Skills served (four)
 
-All three trees are vendored unmodified under `vendor/` from the pinned ARS
+All four trees are vendored unmodified under `vendor/` from the pinned ARS
 commit `1ec249df98728682dfbbdfb940a658338bfd6f80`, and all keep their upstream
 names. The version column is the `metadata.version` in each vendored `SKILL.md`
 frontmatter, read at load time — not a number typed into the plugin.
 
+**Every row carries the write-policy block, and that is deliberate.** A 684-byte
+section stating policy A is prepended to the served body of each of the four — the
+same 684 bytes four times, not a feature of some rows and not of others — because
+we cannot prove that a skill will never write a file. A missing block is the
+expensive error; an unneeded one costs a reader 684 bytes — nine non-empty lines of
+rule text between its two markers — that change nothing. What differs per row is
+everything else: what the plugin adds, and what the skill needs from the host.
+
 | Skill | Upstream version | What this plugin adds | Resource base |
 | --- | --- | --- | --- |
 | `academic-paper-reviewer` | **1.11.1** (SKILL.md `last_updated` 2026-08-15) | The five `academic_review_*` tools, the review state directory, the read-only GUI panel, and `/ars-review` + `/ars-review-status`. | `vendor/academic-paper-reviewer` |
-| `deep-research` | **2.12.1** (SKILL.md `last_updated` 2026-08-15) | Nothing but service: the upstream body is loaded verbatim. No tools, no state, no GUI, no slash command. | `vendor/deep-research` |
-| `academic-paper` | **3.3.1** (SKILL.md `last_updated` 2026-08-15) | Service **plus the write-policy block**: policy A is prepended to the served body (684 bytes) and mirrored in metadata as `writePolicy`, `writePolicyEnforced: false` and `writePolicyBasis: 'prose-drafting'`. No tools, no state, no GUI, no slash command. | `vendor/academic-paper` |
-| `sr-screener` | **1.0.0** (SKILL.md `last_updated` 2026-09-29) | Service **plus the write-policy block** (684 bytes, `writePolicyBasis: 'bundled-script'`). **It needs `Python 3.9+` on the host**: screening works by running its own six bundled scripts, which this plugin ships and pins but never runs, audits or guarantees. No tools, no state, no GUI, no slash command. | `vendor/sr-screener` |
+| `deep-research` | **2.12.1** (SKILL.md `last_updated` 2026-08-15) | No tool, no state, no GUI, no slash command; the upstream body is otherwise loaded verbatim, and it looks things up with the session's own web and file tools. | `vendor/deep-research` |
+| `academic-paper` | **3.3.1** (SKILL.md `last_updated` 2026-08-15) | No tool, no state, no GUI, no slash command. Drafts with the session's own file tools; `writePolicyBasis: 'prose-drafting'` records the instrument that measured it as a file producer. | `vendor/academic-paper` |
+| `sr-screener` | **1.0.0** (SKILL.md `last_updated` 2026-09-29) | **It needs `Python 3.9+` on the host**: screening works by running its own six bundled scripts, which this plugin ships and pins but never runs, audits or guarantees. No tool, no state, no GUI, no slash command; `writePolicyBasis: 'bundled-script'` records the instrument that measured it. | `vendor/sr-screener` |
 
 The vendored set is **279 files**: 169 skill files (28 + 53 + 63 + 25) plus 110
 shared (108 reached by the path scan, 2 vendored by registry receipt because no
@@ -84,24 +93,28 @@ skill can still reason, but it cannot verify sources.
 the largest vendored tree: **63 files** — 12 `agents/`, 29 `references/`, 11
 `templates/`, 10 `examples/` and its `SKILL.md`, 65,335 repository bytes). It was
 the first vendored skill that instructs the model to write files — 85 writing
-verbs and 46 drafting verbs in its own body — so it qualifies for the plugin's
-file-producing skill table by **prose drafting**, and policy A travels with it.
+verbs and 46 drafting verbs in its own body — which is why the record in
+`src/write-policy.ts` lists it as a **demonstrated** file producer by **prose
+drafting**. The record explains how we know, and does not decide who gets the block.
 
 `sr-screener` is upstream's protocol-driven screening pipeline for systematic,
 scoping and rapid reviews (8 modes, **25 files**: six Python scripts under
 `scripts/`, two `.js` workflow templates and one `.json` template under
 `templates/`, one example `.json` under `examples/`, and its `SKILL.md`, 33,843
-repository bytes). It is the second skill that produces files, by a **different
+repository bytes). It is the second **demonstrated** producer, by a **different
 mechanism**: its body tells the model to run its own bundled scripts with an output
-argument, so it qualifies by **bundled-script execution**, not by drafting
-vocabulary. It does not qualify the other way, and that is measurable: `sr-screener`
-carries 24 writing verbs and 3 drafting verbs, both under the thresholds of 40 and
-20, so prose drafting never fires for it.
+argument, so the record lists it by **bundled-script execution** rather than by
+drafting vocabulary. It shows no prose signal at all, and that is measurable:
+`sr-screener` carries 24 writing verbs and 3 drafting verbs, both under the
+thresholds of 40 and 20, so the drafting instrument never fires for it.
 
-**Two skills produce files, by two different mechanisms.** `academic-paper`
-drafts documents; `sr-screener` writes by running its own scripts. Both carry the
-same prepended block (684 bytes, one block for both) and the same three metadata
-keys, and `writePolicyBasis` names which instrument qualified each one.
+**Two skills are *demonstrated* producers, by two different mechanisms.**
+`academic-paper` drafts documents; `sr-screener` writes by running its own
+scripts. That is the record, not the gate: all four served bodies carry the
+identical 684-byte block, `writePolicy: 'new-paths-only'` and
+`writePolicyEnforced: false` sit in the metadata of all four, and
+`writePolicyBasis` — the instrument that *measured* this one — is present on these
+two only.
 
 The `.tex` and the ten new payload files are the same proof twice.
 `academic-paper`'s tree holds
@@ -264,11 +277,19 @@ one of these guarantees — see [Write policy A](#write-policy-a--new-paths-only
   `sr-screener` are served as prompt-only skills (no tools, no state, no GUI);
   there is no pipeline integration, and no re-review/guided/calibration review
   modes in this release.
-- **Writing skills are instructed, not sandboxed**: `academic-paper` writes with
-  the host's own file tools, and `sr-screener` writes by running its own bundled
-  scripts. This plugin cannot intercept either path, so policy A reaches both as
-  prepended text plus `writePolicyEnforced: false` in metadata, never as an
-  interlock.
+- **Every skill is instructed, none is sandboxed**: `academic-paper` writes with
+  the host's own file tools, `sr-screener` writes by running its own bundled
+  scripts — and the reviewer and `deep-research` may write with the session's own
+  tools too. This plugin cannot intercept any of those paths, so policy A reaches
+  all four as prepended text plus `writePolicyEnforced: false` in metadata, never
+  as an interlock. A skill we cannot show writes is not denied the rule; it is
+  given the same 684 bytes.
+- **The detector is documentation, not a gate**: `src/write-policy.ts` still names
+  the skills it can *demonstrate* write files, and by which instrument, because
+  that is a useful answer — but nothing is served or refused on that basis. Its
+  blind spots are documented rather than hidden: a body that writes through shell
+  commands it does not ship, through inline `python -c`, or through prose that says
+  "generate" or "produce" scores as a non-producer and still receives the block.
 - **Bundled code is shipped, not executed**: the six Python scripts ship verbatim
   and SHA-256-pinned; this plugin never runs them, never audits what they do and
   cannot see what they write. Screening needs `Python 3.9+` (standard library
@@ -289,27 +310,54 @@ is prompt text, and this port cannot technically prevent the host's file tools
 from overwriting a path: it never sees those calls, so it cannot intercept, block
 or undo a write, and there is no sandbox around the writing skill.
 
-For a skill that produces files, the rule is therefore delivered as the **first
-block of the served text** — a 684-byte block prepended to the body, before any
-drafting instruction or any command line — and mirrored as
-`writePolicy: 'new-paths-only'`, `writePolicyEnforced: false` and
-`writePolicyBasis` in metadata. That is an instruction the model is told to
-follow, **not an interlock**; the metadata says so machine-readably so nobody can
-quote `writePolicy` as enforcement. Treat it as a strong instruction with a
-visible audit trail in the served payload, never as a runtime guarantee.
+For every served skill the rule is therefore delivered as the **first block of the
+served text** — the same 684-byte block prepended to each of the four bodies,
+before any drafting instruction or any command line — and mirrored in metadata as
+`writePolicy: 'new-paths-only'` and `writePolicyEnforced: false` on all four, with
+`writePolicyBasis` on the two an instrument measured. That is an instruction the
+model is told to follow, **not an interlock**; the metadata says so
+machine-readably so nobody can quote `writePolicy` as enforcement. Treat it as a
+strong instruction with a visible audit trail in the served payload, never as a
+runtime guarantee.
 
-**Two reasons a skill qualifies, one rule.** The table in `src/write-policy.ts`
-admits a skill by **either** instrument, measured on its parsed body:
-**prose drafting** — writing verbs at or above 40 **and** drafting verbs at or
-above 20 — or **bundled-script execution** — one line carrying an interpreter, an
-executable this package actually ships inside *that skill's own* directory
-(resolved on disk, not in the text), and an output argument. `academic-paper`
-qualifies the first way (`writePolicyBasis: 'prose-drafting'`); `sr-screener`
-qualifies the second (`'bundled-script'`). The table is checked in both
-directions — a skill that starts producing files by either instrument must be
-listed, and a listed skill that stops matching fails the suite — so the two entries
-cannot rot into a rubber stamp. The reviewer and `deep-research` qualify on
-neither instrument.
+**Why the reviewer, which writes nothing, carries the rule anyway.** Because we
+cannot prove a negative about a prompt. No measurement can show a skill will never
+produce a file: the model may write through the host's tools, run a command, or use
+a verb our detector does not know. The two failure directions are not symmetric —
+a missing block loses the policy at exactly the moment a skill writes, while an
+unneeded block costs 684 bytes of harmless instruction — so we stopped gating and
+started attaching.
+
+**The block is attached, not selected.** `renderWritePolicyBlock()` in
+`src/write-policy.ts` takes **no parameter at all** — arity zero — and does not
+consult the file-producing table, so there is no input by which a skill could be
+left out and no path that omits it: a skill cannot be served without the block.
+That is a statement about the signature, not about our intentions, which is why it
+is worth having; a signature cannot forget. `tests/write-policy.test.mjs` proves
+it the only way a guarantee can be proven — it calls the renderer with a skill name
+that appears in **no** table and asserts the full 684 bytes still come back.
+
+**Two instruments, kept as evidence — they are not the gate.** The table in
+`src/write-policy.ts` records which skills we can *demonstrate* produce files, and
+by which of two measured instruments: **prose drafting** — writing verbs at or
+above 40 **and** drafting verbs at or above 20 — or **bundled-script execution** —
+one line carrying an interpreter, an executable this package actually ships inside
+*that skill's own* directory (resolved on disk, not in the text), and an output
+argument. `academic-paper` is demonstrated the first way
+(`writePolicyBasis: 'prose-drafting'`), `sr-screener` the second
+(`'bundled-script'`); the reviewer and `deep-research` are demonstrated by
+neither, and receive the block anyway.
+
+Three write shapes that qa-gate built adversarially are now fixtures in
+`tests/write-policy.test.mjs` — a skill that writes with shell commands it does not
+ship (`mkdir -p exports && ls > out/inventory.md`), one that writes through inline
+`python -c`, and one whose prose says "generate the deliverable" — and all three
+score as non-producers while still being served the block. That is the whole reason
+the serving rule stopped consulting the table: the table's both-directions check
+proves the record matches the detector, never that the detector is right. When the
+detector misses a skill, the detector and the table agree that it does not produce
+files, and the test passes on a shared blind spot. Absence from the table means "we
+could not show that it writes", never "it does not write".
 
 1. **Any file a skill produces is written to a new path.** A review writes
    `state.json`, `seats/<seat_id>.json`, `seats/<seat_id>.md`,
@@ -322,12 +370,14 @@ neither instrument.
    tool, not by a slash command, not by the panel, not by a seat and not by the
    editorial synthesizer. The plugin only ever reads it (it may hash it, to pin
    the bytes).
-3. **The served skills follow the same rule.** `deep-research` has no write tool
-   of its own, and `academic-paper` writes only through the host: in both cases
-   anything a run produces (a paper draft, a report, notes, a bibliography) goes to
-   a new path, and everything either skill reads — the manuscript included — stays
-   read-only. For `academic-paper` this is the case where the rule is instruction
-   rather than interlock, so it is the one to check by eye in the transcript.
+3. **All four served skills follow the same rule.** None of them has a write tool
+   of its own, and none of them can be constrained by one: `academic-paper` writes
+   through the host's file tools, `sr-screener` by running its own scripts, and the
+   reviewer and `deep-research` with whatever the session gives them. Anything a
+   run produces (a paper draft, a screen, a report, notes, a bibliography) goes to a
+   new path, and everything a skill reads — the manuscript included — stays
+   read-only. In every case the rule is instruction rather than interlock, which is
+   why the block is on all four bodies and why the transcript is where to check it.
 4. **An existing output path is refused, never clobbered.** If a command or a
    run is pointed at a path that already exists, the correct behaviour is to
    refuse or to pick a new name — never to write over it, append to it, or
@@ -446,11 +496,16 @@ loading.
   plugin ships and pins those scripts and never runs or audits them; the host's
   shell is what would run them, and without a Python toolchain that part of the
   skill does not work at all.
-- **Write policy A now has two reasons:** `academic-paper` qualifies by prose
-  drafting, `sr-screener` by bundled-script execution. One rule, one prepended
-  block (684 bytes, grown from 549 by the bullet naming script-written artifacts:
-  the `--out` target, the work directory, the log and the workbook), two
-  mechanisms — and `writePolicyBasis` in metadata says which is which.
+- **Write policy A is now served to every skill, unconditionally.** The block
+  (684 bytes, grown from 549 by the bullet naming script-written artifacts: the
+  `--out` target, the work directory, the log and the workbook) is attached to all
+  four served bodies, not selected for some, because we cannot prove a skill never
+  writes. The detector and its two instruments survive as documentation —
+  `academic-paper` demonstrated by prose drafting, `sr-screener` by bundled-script
+  execution, and `writePolicyBasis` in metadata on those two only — and no longer
+  gate serving. This is the round that removed the conditional: the reviewer and
+  `deep-research` go from 47,300 to 47,984 and 51,632 to 52,316 served bytes, which
+  is the one block, once.
 - **Vendoring:** 279 files (was 254) — 169 skill files (28 + 53 + 63 + 25) + 110
   shared (108 by scan + 2 by registry receipt). The package now holds 89
   non-Markdown files (`.json` 79, `.py` 6, `.js` 2, `.tex` 1, `.yaml` 1),

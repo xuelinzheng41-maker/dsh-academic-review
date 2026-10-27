@@ -32,16 +32,31 @@ keep loading.
   `openpyxl` optional**, so without a Python 3.9+ toolchain that part of the skill
   does not work at all — it fails visibly rather than returning something that
   looks like a screen.
-- **A second reason to carry policy A.** The rule is now an OR of two measured
-  instruments: prose drafting (writing verbs ≥ 40 and drafting verbs ≥ 20) or
-  bundled-script execution (one line with an interpreter, an executable the package
-  ships inside that skill's own directory, and an output argument).
-  `academic-paper` qualifies the first way, `sr-screener` the second. The
-  prepended block grew from 549 to **684 bytes** — the extra bullet names
+- **The rule is now served to every skill, unconditionally.** The earlier design
+  gave the block only to skills an instrument had proved produce files, and that was
+  the wrong default: it asked us to prove a negative about a prompt, which cannot be
+  done. An adversarial pass found three shapes that write and that the detector
+  scored as non-producers — writing through shell commands the skill does not ship,
+  writing through inline `python -c`, and prose using "generate"/"produce", a verb
+  the list does not contain — and each shipped with no policy at all. The
+  both-directions table test could not see it, because when the detector misses a
+  skill the detector and the table agree that it does not produce files. So
+  `renderWritePolicyBlock()` now takes **no parameter at all** and does not consult
+  the table: the block is attached, not selected, and no served skill can be without
+  it. The block grew from 549 to **684 bytes** — the extra bullet names
   script-written artifacts (the `--out` target, the work directory, the log, the
-  workbook) — and one block still serves both skills. Metadata now also carries
-  `writePolicyBasis` (`'prose-drafting'` / `'bundled-script'`), so the reason is
-  machine-readable, on file-producing skills only.
+  workbook).
+- **The detector survives as documentation.** The table and its two instruments
+  still record which skills are *demonstrated* producers, and by which instrument —
+  prose drafting (writing verbs ≥ 40 and drafting verbs ≥ 20) or bundled-script
+  execution (one line with an interpreter, an executable the package ships inside
+  that skill's own directory, and an output argument). `academic-paper` is
+  demonstrated the first way, `sr-screener` the second, and `writePolicyBasis`
+  (`'prose-drafting'` / `'bundled-script'`) is on those two only, because no
+  instrument measured the other two. Nothing is served or denied on that basis: the
+  reviewer and `deep-research` go from 47,300 to 47,984 and 51,632 to 52,316 served
+  bytes, one block each, while `academic-paper` (65,113) and `sr-screener`
+  (33,212) do not move.
 
 ### Changed
 
