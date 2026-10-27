@@ -9,7 +9,9 @@
 > panel; `deep-research` is served as a prompt-only skill. `academic-paper`,
 > `academic-pipeline` and `sr-screener` are **not** part of this release. Reviewer
 > input is `.md` / `.tex` / `.txt` only: there is no PDF parsing and no OCR.
-> No skill ever rewrites your manuscript (see [Write policy A](#write-policy-a--new-paths-only)).
+> The plugin's own tools and commands never rewrite your manuscript (see
+> [Write policy A](#write-policy-a--new-paths-only)). Skills that write files
+> carry the same rule as an *instruction*: it is not enforcement.
 
 An **unofficial DSH port** of the Academic Research Skills (ARS) skills
 `academic-paper-reviewer` and `deep-research` for DeepSeek Harness.
@@ -178,6 +180,16 @@ PDF input is rejected rather than parsed.
 
 **This is a hard product rule, not a default, and no configuration, mode or
 prompt can relax it.**
+
+**Enforced or only instructed — read this before quoting the rule.** The part this
+plugin owns, it enforces: the five `academic_review_*` tools and the two slash
+commands write new paths only and refuse an existing one. The part a *skill* does
+is prompt text, and this plugin never sees the host's file tools, so it cannot
+intercept, block or undo a write. For the skills that instruct the model to write
+files (`academic-paper`), policy A is prepended to the served body and mirrored as
+`writePolicy: 'new-paths-only'` with `writePolicyEnforced: false` — a rule the model
+is told to follow, not an interlock. Treat it as a strong instruction with a
+visible audit trail in the served payload, not as a runtime guarantee.
 
 1. **Any file a skill produces is written to a new path.** A review writes
    `state.json`, `seats/<seat_id>.json`, `seats/<seat_id>.md`,

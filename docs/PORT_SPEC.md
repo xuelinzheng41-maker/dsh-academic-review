@@ -495,6 +495,15 @@ prompt or upstream instruction can relax it:
 - manuscript drift is reported (`paper_changed`), never repaired: the plugin
   does not restore or rewrite the file, it asks for a new review.
 
+**Scope of that guarantee (read before quoting it).** The bullets above are
+enforced by this plugin's own code, which owns the five `academic_review_*` tools
+and both slash commands. Policy A as it applies to a *skill* is not enforceable
+here: a skill body is prompt text, the model writes with the host's file tools,
+and this plugin never sees those calls. So for a skill that instructs writing
+(`academic-paper`) the rule travels as a block prepended to the served body plus
+`metadata.writePolicy = 'new-paths-only'` and `metadata.writePolicyEnforced =
+false`. Instruction with an audit trail, never an interlock.
+
 1. **Input formats**: only `.md`, `.tex`, `.txt`. The adapter performs no PDF
    parsing or OCR — a PDF input is rejected at `create` with instructions to
    supply extracted text (upstream's PDF read-preflight is out of Phase 1

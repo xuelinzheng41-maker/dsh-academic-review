@@ -35,6 +35,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { renderWritePolicyBlock, writePolicyMetadataOf } from './write-policy.ts'
 import {
   missingReferencesByScope,
   missingReferencesForSkill,
@@ -356,9 +357,14 @@ export class VendoredSkillsProvider implements SkillProvider {
       // Shared-tree misses are metadata only: they are identical for every skill
       // reaching the same shared files, so a body notice would change bodies it
       // has no business changing (src/references.ts documents the three scopes).
-      content: document.body + renderPortNotice(skillName, scopes.own),
+      // Write policy A is PREPENDED, for the few skills that instruct the model to
+      // write files: the rule has to be read before the drafting instructions, not
+      // after them. It is an instruction, not an interlock - the plugin never sees
+      // the host's file tools (src/write-policy.ts states the boundary).
+      content: renderWritePolicyBlock(skillName) + document.body + renderPortNotice(skillName, scopes.own),
       metadata: {
         ...(await this.metadataOf(skillName, directory, document)),
+        ...writePolicyMetadataOf(skillName),
         unavailableReferences: scopes.own.map(entry => entry.target),
         unavailableReferenceCount: scopes.own.length,
         unavailableSharedReferences: scopes.shared.map(entry => entry.target),
