@@ -748,8 +748,19 @@ test('edge (a): the dispatch verb must take the producer as its object, not mere
   // The same line with the producer as the object of the dispatch does fire.
   assert.equal(measure('Run `academic-paper` on the finished outline.\n').dispatchesProducer, true)
   assert.equal(measure('- Dispatch the `academic-paper` skill.\n').dispatchesProducer, true)
-  // And the cost of the fix, stated: a dispatch whose object is a STAGE is refused, which
-  // is the dispatch-by-role blind spot the module header already records.
+  // The cost of the fix, as a PAIR, because the loss is wider than the by-role case the
+  // docstring first named and one half alone reads like a gap. The rule refuses any
+  // directive whose OBJECT is not the producer, even when the producer is named on the
+  // line: 'Dispatch the stage to `academic-paper`' names it and still fires nothing,
+  // while the same sentence with the producer as the object fires. Recovering the first
+  // would mean accepting a producer named anywhere on a directive line - the rule this
+  // instrument exists to refuse - so the pair is the decision, recorded where the next
+  // widening will meet it.
+  assert.equal(measure('Dispatch the stage to `academic-paper`.\n').dispatchesProducer, false,
+    'a directive whose object is not the producer is refused even when the producer is named')
+  assert.equal(measure('Dispatch `academic-paper`.\n').dispatchesProducer, true,
+    'the same directive with the producer as its object fires - the other half of the pair')
+  // And the by-role case that was the only one recorded before this pair existed.
   assert.equal(measure('Delegate the write stage to `academic-paper`.\n').dispatchesProducer, false,
     'dispatch by role is inert by construction - this is the recorded blind spot, not a bug')
 })
