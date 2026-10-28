@@ -537,8 +537,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skill
 A pinned tag or the release tarball works the same way:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.0
-dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.1
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.1.tgz
 ```
 
 The build output (`lib/`) is committed on purpose, so a git install needs no
@@ -580,6 +580,12 @@ The vendored tree is byte-identical to upstream and is checked against
 `pnpm verify:vendor`.
 
 ## Upgrade
+
+### 0.5.0 → 0.5.1
+
+No upgrade path to describe: nothing user-visible changed — no tool, route, state schema
+or served payload moved — so replacing the package is the whole of it. The two additions
+are guards inside this repository's own suite.
 
 ### 0.4.1 → 0.5.0
 

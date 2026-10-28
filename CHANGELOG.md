@@ -8,6 +8,61 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.5.1] - 2026-10-28
+
+Two limits the gate wrote down became guards. **No tool, route, state schema or served
+payload changed**: the same five skills, the same payloads (64,541 / 47,984 / 59,934 /
+51,753 / 33,212), the same 684-byte block with the same hash, and the same one
+853-byte notice. What changed is what can be **checked** — and one number that nothing
+here can check, now named as such instead of trusted.
+
+### Added — the verb-count guard walks the repository instead of a list
+
+It used to watch four named documents. The gate showed that was a list and not a net: a
+fifth document quoting the counts kept the suite green, and the next one to quote them
+would be unchecked until a human remembered. The scan now walks every tracked Markdown
+file outside `vendor/` — **28 files on this tree** — and requires every file that quotes
+a claim to be accounted for: pinned against a live measurement, or exempt with a file, the
+claim kinds it covers and a reason. A file that quotes and is neither fails; so does an
+exemption that has gone stale, and so does an exemption asked to cover a claim kind it
+never declared. History gets a stance rather than an exclusion: a claim is history unless
+it sits in the section whose heading names the version in `package.json`, and a claim in
+that section must be pinned. Today's run prints: 28 files scanned, 5 quote a claim — 3
+pinned, 3 recorded as history, 1 exempt with its reason.
+
+### Fixed — the instrument's loss reads as a decision, in two fixtures
+
+The orchestration instrument's object rule refuses more than the by-role case its
+docstring first named. A directive whose **object** is something other than the producer
+is refused even when the producer is named on that same line: "Dispatch the stage to
+`academic-paper`" fires nothing, and that is not by-role at all — it is the shape a mere
+mention wears, which is exactly what the rule exists to refuse. The header now states the
+wider class where the other blind spots live, and both halves sit next to each other as
+fixtures, so the next reader meets a trade instead of a gap: "Dispatch
+`academic-paper`." fires, "Dispatch the stage to `academic-paper`." does not, and the
+by-role case below the pair is still inert. The predicate itself was **not** widened —
+the change is comment-only, verified line by line (sixteen changed lines, none of them
+code) — so every corpus verdict is identical.
+
+### Found — one number this repository cannot recompute, exempted by name
+
+The new scan's first run found an unpinned claim that was already in the tree:
+`docs/UPSTREAM_INVENTORY.md:110`, the 1,806,561 bytes of upstream scripts the pipeline
+calls and this port does not vendor. Nothing in this repository can recompute that
+number — it was measured in the upstream clone when the pipeline tree was vendored — so
+it is exempted by name with its reason, and for one claim kind only: any other claim
+shape on that page still has to be pinned, and the exemption dies the day the sentence
+does. That is the honest stance available. The alternatives are to delete the number from
+the prose or to vendor the scripts, and both are worse than a named exemption that says
+why it exists.
+
+### Not in this release — the net's own limit
+
+Five documents quote that same 1,806,561 in a bare byte-count form the parser does not
+match. Extending the net to bare byte counts is a policy decision about five sentences,
+not a mechanical widening, and it is not in this release: the scan asserts what it has
+checked, never that everything is checked.
+
 ## [0.5.0] - 2026-10-28
 
 The fifth and last served skill, a payload that shrank because a problem went

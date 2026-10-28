@@ -415,8 +415,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skill
 钉定的 tag 或发布 tarball 用法相同：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.0
-dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.1
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.1.tgz
 ```
 
 构建产物（`lib/`）是有意提交进仓库的，因此从 git 安装不需要构建步骤。bundle patch
@@ -454,6 +454,11 @@ vendored 目录树与上游逐字节一致，并由测试套件和 `pnpm verify:
 （commit `1ec249df`）核对。
 
 ## 升级
+
+### 0.5.0 → 0.5.1
+
+没有升级路径要讲：用户可见的东西一样都没变 —— 没有工具、路由、状态 schema 或被提供载荷移动 ——
+所以换掉包就是全部。两项新增都是本仓库自己测试套件里的守卫。
 
 ### 0.4.1 → 0.5.0
 
