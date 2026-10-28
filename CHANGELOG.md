@@ -20,10 +20,11 @@ here can check, now named as such instead of trusted.
 
 It used to watch four named documents. The gate showed that was a list and not a net: a
 fifth document quoting the counts kept the suite green, and the next one to quote them
-would be unchecked until a human remembered. The scan now walks every tracked Markdown
-file outside a short list of directories — **29 files on this tree** — and requires every
-file that quotes a claim to be accounted for: pinned against a live measurement, or exempt
-with a file, the claim kinds it covers and a reason. A file that quotes and is neither
+would be unchecked until a human remembered. The scan is a filesystem walk, not a git
+listing, and it now walks the Markdown files on disk outside a short list of directories —
+**29 files on this tree** — and requires every file that quotes a claim to be accounted
+for: pinned against a live measurement, or exempt with a file, the claim kinds it covers
+and a reason. A file that quotes and is neither
 fails; so does an exemption that has gone stale, and so does an exemption asked to cover a
 claim kind it never declared. History gets a stance rather than an exclusion: a claim is
 history unless it sits in the section whose heading names the version in `package.json`,
@@ -34,7 +35,8 @@ text. The list lives with the code, so it can move without this paragraph going 
 wrong. Today's run prints: 29 files scanned, 5 quote a claim — 3 pinned, 3 recorded as
 history, 1 exempt with its reason. The count is this tree's, not a constant: if it moves,
 the printed number disagrees with this sentence, which is how a stale sentence gets caught
-instead of trusted — it caught one here already.
+instead of trusted — it caught one here already — and the inventory's claim about how much
+of its table the run measures now agrees with what the run prints.
 
 ### Fixed — the instrument's loss reads as a decision, in two fixtures
 
@@ -49,6 +51,13 @@ fixtures, so the next reader meets a trade instead of a gap: "Dispatch
 by-role case below the pair is still inert. The predicate itself was **not** widened —
 the change is comment-only, verified line by line (sixteen changed lines, none of them
 code) — so every corpus verdict is identical.
+
+- **One more fixed here, and not about the instrument:** `docs/UPSTREAM_INVENTORY.md` said
+  the suite "re-measures the 44 vendored rows on every run" while the suite measures 74 and
+  prints it — 44 was the pre-0.5.0 reach, the reviewer's 28 and the shared 16, left behind
+  when the pipeline's 30 rows arrived. The direction is the part worth recording: it
+  claimed *less* coverage than existed, which is why nobody chased it. A number that
+  flatters the tool gets audited; a number that understates it sits there.
 
 ### Found — one number this repository cannot recompute, exempted by name
 
