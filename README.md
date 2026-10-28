@@ -137,7 +137,7 @@ The `.tex` and the payload files are the same proof, four times over.
 `academic-paper`'s tree holds `templates/latex_article_template.tex` (4,844 B) —
 the first non-Markdown payload this port ever shipped. `sr-screener`'s tree holds
 ten of its own (six `.py`, two `.js`, two `.json`), and the package carries
-**120** non-Markdown files in all (`.json` 109, `.py` 6, `.js` 2, `.tex` 1,
+**120** non-Markdown files (`.json` 109, `.py` 6, `.js` 2, `.tex` 1,
 `.yaml` 1, `.gitkeep` 1), each pinned from the git object store rather than from a
 checkout. The `.tex` proved the vendoring pipeline is extension-agnostic; the ten
 proved it again; the `109` JSON files prove it is a whole class of payload, not an

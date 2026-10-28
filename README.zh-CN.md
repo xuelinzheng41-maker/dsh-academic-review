@@ -109,8 +109,8 @@ Python 来写文件；`academic-pipeline` 负责编排其余三者 —— 因此
 `.tex` 与载荷文件是同一件事的四次证明。`academic-paper` 的树里有
 `templates/latex_article_template.tex`（4,844 B）—— 本移植第一次随包提供的非 Markdown 载荷。
 `sr-screener` 的树自带十个（6 个 `.py`、2 个 `.js`、2 个 `.json`），整个包一共带
-**120 个**非 Markdown 文件（`.json` 109、`.py` 6、`.js` 2、`.tex` 1、`.yaml` 1、
-`.gitkeep` 1），每一个都从 git 对象库钉定，而不是取自工作区。`.tex` 证明了 vendoring 流程
+**120** 个非 Markdown 文件 (`.json` 109, `.py` 6, `.js` 2, `.tex` 1, `.yaml` 1,
+`.gitkeep` 1)，每一个都从 git 对象库钉定，而不是取自工作区。`.tex` 证明了 vendoring 流程
 与扩展名无关；这十个又证明了一次；109 个 JSON 文件证明它是一整类载荷而不是例外清单；那个空的
 `.gitkeep` 则证明规则是“Markdown 加载荷等于 manifest 总数”，而不是“载荷就意味着代码”。
 
@@ -489,7 +489,7 @@ vendored 目录树与上游逐字节一致，并由测试套件和 `pnpm verify:
   shared，而且每一个 shared 文件现在都由路径扫描触达（`byScan: 143`、`byRegistryReceipt: 0`）：
   那两份评审标准回执之所以随包，是因为 `shared/contracts/README.md` 点名了它们，而不是因为回执
   规则补入。回执规则仍然存在、仍然被测试，测试方式是把那一处提及清空。包内现有 120 个非 Markdown
-  文件（`.json` 109、`.py` 6、`.js` 2、`.tex` 1、`.yaml` 1、`.gitkeep` 1）—— 最后
+  文件 (`.json` 109, `.py` 6, `.js` 2, `.tex` 1, `.yaml` 1, `.gitkeep` 1) —— 最后
   那个是空占位文件，正因为它，规则才是“Markdown 加载荷等于 manifest 总数”，而不是“载荷就意味着
   代码”。
 - **shared 范围从 11 变成 7：** 流水线树解析了 `shared/` 文件一直在指向的全部四个
