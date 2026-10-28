@@ -21,14 +21,20 @@ here can check, now named as such instead of trusted.
 It used to watch four named documents. The gate showed that was a list and not a net: a
 fifth document quoting the counts kept the suite green, and the next one to quote them
 would be unchecked until a human remembered. The scan now walks every tracked Markdown
-file outside `vendor/` — **28 files on this tree** — and requires every file that quotes
-a claim to be accounted for: pinned against a live measurement, or exempt with a file, the
-claim kinds it covers and a reason. A file that quotes and is neither fails; so does an
-exemption that has gone stale, and so does an exemption asked to cover a claim kind it
-never declared. History gets a stance rather than an exclusion: a claim is history unless
-it sits in the section whose heading names the version in `package.json`, and a claim in
-that section must be pinned. Today's run prints: 28 files scanned, 5 quote a claim — 3
-pinned, 3 recorded as history, 1 exempt with its reason.
+file outside a short list of directories — **29 files on this tree** — and requires every
+file that quotes a claim to be accounted for: pinned against a live measurement, or exempt
+with a file, the claim kinds it covers and a reason. A file that quotes and is neither
+fails; so does an exemption that has gone stale, and so does an exemption asked to cover a
+claim kind it never declared. History gets a stance rather than an exclusion: a claim is
+history unless it sits in the section whose heading names the version in `package.json`,
+and a claim in that section must be pinned. What the scan leaves out is that short list,
+each directory named with its reason where the walk is defined rather than restated here:
+vendored trees carry their own byte pins, and the rest are tool state rather than published
+text. The list lives with the code, so it can move without this paragraph going quietly
+wrong. Today's run prints: 29 files scanned, 5 quote a claim — 3 pinned, 3 recorded as
+history, 1 exempt with its reason. The count is this tree's, not a constant: if it moves,
+the printed number disagrees with this sentence, which is how a stale sentence gets caught
+instead of trusted — it caught one here already.
 
 ### Fixed — the instrument's loss reads as a decision, in two fixtures
 
