@@ -767,30 +767,7 @@ const PINNED_RECORD_CLAIMS = [{ kind: 'verb-margin', skill: 'academic-pipeline' 
  * hole - the covers list makes any other claim shape in that document fail, and the entry dies
  * the day the sentence goes.
  */
-/**
- * A BRIDGE, NOT A DECISION, AND IT EXPIRES ON CONTACT (t70).
- *
- * docs/PORT_SPEC.md still prints three of the reference walk's own counts - 120 payload files, 67
- * reference-shaped strings, 42 of them dangling - while both READMEs were rewritten to point at the
- * line the walk prints. Those numbers are the defect the rule now catches, and removing them is a
- * change to docs/, not to this file: the entry exists so this suite can be green while the sentence
- * is being retired, and it FAILS AS STALE the moment the sentence goes, so the removal cannot be
- * forgotten the way a TODO can. Nothing else about the page is exempt (covers names the one kind),
- * so the page's other claims are still pinned by the tests above.
- */
-const PORT_SPEC_WALK_FIGURES_BRIDGE = {
-  path: 'docs/PORT_SPEC.md',
-  covers: ['walk-figures'],
-  reason: 'BRIDGE, delete when docs-writer retires the sentence: docs/PORT_SPEC.md:353 still prints'
-    + ' three of the reference walk\'s counts (120 payload files, 67 reference-shaped strings, 42 that'
-    + ' would dangle) while both READMEs were rewritten to point at the printed line. The counts are'
-    + ' refused in prose because the walk guarantees them with floors and its arithmetic lives in'
-    + ' tests/skill-references.test.mjs, so no test here can pin a figure. This entry dies as stale the'
-    + ' moment the sentence stops quoting them, which is what makes the retirement a task and not a hope.',
-}
-
 const CLAIM_EXEMPTIONS = [
-  PORT_SPEC_WALK_FIGURES_BRIDGE,
   {
     path: 'docs/UPSTREAM_INVENTORY.md',
     covers: ['repository-bytes'],
@@ -844,6 +821,8 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
   const exempted = []
   const unpinned = []
   const stale = []
+  const bridges = []
+  const expired = []
   const figureClaims = []
   let figureHistory = 0
   let figureAllowed = 0
@@ -974,6 +953,32 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
 
   // AN EXEMPTION THAT NO LONGER COVERS ANYTHING IS A FAILURE.
   for (const entry of exemptions) {
+    // A BRIDGE IS AN EXEMPTION THAT SAYS IT IS TEMPORARY, AND THE MECHANISM ENFORCES THE CLAIM (t72).
+    //
+    // The staleness check below is not the same guarantee: it expires an exemption when its CLAIM
+    // goes away, and a bridge whose sentence is never retired covers forever. So a bridge declares the
+    // release it was declared in, and it may not survive it - the next version bump fails the suite
+    // until someone either deletes the entry or re-declares it deliberately at the new version with
+    // the reason it is still needed. A temporary exemption therefore cannot quietly become permanent;
+    // the worst it can do is cost a reviewed diff per release, which is the point.
+    if (entry.bridgeSince !== undefined) {
+      if (/^\d+\.\d+\.\d+$/u.test(String(entry.bridgeSince)) === false) {
+        expired.push('CLAIM_EXEMPTIONS declares a bridge for ' + entry.path + ' with bridgeSince '
+          + JSON.stringify(entry.bridgeSince) + ', which is not a version: a bridge has to name the'
+          + ' release it was declared in, or temporary is only a mood')
+        continue
+      }
+      if (String(entry.bridgeSince) !== String(version)) {
+        expired.push('CLAIM_EXEMPTIONS carries a BRIDGE for ' + entry.path + ' declared in '
+          + String(entry.bridgeSince) + ', and this is version ' + String(version) + ': a bridge may'
+          + ' not survive the release it was declared in - delete it, or re-declare it with'
+          + ' bridgeSince at the current version and the reason it is still needed ('
+          + JSON.stringify(entry.reason) + ')')
+        continue
+      }
+      bridges.push(entry.path + ' (bridge declared in the ' + String(entry.bridgeSince) + ' release,'
+        + ' expires when the version moves): ' + String(entry.reason).trim())
+    }
     if (scanned.includes(toPosix(entry.path)) === false) {
       stale.push('CLAIM_EXEMPTIONS names ' + entry.path + ', which is not a Markdown file this scan walks'
         + ' - remove the entry or fix the path (' + JSON.stringify(entry.reason) + ')')
@@ -995,7 +1000,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
     }
   }
   return {
-    scanned, quoting, known, history, presentTense, exempted, unpinned, stale,
+    scanned, quoting, known, history, presentTense, exempted, unpinned, stale, bridges, expired,
     figures: { found: figureClaims.length, history: figureHistory, allowed: figureAllowed },
   }
 }
@@ -1015,6 +1020,11 @@ test('no document outside the known set quotes a measurement', async (t) => {
   assert.deepEqual(report.unpinned, [], 'a document quotes a measurement and nothing pins it:\n  '
     + report.unpinned.join('\n  '))
   assert.deepEqual(report.stale, [], 'an exemption no longer covers anything:\n  ' + report.stale.join('\n  '))
+  // A bridge that outlived its release is a failure, and a LIVE bridge is printed: a temporary
+  // exemption nobody can see in the run is a permanent one with better manners.
+  assert.deepEqual(report.expired, [], 'an exemption that calls itself a bridge and outlived the'
+    + ' release it was declared in:\n  ' + report.expired.join('\n  '))
+  for (const line of report.bridges) t.diagnostic('bridge  ' + line)
   // The comment on SCAN_SKIP claims dot-directories are walked. That is the kind of sentence that
   // goes stale the moment someone adds a blanket skip back, so it is asserted rather than promised:
   // the one tracked Markdown file under a dot-directory must be in the walk.
@@ -1040,7 +1050,9 @@ test('no document outside the known set quotes a measurement', async (t) => {
     + ' claim(s) found (' + String(report.figures.history) + ' recorded as history, '
     + String(report.figures.allowed) + ' exempt with a reason, '
     + String(report.figures.found - report.figures.history - report.figures.allowed) + ' refused), and 0'
-    + ' refused is the pass: those five numbers live in the walk test\'s printed line, not in a sentence')
+    + ' refused is the pass: those five numbers live in the walk test\'s printed line, not in a sentence;'
+    + ' bridges: ' + String(report.bridges.length) + ' exemption(s) declared temporary and expiring when'
+    + ' this version moves')
 })
 
 test('the absence assertion bites: a new quoter fails, a listed one passes, a stale exemption fails', async (t) => {
@@ -1048,14 +1060,20 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   t.after(() => rm(directory, { recursive: true, force: true }))
   // A scratch copy of the documents themselves (never the originals), so this proof is about the
   // scanner and not about what the repository currently says.
-  for (const doc of [...QUOTING_DOCS, QUOTER_SCAN.record]) {
+  // Every document this scan has an opinion about is copied: the live ones, the record, and the ones
+  // an exemption names - otherwise the baseline would report an exemption whose file is missing and
+  // the proof would be about the fixture instead of about the documents.
+  for (const doc of [...QUOTING_DOCS, QUOTER_SCAN.record, ...CLAIM_EXEMPTIONS.map(entry => entry.path)]) {
     await mkdir(join(directory, doc, '..'), { recursive: true })
     await writeFile(join(directory, doc), await readFile(join(repoRoot, doc), 'utf8'), 'utf8')
   }
   const NL = String.fromCharCode(10)
-  // The baseline is the repository as it stands, exemptions included - so a scratch copy that
-  // starts clean means the DOCUMENTS are clean, not that the exemptions were switched off.
-  const base = { ...QUOTER_SCAN, exemptions: [PORT_SPEC_WALK_FIGURES_BRIDGE] }
+  // The baseline is the repository as it stands, exemptions included - so a scratch copy that starts
+  // clean means the DOCUMENTS are clean, not that the exemptions were switched off. It is the live
+  // list, not a copy of it: an entry that is deleted from the repository disappears from these proofs
+  // at the same moment, which is what made the port spec's bridge a two-line deletion instead of a
+  // hunt through fixtures.
+  const base = { ...QUOTER_SCAN, exemptions: CLAIM_EXEMPTIONS }
   const clean = await scanQuoters(directory, base)
   assert.deepEqual(clean.unpinned, [], 'the scratch copy of the known documents must start clean')
   assert.deepEqual(clean.stale, [])
@@ -1107,9 +1125,9 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   const narrow = await scanQuoters(directory, {
     ...base,
     live: [...QUOTING_DOCS, intruder],
-    // The bridge travels with every fixture set: it is the repository's declared state, not a
-    // convenience the proof is allowed to drop. What is under test here is the NOTES.md entry.
-    exemptions: [PORT_SPEC_WALK_FIGURES_BRIDGE,
+    // The repository's declared exemptions travel with every fixture set - they are the state, not a
+    // convenience a proof may drop. What is under test here is the NOTES.md entry.
+    exemptions: [...CLAIM_EXEMPTIONS,
       { path: 'docs/NOTES.md', covers: ['verb-margin'], reason: 'the counts are quoted here as a worked example only' }],
   })
   assert.equal(narrow.unpinned.length, 1, 'an undeclared claim kind in an exempt file must fail: '
@@ -1406,6 +1424,32 @@ test('the walk\'s five numbers cannot come back as prose: a figure is refused wi
   assert.match(afterRetirement.stale[0], /docs\/RETIRED\.md/u)
   assert.match(afterRetirement.stale[0], /stale/u)
   console.log('# mutation (bridge after retirement): ' + afterRetirement.stale[0].slice(0, 240))
+
+  // 7. A BRIDGE CANNOT BECOME PERMANENT. The staleness check expires an exemption when its CLAIM
+  //    goes; a bridge whose sentence is never retired would otherwise cover for ever. So a bridge
+  //    declares the release it was bridgeEntry in and may not survive it, which is demonstrated here
+  //    both ways - and with a bridgeSince that is not a version, so the field cannot be decoration.
+  await put('docs/RETIRED.md', '# Retired' + NL + NL + sentence(222, 120))
+  const bridgeEntry = { path: 'docs/RETIRED.md', covers: ['walk-figures'], bridgeSince: QUOTER_SCAN.version,
+    reason: 'the sentence retires next round; this bridge only covers the release it lands in' }
+  const thisRelease = await scanQuoters(directory, { ...base, exemptions: [bridgeEntry] })
+  assert.deepEqual(thisRelease.expired, [], 'a bridge bridgeEntry in this release must be valid: '
+    + JSON.stringify(thisRelease.expired))
+  assert.equal(thisRelease.bridges.length, 1, 'and it must be printed as a bridge, not as a plain'
+    + ' exemption: ' + JSON.stringify(thisRelease.exempted))
+  console.log('# bridge in its own release (allowed, printed): ' + thisRelease.bridges[0].slice(0, 240))
+  for (const [since, why, pattern] of [
+    ['0.0.1', 'a bridge from an older release', /may not survive/u],
+    ['temporary', 'a bridgeSince that is not a version', /not a version/u],
+  ]) {
+    const outlived = await scanQuoters(directory, { ...base, exemptions: [{ ...bridgeEntry, bridgeSince: since }] })
+    assert.equal(outlived.expired.length, 1, 'a bridge that outlives its release must fail (' + why + '): '
+      + JSON.stringify(outlived.expired))
+    assert.match(outlived.expired[0], /docs\/RETIRED\.md/u)
+    assert.match(outlived.expired[0], pattern)
+    console.log('# mutation (' + why + '): ' + outlived.expired[0].slice(0, 260))
+  }
+  await rm(join(directory, 'docs', 'RETIRED.md'), { force: true })
 
   // The denominators, printed: how much of this family the rule sees and how it accounts for it.
   const tree = await scanQuoters(repoRoot, QUOTER_SCAN)
