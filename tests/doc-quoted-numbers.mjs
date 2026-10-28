@@ -99,6 +99,20 @@ const TIGHT = {
  * The Chinese ideographic comma (\u3001) and full-width parentheses (\uff08...\uff09)
  * appear in that prose and are not separators.
  */
+/**
+ * The words that attribute a count to the reference WALK rather than to something else that counts
+ * markdown files.
+ *
+ * "15 Markdown files" is ordinary inventory vocabulary - docs/PORT_SPEC.md's tree table uses it for
+ * how a vendored tree is laid out, and the subject there is a tree, not the walk. A clause with an
+ * attribution requirement is only a claim when its OWN SENTENCE names the instrument, which is the
+ * same rule the skill attribution uses: read the sentence, not the nearest word in the file.
+ */
+const INSTRUMENT = /\bwalk|\breads?\b|\breading\b|\btravers|\breference[ \t]+check\b/iu
+
+/** The same requirement, in Chinese, for a sentence that names no English instrument. */
+const INSTRUMENT_CHINESE = /\bwalk|\breads?\b|\breading\b|\btravers|遍历|读取|扫描|读/iu
+
 const CLAUSES = [
   {
     kind: 'file-production',
@@ -250,13 +264,100 @@ const CLAUSES = [
       + String.raw`drafting` + SEPARATOR.English + String.raw`(?:verbs?[ \t]+)?against[ \t]+(\d{1,4})`,
     fields: ['writingFloor', 'draftingFloor'],
   },
+  // THE WALK'S OWN FIVE NUMBERS (t70). tests/skill-references.test.mjs prints them on every run:
+  // how many markdown files the reference walk read, how many payload files it did not read, how
+  // many payload files carry reference-shaped strings, how many such strings there are, and how
+  // many of them would dangle. Every guard behind those numbers is a FLOOR (>= 222 files, > 0
+  // strings, >= 5 carriers) - deliberately, so the assertions survive the tree growing - which
+  // means a figure restated in the prose is checked by nothing at all and goes stale the moment
+  // the tree grows, in the direction that claims LESS than exists: the direction nobody notices.
+  // These clauses exist to FIND such a figure, not to pin it. See UNPINNABLE_KINDS.
+  {
+    kind: 'walk-figures',
+    language: 'English',
+    subject: 'markdown files the walk read',
+    pattern: clause('English', NUMERIC.count, 'markdown', 'files?'),
+    fields: ['count'],
+    attribution: INSTRUMENT,
+  },
+  {
+    kind: 'walk-figures',
+    language: 'English',
+    subject: 'payload files the walk did not read',
+    pattern: clause('English', NUMERIC.count, 'payload', 'files?'),
+    fields: ['count'],
+    attribution: INSTRUMENT,
+  },
+  {
+    kind: 'walk-figures',
+    language: 'English',
+    subject: 'reference-shaped strings found in payload files',
+    pattern: clause('English', NUMERIC.count, 'reference-shaped', 'strings?'),
+    fields: ['count'],
+    attribution: INSTRUMENT,
+  },
+  {
+    kind: 'walk-figures',
+    language: 'English',
+    subject: 'reference-shaped strings that would dangle',
+    pattern: clause('English', NUMERIC.count, 'of', 'them', 'would', 'dangle'),
+    fields: ['count'],
+    attribution: INSTRUMENT,
+  },
+  {
+    kind: 'walk-figures',
+    language: 'Chinese',
+    subject: 'markdown files the walk read',
+    pattern: NUMERIC.count + String.raw`[ \t]*\u4e2a?[ \t\n]*markdown[ \t]*\u6587\u4ef6`,
+    fields: ['count'],
+    attribution: INSTRUMENT_CHINESE,
+  },
+  {
+    kind: 'walk-figures',
+    language: 'Chinese',
+    subject: 'payload files the walk did not read',
+    pattern: NUMERIC.count + String.raw`[ \t]*\u4e2a?[ \t\n]*\u8f7d\u8377\u6587\u4ef6`,
+    fields: ['count'],
+    attribution: INSTRUMENT_CHINESE,
+  },
 ]
 
+/**
+ * CLAIMS THAT MUST NOT BE PINNED, ONLY KEPT OUT OF PROSE.
+ *
+ * The walk's five numbers are the one family in this file whose measurement a document cannot be
+ * compared with: the numbers are floors in the walk test, and the walk's own arithmetic lives in
+ * that test file rather than in a module, so comparing prose against it would mean a second copy
+ * of the walk inside this net - the defect this suite keeps re-learning. Rather than pin a figure
+ * that no reader can verify, the team retired the figures from the prose and pointed the sentences
+ * at the printed line; this list makes that retirement an assertion. A claim of an unpinnable kind
+ * is a failure wherever it appears (page or data exemption aside), so the numbers cannot come back
+ * quietly, not even with the value that happens to be right today.
+
 /** The claim kinds this module understands. */
-export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope', 'verb-margin', 'drafting-floors']
+export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope', 'verb-margin', 'drafting-floors', 'walk-figures']
+
+/**
+ * Kinds whose numbers may not appear in prose at all, because no measurement a document could be
+ * compared with exists to pin them to.
+ *
+ * The reference walk's five counts are guaranteed by floors (>= 222 markdown files, > 0
+ * reference-shaped strings, >= 5 carrier files) so that the assertions survive the tree growing.
+ * A floor is the right assertion and the wrong number to quote: the prose figure is checked by
+ * nothing and drifts the moment a file is added - and it drifts LOW, claiming less coverage than
+ * the run has, which is the direction nobody investigates. The walk's arithmetic, meanwhile, lives
+ * inside tests/skill-references.test.mjs, so comparing prose against it would mean a second copy of
+ * the walk inside the number net - the defect this suite keeps re-learning. So the figures were
+ * retired from the documents, which now point at the printed line instead, and this set makes that
+ * retirement an assertion: a claim of an unpinnable kind fails wherever it appears, with the value
+ * that is right today as surely as with one that is wrong. An exemption still has to carry a reason
+ * (and dies when it stops covering anything), which is how a page that genuinely needs the numbers
+ * - a worked example about the walk - declares it.
+ */
+export const UNPINNABLE_KINDS = new Set(['walk-figures'])
 
 /** Claims that are about the instrument rather than about one skill, so they name none. */
-const NO_SKILL_KINDS = new Set(['shared-scope', 'drafting-floors'])
+const NO_SKILL_KINDS = new Set(['shared-scope', 'drafting-floors', 'walk-figures'])
 
 /** The doc line a match starts on, 1-based, for the failure message. */
 function lineOf(text, index) {
@@ -344,6 +445,14 @@ export function quotedClaims(text, docName, options = {}) {
         index: match.index,
         length: match[0].length,
       }
+      // A clause may require that its own sentence attribute the number to an instrument (see
+      // INSTRUMENT). Without that, inventory prose that counts markdown files would read as a claim
+      // about the walk, and this net's first duty is not to invent claims.
+      if (definition.attribution !== undefined) {
+        const sentence = sentenceAround(text, match.index)
+        if (definition.attribution.test(text.slice(sentence.start, sentence.end)) === false) continue
+      }
+      if (definition.subject !== undefined) claim.subject = definition.subject
       definition.fields.forEach((field, offset) => {
         claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
       })
@@ -371,6 +480,10 @@ const MEASUREMENT_OF = {
   'drafting-floors': () => 'FILE_PRODUCING_MIN_WRITING_VERBS / FILE_PRODUCING_MIN_DRAFTING_VERBS',
   'repository-bytes': (claim) => 'the vendored vendor/' + claim.skill + '/SKILL.md',
   'shared-scope': () => 'missingReferencesByScope()',
+  // There is deliberately nothing here to compare a document against: the walk's counts are floors,
+  // and its arithmetic lives in tests/skill-references.test.mjs, not in a module this net can call.
+  // A claim of this kind therefore never agrees - see agrees() - and the message says why.
+  'walk-figures': () => 'the reference walk\'s printed line (tests/skill-references.test.mjs), which is not a number a document may hold',
 }
 
 /** What was measured, rendered for a failure message. */
@@ -379,6 +492,7 @@ function rendered(kind, measured) {
   if (kind === 'verb-margin') return String(measured.writingVerbs) + '/' + String(measured.draftingVerbs) + ' (writing/drafting)'
   if (kind === 'drafting-floors') return String(measured.writingFloor) + ' writing / ' + String(measured.draftingFloor) + ' drafting'
   if (kind === 'repository-bytes') return String(measured.bytes) + ' repository bytes'
+  if (kind === 'walk-figures') return 'whatever the walk measures on this run'
   return String(measured.distinct) + ' distinct references over ' + String(measured.sites) + ' reference sites'
 }
 
@@ -388,6 +502,7 @@ function quoted(claim) {
   if (claim.kind === 'verb-margin') return String(claim.writingVerbs) + '/' + String(claim.draftingVerbs) + ' (writing/drafting)'
   if (claim.kind === 'drafting-floors') return String(claim.writingFloor) + ' writing / ' + String(claim.draftingFloor) + ' drafting'
   if (claim.kind === 'repository-bytes') return String(claim.bytes) + ' repository bytes'
+  if (claim.kind === 'walk-figures') return String(claim.count) + ' (' + String(claim.subject) + ')'
   return String(claim.distinct) + ' distinct references over ' + String(claim.sites) + ' reference sites'
 }
 
@@ -397,6 +512,9 @@ function agrees(claim, measured) {
   if (claim.kind === 'verb-margin') return claim.writingVerbs === measured.writingVerbs && claim.draftingVerbs === measured.draftingVerbs
   if (claim.kind === 'drafting-floors') return claim.writingFloor === measured.writingFloor && claim.draftingFloor === measured.draftingFloor
   if (claim.kind === 'repository-bytes') return claim.bytes === measured.bytes
+  // A figure the suite prints as a floor has no constant to agree with, so it never agrees: the
+  // honest answer is "this may not be quoted", not "this happens to be right today".
+  if (claim.kind === 'walk-figures') return false
   return claim.distinct === measured.distinct && claim.sites === measured.sites
 }
 
@@ -412,7 +530,8 @@ export function claimDrift(claim, measured) {
   const subject = claim.kind === 'shared-scope'
     ? 'the shared/ scope'
     : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
-      : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+      : claim.kind === 'walk-figures' ? 'the walk\'s count of ' + String(claim.subject)
+        : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
   return where + ' says ' + subject + ' is ' + quoted(claim)
     + ', but ' + MEASUREMENT_OF[claim.kind](claim) + ' measures ' + rendered(claim.kind, measured)
     + ' - update the document to the measured numbers, in every language'

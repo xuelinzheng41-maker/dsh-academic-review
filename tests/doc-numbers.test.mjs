@@ -52,7 +52,7 @@ import {
   FILE_PRODUCING_MIN_WRITING_VERBS,
   fileProductionSignals,
 } from '../lib/write-policy.js'
-import { CLAIM_KINDS, claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
+import { CLAIM_KINDS, UNPINNABLE_KINDS, claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorBasePath = defaultVendorBasePath()
@@ -123,7 +123,15 @@ async function collectClaims(log) {
   const claims = []
   for (const doc of QUOTING_DOCS) {
     const text = await readFile(join(repoRoot, doc), 'utf8')
-    const found = quotedClaims(text, doc)
+    const found = quotedClaims(text, doc).filter(claim => {
+      if (UNPINNABLE_KINDS.has(claim.kind) === false) return true
+      // Printed, not silently dropped: these are not pinned anywhere, they are refused in prose, and
+      // the scan below is what enforces that. A number this test quietly walked past would look
+      // exactly like a number it had checked.
+      log('# ' + doc + ':' + String(claim.line) + ' quotes the walk\'s own count ('
+        + JSON.stringify(claim.quote) + ') - refused in prose rather than pinned, see the walk-figure test')
+      return false
+    })
     if (found.length === 0) {
       log('# ' + doc + ' quotes no measurement this test knows; nothing to pin there')
       continue
@@ -258,6 +266,7 @@ function numbersOf(claim) {
   if (claim.kind === 'file-production' || claim.kind === 'verb-margin') return { writingVerbs: claim.writingVerbs, draftingVerbs: claim.draftingVerbs }
   if (claim.kind === 'drafting-floors') return { writingFloor: claim.writingFloor, draftingFloor: claim.draftingFloor }
   if (claim.kind === 'repository-bytes') return { bytes: claim.bytes }
+  if (claim.kind === 'walk-figures') return { count: claim.count, subject: claim.subject }
   return { distinct: claim.distinct, sites: claim.sites }
 }
 
@@ -272,10 +281,13 @@ function describeClaim(claim) {
   const subject = claim.kind === 'shared-scope'
     ? 'the shared/ scope'
     : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
-      : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
-  const numbers = claim.kind === 'file-production' || claim.kind === 'verb-margin'
-    ? claim.writingVerbs + '/' + claim.draftingVerbs + ' (writing/drafting)'
-    : claim.kind === 'drafting-floors'
+      : claim.kind === 'walk-figures' ? 'the walk\'s count of ' + claim.subject
+        : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+  const numbers = claim.kind === 'walk-figures'
+    ? claim.count + ' (' + claim.subject + ')'
+    : claim.kind === 'file-production' || claim.kind === 'verb-margin'
+      ? claim.writingVerbs + '/' + claim.draftingVerbs + ' (writing/drafting)'
+      : claim.kind === 'drafting-floors'
       ? claim.writingFloor + ' writing / ' + claim.draftingFloor + ' drafting'
       : claim.kind === 'repository-bytes'
         ? claim.bytes + ' repository bytes'
@@ -755,7 +767,30 @@ const PINNED_RECORD_CLAIMS = [{ kind: 'verb-margin', skill: 'academic-pipeline' 
  * hole - the covers list makes any other claim shape in that document fail, and the entry dies
  * the day the sentence goes.
  */
+/**
+ * A BRIDGE, NOT A DECISION, AND IT EXPIRES ON CONTACT (t70).
+ *
+ * docs/PORT_SPEC.md still prints three of the reference walk's own counts - 120 payload files, 67
+ * reference-shaped strings, 42 of them dangling - while both READMEs were rewritten to point at the
+ * line the walk prints. Those numbers are the defect the rule now catches, and removing them is a
+ * change to docs/, not to this file: the entry exists so this suite can be green while the sentence
+ * is being retired, and it FAILS AS STALE the moment the sentence goes, so the removal cannot be
+ * forgotten the way a TODO can. Nothing else about the page is exempt (covers names the one kind),
+ * so the page's other claims are still pinned by the tests above.
+ */
+const PORT_SPEC_WALK_FIGURES_BRIDGE = {
+  path: 'docs/PORT_SPEC.md',
+  covers: ['walk-figures'],
+  reason: 'BRIDGE, delete when docs-writer retires the sentence: docs/PORT_SPEC.md:353 still prints'
+    + ' three of the reference walk\'s counts (120 payload files, 67 reference-shaped strings, 42 that'
+    + ' would dangle) while both READMEs were rewritten to point at the printed line. The counts are'
+    + ' refused in prose because the walk guarantees them with floors and its arithmetic lives in'
+    + ' tests/skill-references.test.mjs, so no test here can pin a figure. This entry dies as stale the'
+    + ' moment the sentence stops quoting them, which is what makes the retirement a task and not a hope.',
+}
+
 const CLAIM_EXEMPTIONS = [
+  PORT_SPEC_WALK_FIGURES_BRIDGE,
   {
     path: 'docs/UPSTREAM_INVENTORY.md',
     covers: ['repository-bytes'],
@@ -776,11 +811,18 @@ const PAGE_EXEMPTION = /<!--\s*doc-claim-exemption:\s*([^>]*?)\s*-->/u
 /** A reason shorter than this is not a reason. */
 const EXEMPTION_REASON_MIN = 20
 
+/**
+ * The directory the skip-list proofs put a quoter in. Chosen so that no real skip can ever collide
+ * with it: it reads as a fixture because it is one. See the note in that proof.
+ */
+const QUOTER_FIXTURE_DIR = 'quoter-fixture-t70'
+
 /** How a claim reads in a message. */
 function claimShape(claim) {
   const numbers = claim.kind === 'drafting-floors'
     ? claim.writingFloor + ' / ' + claim.draftingFloor
-    : claim.kind === 'repository-bytes'
+    : claim.kind === 'walk-figures' ? claim.count + ' (' + claim.subject + ')'
+      : claim.kind === 'repository-bytes'
       ? claim.bytes + ' bytes'
       : claim.kind === 'shared-scope'
         ? claim.distinct + ' distinct / ' + claim.sites + ' sites'
@@ -802,6 +844,9 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
   const exempted = []
   const unpinned = []
   const stale = []
+  const figureClaims = []
+  let figureHistory = 0
+  let figureAllowed = 0
   const liveSet = new Set(live.map(toPosix))
   const recordPath = toPosix(record)
   for (const path of scanned) {
@@ -812,6 +857,59 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
     if (claims.length === 0) continue
     quoting.push({ path, claims })
     const marker = PAGE_EXEMPTION.exec(text)
+    const isRecord = path === recordPath
+    const section = isRecord ? releaseSection(text, version) : undefined
+
+    // THE WALK'S FIVE NUMBERS ARE REFUSED IN PROSE (t70). This runs BEFORE the live branch, because
+    // a live document is otherwise taken on trust ("every claim is compared by the tests above") and
+    // there is no test above that can compare these: the walk guarantees its counts with FLOORS, and
+    // its arithmetic lives in tests/skill-references.test.mjs, not in a module this file can call.
+    // A figure that is right today is refused exactly like a wrong one - the point is that the number
+    // belongs to the run, so no reader has to decide whether the sentence is still true.
+    const figures = claims.filter(claim => UNPINNABLE_KINDS.has(claim.kind))
+    const remaining = claims.filter(claim => UNPINNABLE_KINDS.has(claim.kind) === false)
+    const liveFigures = []
+    if (figures.length > 0) {
+      for (const claim of figures) {
+        const where = path + ':' + String(claim.line) + ' ' + claimShape(claim)
+        figureClaims.push(where)
+        const current = isRecord === false
+          || (section !== undefined && claim.line >= section.start && claim.line <= section.end)
+        if (current === false) {
+          figureHistory += 1
+          history.push(where + ' is HISTORY: the section for ' + String(version) + ' is lines '
+            + String(section?.start) + '-' + String(section?.end)
+            + ', and a record of a state that has passed is not corrected')
+          continue
+        }
+        liveFigures.push(claim)
+      }
+    }
+    if (liveFigures.length > 0) {
+      const listed = exemptions.find(entry => toPosix(entry.path) === path
+        && (entry.covers ?? []).includes('walk-figures'))
+      const onPage = liveSet.has(path) === false && marker !== null
+      const reason = listed !== undefined ? listed.reason : onPage ? marker[1] : undefined
+      const covering = listed !== undefined ? 'in CLAIM_EXEMPTIONS' : 'on the page'
+      const at = path + ':' + String(liveFigures[0].line) + ' ' + liveFigures.map(claimShape).join('; ')
+      if (reason === undefined) {
+        unpinned.push(at + ' quotes the reference walk\'s own counts, and no measurement in this file'
+          + ' can pin them: the walk guarantees them with FLOORS (>= 222 markdown files, > 0'
+          + ' reference-shaped strings, >= 5 carrier files) and its arithmetic lives in'
+          + ' tests/skill-references.test.mjs, so a figure in prose is checked by nothing and drifts'
+          + ' LOW as the tree grows - the direction nobody investigates. Take the figure out and point'
+          + ' the sentence at the printed line (README.md:243 does exactly that), or, if the page needs'
+          + ' the numbers as an example, declare an exemption with a reason: on the page (an HTML'
+          + ' comment, doc-claim-exemption: why) or in CLAIM_EXEMPTIONS with covers: walk-figures.')
+      } else if (String(reason).trim().length < EXEMPTION_REASON_MIN) {
+        unpinned.push(path + ' declares an exemption ' + covering + ' for the walk\'s figures with no'
+          + ' usable reason (' + JSON.stringify(reason) + '): an exemption must say why, or it is a hole')
+      } else {
+        figureAllowed += liveFigures.length
+        exempted.push(path + ' (' + covering + ', covers walk-figures): ' + String(reason).trim())
+      }
+    }
+    if (remaining.length === 0) continue
     if (liveSet.has(path)) {
       if (marker !== null) {
         unpinned.push(path + ' is pinned against a live measurement, so it must not exempt itself'
@@ -822,8 +920,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
       continue
     }
     if (path === recordPath) {
-      const section = releaseSection(text, version)
-      for (const claim of claims) {
+      for (const claim of remaining) {
         const current = section !== undefined && claim.line >= section.start && claim.line <= section.end
         const pinned = pinnedRecord.find(entry => entry.kind === claim.kind && (entry.skill ?? null) === (claim.skill ?? null))
         if (current === false) {
@@ -846,7 +943,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
     const listed = exemptions.find(entry => toPosix(entry.path) === path)
     const exemption = declared ?? (listed === undefined ? undefined : { reason: listed.reason, covers: listed.covers, where: 'in CLAIM_EXEMPTIONS' })
     if (exemption === undefined) {
-      unpinned.push(path + ' quotes ' + claims.map(claimShape).join('; ')
+      unpinned.push(path + ' quotes ' + remaining.map(claimShape).join('; ')
         + ' but no test pins it. Either add ' + JSON.stringify(path) + ' to the documents the pinning tests'
         + ' check (LIVE_QUOTERS here, or the record stance if it is a changelog), or take the number out'
         + ' of the prose. If the file quotes a count it may not be pinned for, declare that with a'
@@ -863,7 +960,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
     // become exempting whatever is added to it later. A page marker is reviewed with its example,
     // so it covers the page.
     if (exemption.covers !== undefined) {
-      const uncovered = claims.filter(claim => exemption.covers.includes(claim.kind) === false)
+      const uncovered = remaining.filter(claim => exemption.covers.includes(claim.kind) === false)
       if (uncovered.length > 0) {
         unpinned.push(path + ' is exempt in CLAIM_EXEMPTIONS for ' + exemption.covers.join(', ')
           + ' only, but it now quotes ' + uncovered.map(claimShape).join('; ')
@@ -897,7 +994,10 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
       stale.push(path + ' declares a page exemption but quotes no claim any more - remove the marker')
     }
   }
-  return { scanned, quoting, known, history, presentTense, exempted, unpinned, stale }
+  return {
+    scanned, quoting, known, history, presentTense, exempted, unpinned, stale,
+    figures: { found: figureClaims.length, history: figureHistory, allowed: figureAllowed },
+  }
 }
 
 /** The scan inputs for this repository. */
@@ -936,7 +1036,11 @@ test('no document outside the known set quotes a measurement', async (t) => {
     + ' recorded as history, ' + String(report.exempted.length) + ' exempt with a reason; record stance: '
     + String(report.presentTense.length) + ' present-tense claim(s) in the ' + QUOTER_SCAN.version
     + ' section, ' + String(report.presentTense.length) + ' pinned (0 is a pass - a release that'
-    + ' changed nothing served quotes no count)')
+    + ' changed nothing served quotes no count); walk figures: ' + String(report.figures.found)
+    + ' claim(s) found (' + String(report.figures.history) + ' recorded as history, '
+    + String(report.figures.allowed) + ' exempt with a reason, '
+    + String(report.figures.found - report.figures.history - report.figures.allowed) + ' refused), and 0'
+    + ' refused is the pass: those five numbers live in the walk test\'s printed line, not in a sentence')
 })
 
 test('the absence assertion bites: a new quoter fails, a listed one passes, a stale exemption fails', async (t) => {
@@ -949,7 +1053,9 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
     await writeFile(join(directory, doc), await readFile(join(repoRoot, doc), 'utf8'), 'utf8')
   }
   const NL = String.fromCharCode(10)
-  const base = { ...QUOTER_SCAN, exemptions: [] }
+  // The baseline is the repository as it stands, exemptions included - so a scratch copy that
+  // starts clean means the DOCUMENTS are clean, not that the exemptions were switched off.
+  const base = { ...QUOTER_SCAN, exemptions: [PORT_SPEC_WALK_FIGURES_BRIDGE] }
   const clean = await scanQuoters(directory, base)
   assert.deepEqual(clean.unpinned, [], 'the scratch copy of the known documents must start clean')
   assert.deepEqual(clean.stale, [])
@@ -1001,9 +1107,13 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   const narrow = await scanQuoters(directory, {
     ...base,
     live: [...QUOTING_DOCS, intruder],
-    exemptions: [{ path: 'docs/NOTES.md', covers: ['verb-margin'], reason: 'the counts are quoted here as a worked example only' }],
+    // The bridge travels with every fixture set: it is the repository's declared state, not a
+    // convenience the proof is allowed to drop. What is under test here is the NOTES.md entry.
+    exemptions: [PORT_SPEC_WALK_FIGURES_BRIDGE,
+      { path: 'docs/NOTES.md', covers: ['verb-margin'], reason: 'the counts are quoted here as a worked example only' }],
   })
-  assert.equal(narrow.unpinned.length, 1, 'an undeclared claim kind in an exempt file must fail')
+  assert.equal(narrow.unpinned.length, 1, 'an undeclared claim kind in an exempt file must fail: '
+    + JSON.stringify(narrow.unpinned))
   assert.match(narrow.unpinned[0], /repository-bytes/u, 'the failure must name the undeclared kind')
   console.log('# mutation 3b (narrow exemption): ' + narrow.unpinned[0].split(NL)[0])
   await rm(join(directory, 'docs', 'NOTES.md'), { force: true })
@@ -1019,15 +1129,17 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   await writeFile(join(directory, checker), examplePage, 'utf8')
   const onPage = await scanQuoters(directory, base)
   assert.deepEqual(onPage.unpinned, [], 'a page declaring its reason must pass: ' + JSON.stringify(onPage.unpinned))
-  assert.equal(onPage.exempted.length, 1, 'the exemption must be counted and printed')
-  assert.match(onPage.exempted[0], /not a claim about the shipped body/u)
+  const declaredHere = onPage.exempted.filter(line => line.startsWith('docs/CHECKER.md'))
+  assert.equal(declaredHere.length, 1, 'the page declaration must be counted and printed: '
+    + JSON.stringify(onPage.exempted))
+  assert.match(declaredHere[0], /not a claim about the shipped body/u)
   await writeFile(join(directory, checker), examplePage.replace(
     'example numbers for the checker, not a claim about the shipped body', 'example'), 'utf8')
   const weakReason = await scanQuoters(directory, base)
   assert.equal(weakReason.unpinned.length, 1, 'an exemption without a reason must fail')
   assert.match(weakReason.unpinned[0], /no usable reason/u)
   await writeFile(join(directory, checker), examplePage, 'utf8')
-  console.log('# mutation 4 (page exemption): ' + onPage.exempted[0])
+  console.log('# mutation 4 (page exemption): ' + declaredHere[0])
 
   // 5. THE RECORD STANCE, BOTH SIDES OF IT. The split is a rule - HISTORY unless the claim sits in
   //    the section for the version in package.json - and a rule exercised on one side only is half
@@ -1100,27 +1212,34 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   //    argued. The gate showed that was prose: it put a quoter behind a new skip entry and the
   //    suite stayed green. Both halves of the exposure are exercised here.
   //    (i) a directory holding a quoter, and what the skip does to it.
-  await mkdir(join(directory, 'notes'), { recursive: true })
-  await writeFile(join(directory, 'notes', 'measurements.md'), '# Measurements' + NL + NL
+  //    THE NAME IS A CHOICE, NOT AN ACCIDENT. A fixture directory must be named so that no plausible
+  //    skip entry can ever collide with it: this one used to be called 'notes', which is exactly what
+  //    someone would call a real scratch directory and therefore exactly what a future SCAN_SKIP entry
+  //    might swallow - and the day that happened this proof would fail with a message about a quoter
+  //    that no longer exists, sending the next reader to hunt a bug in the scanner. A name nothing
+  //    would ever skip cannot collide.
+  await mkdir(join(directory, QUOTER_FIXTURE_DIR), { recursive: true })
+  await writeFile(join(directory, QUOTER_FIXTURE_DIR, 'measurements.md'), '# Measurements' + NL + NL
     + 'The pipeline measures 39 writing verbs / 18 drafting verbs.' + NL, 'utf8')
   const exposed = await scanQuoters(directory, base)
   assert.equal(exposed.unpinned.length, 1, 'the quoter behind the new directory must be visible first: '
     + JSON.stringify(exposed.unpinned))
   const smuggled = new Map(SCAN_SKIP)
-  smuggled.set('notes', 'a directory of working notes nobody reviews before merging')
+  smuggled.set(QUOTER_FIXTURE_DIR, 'a directory of working notes nobody reviews before merging')
   const walked = await markdownFiles(directory, '', SCAN_SKIP)
   const walkedSkipping = await markdownFiles(directory, '', smuggled)
-  assert.ok(walked.includes('notes/measurements.md'), 'the quoter must be in the walk before any skip')
-  assert.equal(walkedSkipping.includes('notes/measurements.md'), false,
+  const fixtureDoc = QUOTER_FIXTURE_DIR + '/measurements.md'
+  assert.ok(walked.includes(fixtureDoc), 'the quoter must be in the walk before any skip')
+  assert.equal(walkedSkipping.includes(fixtureDoc), false,
     'a skip entry really does hide a document - which is why it cannot be added quietly')
   assert.throws(() => assertSkipArgs(smuggled), (error) => /SCAN_SKIP gained or lost/u.test(String(error && error.message)),
     'a new skip key must fail until it is argued in SCAN_SKIP_KEYS')
   await assert.rejects(() => scanQuoters(directory, { ...base, skip: smuggled }),
     (error) => /SCAN_SKIP gained or lost/u.test(String(error && error.message)),
     'the scan itself must refuse an unargued skip')
-  console.log('# mutation 6 (skip absorbs a quoter): notes/measurements.md leaves the walk, and the'
+  console.log('# mutation 6 (skip absorbs a quoter): ' + fixtureDoc + ' leaves the walk, and the'
     + ' skip map is refused until the key is argued')
-  await rm(join(directory, 'notes'), { recursive: true, force: true })
+  await rm(join(directory, QUOTER_FIXTURE_DIR), { recursive: true, force: true })
 
   //    (ii) a reason that is blank, or a word: same bar as a page exemption.
   for (const reason of ['', '   ', 'generated', 'build output', 'temp']) {
@@ -1131,4 +1250,168 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   }
   console.log('# mutation 6b (skip reason): blank, one-word and bare-phrase reasons are all refused;'
     + ' the live map passes')
+})
+
+/* ---------------------------------------------------------------------------------------------
+ * THE WALK'S FIVE NUMBERS ARE REFUSED IN PROSE (t70).
+ *
+ * tests/skill-references.test.mjs prints, on every run, how many markdown files the reference walk
+ * read, how many payload files it did not read, how many payload files carry reference-shaped
+ * strings, how many such strings there are, and how many of them would dangle. Every guard behind
+ * those numbers is a FLOOR (>= 222 files, > 0 strings, >= 5 carriers), deliberately, so the
+ * assertions survive the tree growing. A floor is the right assertion and the wrong number to
+ * quote: a figure in prose is checked by nothing and drifts LOW as the tree grows - claiming less
+ * coverage than the run has - which is the direction nobody investigates. The CHANGELOG proves it
+ * out of its own history: an older release records 16 payload files carrying 49 strings, and the
+ * tree now has 26 carrying 67.
+ *
+ * So the figures were retired from both READMEs, which now point at the printed line, and this
+ * test makes the retirement an assertion. THE SHAPE IS A REFUSAL, NOT A PIN, and that is a
+ * judgement rather than a shortcut: there is no measurement in this file to compare a figure with.
+ * The walk's arithmetic lives inside the walk test, so measuring here would mean a second copy of
+ * the walk - the defect this suite keeps re-learning - and lifting it out into a module is a
+ * refactor of files outside this task. A refusal needs no arithmetic and is strictly stronger: a
+ * figure that is right today is refused exactly like one that is wrong, so no reader has to decide
+ * whether the sentence is still true. What it costs is the ability to quote the numbers by
+ * accident of enthusiasm; quoting them on purpose is now a reviewed act, because a page that needs
+ * them as an example must declare an exemption with a reason.
+ *
+ * The attribution problem is real, and it is answered in the parser rather than waved away:
+ * '15 Markdown files' is ordinary inventory vocabulary (docs/PORT_SPEC.md's tree table uses it for
+ * layout, not for the walk), so a walk-figure clause only counts when its OWN SENTENCE names the
+ * instrument (walk / read / travers / reference check) - the same 'read the sentence, not the
+ * nearest word in the file' rule the skill attribution had to learn.
+ * ------------------------------------------------------------------------------------------- */
+
+test('the walk\'s five numbers cannot come back as prose: a figure is refused with its file and line', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-walk-figures-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const NL = String.fromCharCode(10)
+  const base = { ...QUOTER_SCAN, exemptions: [] }
+  const put = async (path, text) => {
+    await mkdir(join(directory, path, '..'), { recursive: true })
+    await writeFile(join(directory, path), text, 'utf8')
+  }
+
+  // 1. THE FIGURES ARE GONE FROM THE READMES, asserted rather than assumed: docs-writer retired
+  //    them in this round, and 'the sentence was rewritten' is exactly the kind of fact that
+  //    quietly stops being true. Printed as well, so the run shows a zero instead of nothing.
+  let readmeFigures = 0
+  for (const doc of Object.keys(BILINGUAL)) {
+    const text = await readFile(join(repoRoot, doc), 'utf8')
+    const figures = quotedClaims(text, doc).filter(claim => claim.kind === 'walk-figures')
+    assert.deepEqual(figures, [], doc + ' quotes the reference walk\'s own counts ('
+      + figures.map(claim => claim.line + ': ' + claim.count + ' (' + claim.subject + ')').join('; ')
+      + '). Those five numbers live in the walk test\'s printed line; the sentence should point at'
+      + ' it (README.md:243 is the model) rather than restate a floor')
+    readmeFigures += figures.length
+    t.diagnostic(doc + ': ' + String(figures.length) + ' walk figure(s) quoted')
+  }
+  console.log('# walk figures in the two READMEs: ' + String(readmeFigures) + ' (asserted above); the'
+    + ' sentences point at the line the walk prints instead')
+
+  // 2. A FIGURE THAT COMES BACK IS REFUSED - with the value the walk prints today and with a wrong
+  //    one, in the same words. The rule is about provenance, not about arithmetic.
+  const sentence = (files, payload) => 'The walk read ' + String(files) + ' markdown files and none'
+    + ' of the ' + String(payload) + ' payload files.' + NL
+  for (const pair of [[222, 120, 'the value the walk prints today'], [999, 7, 'a value that is wrong']]) {
+    await put('README.md', '# Readme' + NL + NL + sentence(pair[0], pair[1]))
+    const back = await scanQuoters(directory, { ...base, live: ['README.md'] })
+    assert.equal(back.unpinned.length, 1, 'a re-added figure must fail (' + pair[2] + '): '
+      + JSON.stringify(back.unpinned))
+    const line = back.unpinned[0]
+    assert.match(line, /README\.md:3/u, 'the failure must name the file and line: ' + line)
+    assert.match(line, /walk-figures/u, 'the failure must name the claim shape: ' + line)
+    assert.match(line, /FLOORS/u, 'the failure must say why no test here can pin it: ' + line)
+    assert.match(line, /printed line/u, 'and where the number does live: ' + line)
+    console.log('# mutation (figure re-added, ' + pair[2] + '): ' + line.slice(0, 260))
+  }
+  // The README was proof 2's fixture. Proofs 3 onward start from a directory that holds no live
+  // document, so a leftover file cannot be mistaken for the case under test.
+  await rm(join(directory, 'README.md'), { force: true })
+
+  // 3. THE SAME SENTENCE IN A DOCUMENT NOBODY LISTED: refused as well, so 'put it somewhere
+  //    unwatched' is not a route around the rule.
+  await put('docs/MEASUREMENTS.md', '# Measurements' + NL + NL + sentence(222, 120))
+  const elsewhere = await scanQuoters(directory, base)
+  const unlisted = elsewhere.unpinned.filter(line => /MEASUREMENTS/u.test(line))
+  assert.equal(unlisted.length, 1, 'an unlisted document quoting the figures must fail too: '
+    + JSON.stringify(elsewhere.unpinned))
+  assert.match(unlisted[0], /printed line/u)
+  console.log('# mutation (figure in an unlisted document): ' + unlisted[0].slice(0, 260))
+  await rm(join(directory, 'docs', 'MEASUREMENTS.md'), { force: true })
+
+  // 4. A PAGE THAT NEEDS THE NUMBERS DECLARES IT, WITH A REASON - and a useless reason is refused,
+  //    so the page marker is a reviewed statement and not a free pass. This is the escape hatch,
+  //    and it is the only one.
+  const page = '# Worked example' + NL + NL
+  const marked = '<!-- doc-claim-exemption: the walk figures are quoted here as a worked example of'
+    + ' the printed line, not as a claim about the current tree -->'
+  await put('docs/EXAMPLE.md', page + marked + NL + NL + sentence(222, 120))
+  const allowed = await scanQuoters(directory, base)
+  assert.deepEqual(allowed.unpinned, [], 'a page declaring its reason must pass: ' + JSON.stringify(allowed.unpinned))
+  const declared = allowed.exempted.filter(line => line.startsWith('docs/EXAMPLE.md'))
+  assert.equal(declared.length, 1, 'the declaration must be counted and printed: ' + JSON.stringify(allowed.exempted))
+  assert.match(declared[0], /covers walk-figures/u)
+  console.log('# mutation (page exemption for an example): ' + declared[0].slice(0, 260))
+  await put('docs/EXAMPLE.md', page + '<!-- doc-claim-exemption: example -->' + NL + NL + sentence(222, 120))
+  const weak = await scanQuoters(directory, base)
+  assert.equal(weak.unpinned.filter(line => /EXAMPLE/u.test(line)).length, 1,
+    'an exemption with no usable reason must fail: ' + JSON.stringify(weak.unpinned))
+  assert.match(weak.unpinned.find(line => /EXAMPLE/u.test(line)), /no usable reason/u)
+  await rm(join(directory, 'docs', 'EXAMPLE.md'), { force: true })
+
+  // 5. THE RECORD STANCE, BOTH SIDES, for this family too: a figure inside a release that has
+  //    passed is history (the changelog already holds two of them), and the same figure in the
+  //    section for the shipped version is refused like any other present tense.
+  const changelog = await readFile(join(repoRoot, QUOTER_SCAN.record), 'utf8')
+  const rows = changelog.split(NL)
+  const headings = rows.map((line, index) => ({ line, index })).filter(entry => /^##\s/u.test(entry.line))
+  assert.ok(headings.length >= 2, 'the changelog must carry more than one release section')
+  const withFigure = (heading) => {
+    const copy = [...rows]
+    copy.splice(heading.index + 1, 0, '', '- The walk read ' + String(222) + ' markdown files and 0 of the 120 payload files.')
+    return copy.join(NL)
+  }
+  await put(QUOTER_SCAN.record, withFigure(headings[0]))
+  const inRelease = await scanQuoters(directory, base)
+  const refused = inRelease.unpinned.filter(line => /CHANGELOG/u.test(line))
+  assert.equal(refused.length, 1, 'a figure inside the section for the shipped version must fail: '
+    + JSON.stringify(inRelease.unpinned))
+  console.log('# mutation (figure in the current release section): ' + refused[0].slice(0, 240))
+  await put(QUOTER_SCAN.record, withFigure(headings[headings.length - 1]))
+  const passed = await scanQuoters(directory, base)
+  assert.deepEqual(passed.unpinned, [], 'a figure inside a release that has passed is history: '
+    + JSON.stringify(passed.unpinned))
+  const recorded = passed.history.filter(line => /walk-figures/u.test(line) && /HISTORY/u.test(line))
+  assert.ok(recorded.length >= 1, 'and it is reported as history, not silently dropped: '
+    + JSON.stringify(passed.history.slice(0, 3)))
+  console.log('# record stance (figure as history): ' + recorded[recorded.length - 1].slice(0, 240))
+  await put(QUOTER_SCAN.record, changelog)
+
+  // 6. AND THE BRIDGE CANNOT OUTLIVE ITS SENTENCE. docs/PORT_SPEC.md is exempt for walk figures
+  //    while its sentence is retired; an exemption that stops covering anything is a failure, so
+  //    the retirement cannot be forgotten the way a TODO can. This is the same mechanism the
+  //    real bridge will trip, demonstrated here on a page that has already been cleaned.
+  await put('docs/RETIRED.md', '# Retired' + NL + NL + sentence(222, 120))
+  const bridge = { path: 'docs/RETIRED.md', covers: ['walk-figures'], reason: 'a bridge for a sentence that is being retired this round' }
+  const whileQuoting = await scanQuoters(directory, { ...base, exemptions: [bridge] })
+  assert.deepEqual(whileQuoting.unpinned, [], 'the bridge must hold while the sentence is there: '
+    + JSON.stringify(whileQuoting.unpinned))
+  assert.deepEqual(whileQuoting.stale, [], 'and must not read as stale while it covers something')
+  await put('docs/RETIRED.md', '# Retired' + NL + NL + 'The figures were removed; the walk prints them' + NL + 'on every run.' + NL)
+  const afterRetirement = await scanQuoters(directory, { ...base, exemptions: [bridge] })
+  assert.equal(afterRetirement.stale.length, 1, 'the exemption must fail the moment the figures go: '
+    + JSON.stringify(afterRetirement.stale))
+  assert.match(afterRetirement.stale[0], /docs\/RETIRED\.md/u)
+  assert.match(afterRetirement.stale[0], /stale/u)
+  console.log('# mutation (bridge after retirement): ' + afterRetirement.stale[0].slice(0, 240))
+
+  // The denominators, printed: how much of this family the rule sees and how it accounts for it.
+  const tree = await scanQuoters(repoRoot, QUOTER_SCAN)
+  console.log('# walk figures in the tree: ' + String(tree.figures.found) + ' claim(s) found, '
+    + String(tree.figures.history) + ' recorded as history (the changelog holds its own drift), '
+    + String(tree.figures.allowed) + ' exempt with a reason, '
+    + String(tree.figures.found - tree.figures.history - tree.figures.allowed) + ' refused; 0 refused is'
+    + ' the pass, and 0 in the READMEs above is the decision holding')
 })

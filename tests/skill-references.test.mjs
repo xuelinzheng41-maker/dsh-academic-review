@@ -737,6 +737,15 @@ test('the walk reads markdown only, and the payload really would be misread if i
   console.log('# the walk read ' + String(scan.files.length) + ' markdown files and 0 of the ' + String(payload.length)
     + ' payload files; ' + String(carriers.length) + ' payload files carry ' + String(wouldBe)
     + ' reference-shaped string(s) (' + String(wouldBeDangling) + ' of them would dangle), so the exclusion is load-bearing')
+  // THE SAME FIVE NUMBERS, NAMED, so a reader who needs one does not have to parse the sentence
+  // above - and so a document that is tempted to restate a figure can point at something stable.
+  // They are FLOORS where they are asserted (see the asserts above), which is exactly why no
+  // document may quote them as facts: tests/doc-numbers.test.mjs refuses a walk figure in prose and
+  // sends the sentence here instead. This line is the measurement; that test is the rule.
+  console.log('# walk measurement: markdown=' + String(scan.files.length)
+    + ' payload=' + String(payload.length) + ' carriers=' + String(carriers.length)
+    + ' referenceShaped=' + String(wouldBe) + ' dangling=' + String(wouldBeDangling)
+    + ' (the five numbers no document may restate - point at this line, not at a figure)')
 })
 
 /**
