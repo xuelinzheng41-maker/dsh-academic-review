@@ -188,7 +188,7 @@ const CLAUSES = [
     language: 'English',
     // "a near miss on both drafting thresholds (40 and 20)"
     pattern: [
-      'thresholds' + TIGHT.English + String.raw`\(` + TIGHT.English + NUMERIC.count,
+      String.raw`(?:thresholds?|floors?)` + TIGHT.English + String.raw`(?:of[ \t]+)?` + TIGHT.English + String.raw`\(` + TIGHT.English + NUMERIC.count,
       'and',
       NUMERIC.count + TIGHT.English + String.raw`\)`,
     ].join(SEPARATOR.English),
@@ -226,6 +226,28 @@ const CLAUSES = [
       String.raw`\*{0,2}且\*{0,2}`,
       '起草动词', COMPARATOR, NUMERIC.count,
     ].join(SEPARATOR.Chinese),
+    fields: ['writingFloor', 'draftingFloor'],
+  },
+  // THE PHRASING THE DOCUMENTS USED BEFORE 0.5.0: "39 writing verbs against a floor of 40,
+  // 18 drafting against 20". The four documents were reworded to the slash form, and this
+  // module first learned only the new shape - but a maintainer who remembers the old sentence
+  // will write it again, and a shape the parser cannot read is a number nothing checks. Written
+  // out rather than composed from clause() because the floor numbers are matched WITHOUT
+  // capturing, so the fields stay the (writing, drafting) pair.
+  {
+    kind: 'verb-margin',
+    language: 'English',
+    pattern: String.raw`(\d{1,4})` + SEPARATOR.English + String.raw`writing` + SEPARATOR.English + String.raw`verbs?` + SEPARATOR.English
+      + String.raw`against` + SEPARATOR.English + String.raw`(?:a floor of[ \t]+)?\d{1,4},[ \t]*(\d{1,4})` + SEPARATOR.English
+      + String.raw`drafting` + SEPARATOR.English + String.raw`(?:verbs?[ \t]+)?against[ \t]+\d{1,4}`,
+    fields: ['writingVerbs', 'draftingVerbs'],
+  },
+  {
+    kind: 'drafting-floors',
+    language: 'English',
+    // The same two constants, stated as margins: "against a floor of 40 ... against 20".
+    pattern: String.raw`against[ \t]+(?:a floor of[ \t]+)?(\d{1,4}),[ \t]*\d{1,4}` + SEPARATOR.English
+      + String.raw`drafting` + SEPARATOR.English + String.raw`(?:verbs?[ \t]+)?against[ \t]+(\d{1,4})`,
     fields: ['writingFloor', 'draftingFloor'],
   },
 ]
@@ -305,7 +327,7 @@ function toCount(raw) {
  * A clause whose sentence names no skill is skipped rather than guessed at, so the
  * docs may add prose about numbers elsewhere without this test inventing an owner.
  */
-export function quotedClaims(text, docName) {
+export function quotedClaims(text, docName, options = {}) {
   const claims = []
   for (const definition of CLAUSES) {
     const regex = new RegExp(definition.pattern, 'giu')
@@ -327,7 +349,11 @@ export function quotedClaims(text, docName) {
       })
       if (NO_SKILL_KINDS.has(definition.kind) === false) {
         const skill = skillOfClaim(text, match.index)
-        if (skill === undefined) continue
+        // Without a skill the claim cannot be COMPARED, so the pinning tests skip it. The
+        // scanner must not: a new document saying "the pipeline measures 39 writing verbs / 18
+        // drafting verbs" without naming the skill still quotes a measurement, and skipping it
+        // is exactly the hole this file is being extended to close.
+        if (skill === undefined && options.keepSkillless !== true) continue
         claim.skill = skill
       }
       claims.push(claim)

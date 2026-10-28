@@ -33,7 +33,8 @@
  */
 
 import assert from 'node:assert/strict'
-import { readFile, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -219,6 +220,34 @@ test('the parser reads both languages and is not a rubber stamp in either', asyn
   // fail: this is the skip path, exercised here so it cannot rot.
   assert.deepEqual(quotedClaims('It is the only vendored skill that writes files into the workspace.', 'README.md'), [])
   assert.deepEqual(quotedClaims('它是唯一会写文件的技能。', 'README.zh-CN.md'), [])
+
+  // EVERY PHRASING THE DOCUMENTS HAVE USED, old and new, must still be read. A shape the parser
+  // cannot see is a number nothing checks: the four documents were reworded to the slash form in
+  // 0.5.0 (t56), so the sentence they used before it has to keep working for the next maintainer
+  // who remembers it (t58). This is the guard against a later edit quietly narrowing a pattern.
+  const shapes = [
+    ['the slash form, English', 'It carries 39 writing verbs / 18 drafting verbs.', 'verb-margin', { writingVerbs: 39, draftingVerbs: 18 }],
+    ['the slash form, Chinese', '它实测有 39 个写作动词 / 18 个起草动词。', 'verb-margin', { writingVerbs: 39, draftingVerbs: 18 }],
+    ['the pre-0.5.0 margin form', 'It carries 39 writing verbs against a floor of 40, 18 drafting against 20.', 'verb-margin', { writingVerbs: 39, draftingVerbs: 18 }],
+    ['the same floors, as margins', 'It carries 39 writing verbs against a floor of 40, 18 drafting against 20.', 'drafting-floors', { writingFloor: 40, draftingFloor: 20 }],
+    ['the parenthetical floors', 'A near miss on both drafting thresholds (40 and 20).', 'drafting-floors', { writingFloor: 40, draftingFloor: 20 }],
+    ['the parenthetical floors, no space', 'A near miss on both drafting thresholds(40 and 20).', 'drafting-floors', { writingFloor: 40, draftingFloor: 20 }],
+    ['the floors by another name', 'A near miss on both drafting floors (40 and 20).', 'drafting-floors', { writingFloor: 40, draftingFloor: 20 }],
+    ['the floors, Chinese', '两者都差一点（阈值（40 与 20））。', 'drafting-floors', { writingFloor: 40, draftingFloor: 20 }],
+  ]
+  for (const [label, text, kind, numbers] of shapes) {
+    const shape = quotedClaims(text, 'x', { keepSkillless: true }).find(entry => entry.kind === kind)
+    assert.ok(shape !== undefined, 'the parser must read ' + label + ': ' + text)
+    assert.deepEqual(numbersOf(shape), numbers, 'the parser must read the right numbers from ' + label)
+  }
+  console.log('# shapes read: ' + String(shapes.length) + ' phrasings, old and new')
+
+  // And the split the scanner relies on: a sentence that does not name its skill cannot be
+  // COMPARED, so the pinning tests skip it - but it still quotes a number, so the scan keeps it.
+  const unnamed = 'The pipeline measures 39 writing verbs / 18 drafting verbs.'
+  assert.deepEqual(quotedClaims(unnamed, 'x'), [], 'a skill-less claim cannot be compared, so it is skipped')
+  assert.equal(quotedClaims(unnamed, 'x', { keepSkillless: true }).length, 1,
+    '...and the scanner must still see it')
 })
 
 /** The bilingual pair, and the language each document is written in. */
@@ -579,4 +608,365 @@ test('the pipeline\'s verb counts are pinned in all four documents, and the pin 
     console.log('# mutation: ' + doc + ' floor ' + String(floors.writingFloor) + ' -> '
       + String(floors.writingFloor + 1) + ' fails with: ' + drift)
   }
+})
+/* ---------------------------------------------------------------------------------------------
+ * THE ABSENCE OF AN UNKNOWN QUOTER (t58).
+ *
+ * Everything above pins documents that are ON A LIST. The gate showed what that is worth: it
+ * appended 'The pipeline measures 39 writing verbs / 18 drafting verbs against floors of 40 and
+ * 20.' to docs/COMMANDS.md and the suite stayed green, because a list of four documents is not
+ * the repository. The next document to quote a count is unchecked until a human remembers.
+ *
+ * So the scan below walks every Markdown file a maintainer could edit and asserts that each one
+ * quoting a claim is accounted for, in one of four ways, each of which carries its reason into
+ * the log:
+ *
+ *   live      pinned against a live measurement by the tests above;
+ *   record    the changelog: HISTORY by default, pinned only inside the section for the version
+ *             in package.json. That rule produces the current compromise rather than restating
+ *             it: a present-tense sentence about the shipped tree is checked, while
+ *             '0.3.0 shipped 65,335 bytes' is a statement about a state that has passed and is
+ *             never corrected;
+ *   exempt    a page that quotes a count it may not be pinned for, declaring it on the page
+ *             (an HTML comment, doc-claim-exemption: reason) or in CLAIM_EXEMPTIONS with a
+ *             reason AND the claim kinds it covers. An exemption that no longer covers anything,
+ *             or that is asked to cover a kind it did not declare, is a FAILURE;
+ *   unpinned  everything else, which fails and says what to do.
+ *
+ * WHAT THIS SCAN DOES NOT SEE, stated so the green line does not imply more than it has: it
+ * matches the claim shapes the parser knows (see CLAUSES). A bare "1,806,561 bytes" with no
+ * 'repository' in front of it is not one of them, so the documents that quote the unvendored
+ * upstream scripts' size in that form are outside this net - see the exemption below for the one
+ * document that does spell it 'repository bytes'.
+ * ------------------------------------------------------------------------------------------- */
+
+/** Directories the scan does not walk, with the reason each one is not a document to check. */
+const SCAN_SKIP = new Map([
+  ['vendor', 'upstream text: a number inside a vendored body is not a claim this port makes'],
+  ['node_modules', 'dependencies, not our prose'],
+  ['dist', 'build output'],
+  ['coverage', 'build output'],
+  ['.git', 'not a document'],
+  ['.agent-teams', 'team state, not published documentation'],
+])
+
+/** A document path as the walk spells it, whatever platform joined it. */
+function toPosix(path) {
+  return path.split(String.fromCharCode(92)).join('/')
+}
+
+/** Markdown files under a root, skipping the directories above and any dot-directory. */
+async function markdownFiles(root, prefix = '') {
+  const entries = await readdir(prefix === '' ? root : join(root, prefix), { withFileTypes: true })
+  const found = []
+  for (const entry of entries) {
+    const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
+    if (entry.isDirectory()) {
+      if (SCAN_SKIP.has(entry.name) || entry.name.startsWith('.')) continue
+      found.push(...await markdownFiles(root, relative))
+      continue
+    }
+    if (/\.mdx?$/iu.test(entry.name)) found.push(relative)
+  }
+  return found.sort()
+}
+
+/** The line range of the changelog section for one release, or undefined if it has none. */
+function releaseSection(text, version) {
+  const lines = text.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = /^##\s*\[?(\d+\.\d+\.\d+)/u.exec(lines[index])
+    if (heading === null || heading[1] !== version) continue
+    let end = lines.length
+    for (let next = index + 1; next < lines.length; next += 1) {
+      if (/^##\s/u.test(lines[next])) { end = next + 1; break }
+    }
+    return { start: index + 1, end }
+  }
+  return undefined
+}
+
+/** Claims the current-release section of the record is allowed to make: they are pinned above. */
+const PINNED_RECORD_CLAIMS = [{ kind: 'verb-margin', skill: 'academic-pipeline' }]
+
+/**
+ * Exemptions that live in the data rather than on the page. Each carries its file, the claim
+ * kinds it covers and a reason; it must keep covering something or it is stale and fails.
+ *
+ * The single entry today is a real measurement this repository cannot take: the 47 upstream
+ * scripts that academic-pipeline's stages call and that this port deliberately does not vendor.
+ * Their combined size was read from the upstream clone at vendoring time, which is why the number
+ * lives in prose and in no code or data file here (grep for 1806561 finds nothing). Exempting the
+ * WHOLE FILE would be the hole - the covers list makes any other claim shape in that document
+ * fail, and the entry dies the day the sentence goes.
+ */
+const CLAIM_EXEMPTIONS = [
+  {
+    path: 'docs/UPSTREAM_INVENTORY.md',
+    covers: ['repository-bytes'],
+    reason: 'the 1,806,561 bytes are upstream scripts this port does not vendor: they were'
+      + ' measured in the upstream clone when the pipeline tree was vendored, and nothing in this'
+      + ' repository can recompute them. If those scripts are ever vendored, replace this'
+      + ' exemption with a pin',
+  },
+]
+
+/** A page may declare its own exemption, with a reason, next to its example. */
+const PAGE_EXEMPTION = /<!--\s*doc-claim-exemption:\s*([^>]*?)\s*-->/u
+
+/** A reason shorter than this is not a reason. */
+const EXEMPTION_REASON_MIN = 20
+
+/** How a claim reads in a message. */
+function claimShape(claim) {
+  const numbers = claim.kind === 'drafting-floors'
+    ? claim.writingFloor + ' / ' + claim.draftingFloor
+    : claim.kind === 'repository-bytes'
+      ? claim.bytes + ' bytes'
+      : claim.kind === 'shared-scope'
+        ? claim.distinct + ' distinct / ' + claim.sites + ' sites'
+        : claim.writingVerbs + ' / ' + claim.draftingVerbs
+  return claim.kind + ' ' + (claim.skill ?? '(no skill)') + ' ' + numbers
+}
+
+/**
+ * Walk a root and classify every document that quotes a claim. Pure data in, pure data out, so
+ * the proofs below run it against a scratch copy of the documents instead of the originals.
+ */
+async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXEMPTIONS, pinnedRecord = PINNED_RECORD_CLAIMS }) {
+  const scanned = await markdownFiles(root)
+  const quoting = []
+  const known = []
+  const history = []
+  const exempted = []
+  const unpinned = []
+  const stale = []
+  const liveSet = new Set(live.map(toPosix))
+  const recordPath = toPosix(record)
+  for (const path of scanned) {
+    const text = await readFile(join(root, path), 'utf8')
+    // Shapes, not attributions: a sentence that quotes the counts without naming the skill is
+    // still a sentence this repository has to answer for.
+    const claims = quotedClaims(text, path, { keepSkillless: true })
+    if (claims.length === 0) continue
+    quoting.push({ path, claims })
+    const marker = PAGE_EXEMPTION.exec(text)
+    if (liveSet.has(path)) {
+      if (marker !== null) {
+        unpinned.push(path + ' is pinned against a live measurement, so it must not exempt itself'
+          + ' (' + JSON.stringify(marker[1]) + ')')
+      } else {
+        known.push(path + ' (live: every claim is compared by the tests above)')
+      }
+      continue
+    }
+    if (path === recordPath) {
+      const section = releaseSection(text, version)
+      for (const claim of claims) {
+        const current = section !== undefined && claim.line >= section.start && claim.line <= section.end
+        const pinned = pinnedRecord.find(entry => entry.kind === claim.kind && (entry.skill ?? null) === (claim.skill ?? null))
+        if (current === false) {
+          history.push(path + ':' + String(claim.line) + ' ' + claimShape(claim)
+            + ' is HISTORY: the section for ' + String(version) + ' is lines ' + String(section?.start)
+            + '-' + String(section?.end) + ', and a record of a state that has passed is never corrected')
+        } else if (pinned === undefined) {
+          unpinned.push(path + ':' + String(claim.line) + ' ' + claimShape(claim)
+            + ' is PRESENT TENSE, inside the section for ' + String(version) + ', and no test pins it:'
+            + ' pin it above, or move the sentence into the release it describes')
+        } else {
+          known.push(path + ':' + String(claim.line) + ' ' + claimShape(claim) + ' (record: PRESENT TENSE, pinned)')
+        }
+      }
+      continue
+    }
+    const declared = marker === null ? undefined : { reason: marker[1], covers: undefined, where: 'on the page' }
+    const listed = exemptions.find(entry => toPosix(entry.path) === path)
+    const exemption = declared ?? (listed === undefined ? undefined : { reason: listed.reason, covers: listed.covers, where: 'in CLAIM_EXEMPTIONS' })
+    if (exemption === undefined) {
+      unpinned.push(path + ' quotes ' + claims.map(claimShape).join('; ')
+        + ' but no test pins it. Either add ' + JSON.stringify(path) + ' to the documents the pinning tests'
+        + ' check (LIVE_QUOTERS here, or the record stance if it is a changelog), or take the number out'
+        + ' of the prose. If the file quotes a count it may not be pinned for, declare that with a'
+        + ' reason - on the page (an HTML comment, doc-claim-exemption: why) or in CLAIM_EXEMPTIONS -'
+        + ' naming the claim kinds it covers.')
+      continue
+    }
+    if (String(exemption.reason).trim().length < EXEMPTION_REASON_MIN) {
+      unpinned.push(path + ' declares an exemption ' + exemption.where + ' with no usable reason ('
+        + JSON.stringify(exemption.reason) + '): an exemption must say why, or it is a hole')
+      continue
+    }
+    // A data exemption must cover the kinds actually present, so exempting a file cannot quietly
+    // become exempting whatever is added to it later. A page marker is reviewed with its example,
+    // so it covers the page.
+    if (exemption.covers !== undefined) {
+      const uncovered = claims.filter(claim => exemption.covers.includes(claim.kind) === false)
+      if (uncovered.length > 0) {
+        unpinned.push(path + ' is exempt in CLAIM_EXEMPTIONS for ' + exemption.covers.join(', ')
+          + ' only, but it now quotes ' + uncovered.map(claimShape).join('; ')
+          + ' - extend the exemption deliberately, or pin the new claim')
+        continue
+      }
+    }
+    exempted.push(path + ' (' + exemption.where + ', covers '
+      + (exemption.covers ?? ['every shape on the page']).join(', ') + '): ' + String(exemption.reason).trim())
+  }
+
+  // AN EXEMPTION THAT NO LONGER COVERS ANYTHING IS A FAILURE.
+  for (const entry of exemptions) {
+    if (scanned.includes(toPosix(entry.path)) === false) {
+      stale.push('CLAIM_EXEMPTIONS names ' + entry.path + ', which is not a Markdown file this scan walks'
+        + ' - remove the entry or fix the path (' + JSON.stringify(entry.reason) + ')')
+      continue
+    }
+    const claims = quoting.find(entryQuote => entryQuote.path === toPosix(entry.path))?.claims ?? []
+    const covered = claims.filter(claim => entry.covers === undefined || entry.covers.includes(claim.kind))
+    if (covered.length === 0) {
+      stale.push('CLAIM_EXEMPTIONS exempts ' + entry.path + ' for ' + (entry.covers ?? ['any kind']).join(', ')
+        + ' but that file no longer quotes such a claim - the exemption is stale, so remove it'
+        + ' (' + JSON.stringify(entry.reason) + ')')
+    }
+  }
+  for (const path of scanned) {
+    const text = await readFile(join(root, path), 'utf8')
+    if (PAGE_EXEMPTION.test(text) === false) continue
+    if (quoting.some(entry => entry.path === path) === false) {
+      stale.push(path + ' declares a page exemption but quotes no claim any more - remove the marker')
+    }
+  }
+  return { scanned, quoting, known, history, exempted, unpinned, stale }
+}
+
+/** The scan inputs for this repository. */
+const QUOTER_SCAN = {
+  live: QUOTING_DOCS,
+  record: 'CHANGELOG.md',
+  version: JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')).version,
+}
+
+test('no document outside the known set quotes a measurement', async (t) => {
+  const report = await scanQuoters(repoRoot, QUOTER_SCAN)
+  for (const line of report.known) t.diagnostic('known   ' + line)
+  for (const line of report.history) t.diagnostic('history ' + line)
+  for (const line of report.exempted) t.diagnostic('exempt  ' + line)
+  assert.deepEqual(report.unpinned, [], 'a document quotes a measurement and nothing pins it:\n  '
+    + report.unpinned.join('\n  '))
+  assert.deepEqual(report.stale, [], 'an exemption no longer covers anything:\n  ' + report.stale.join('\n  '))
+  console.log('# scanned ' + String(report.scanned.length) + ' Markdown files outside '
+    + [...SCAN_SKIP.keys()].join('/') + '; ' + String(report.quoting.length) + ' quote a claim: '
+    + report.quoting.map(entry => entry.path + ' (' + String(entry.claims.length) + ')').join(', ')
+    + ' - ' + String(report.known.length) + ' pinned, ' + String(report.history.length)
+    + ' recorded as history, ' + String(report.exempted.length) + ' exempt with a reason')
+})
+
+test('the absence assertion bites: a new quoter fails, a listed one passes, a stale exemption fails', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-doc-quoters-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  // A scratch copy of the documents themselves (never the originals), so this proof is about the
+  // scanner and not about what the repository currently says.
+  for (const doc of [...QUOTING_DOCS, QUOTER_SCAN.record]) {
+    await mkdir(join(directory, doc, '..'), { recursive: true })
+    await writeFile(join(directory, doc), await readFile(join(repoRoot, doc), 'utf8'), 'utf8')
+  }
+  const NL = String.fromCharCode(10)
+  const base = { ...QUOTER_SCAN, exemptions: [] }
+  const clean = await scanQuoters(directory, base)
+  assert.deepEqual(clean.unpinned, [], 'the scratch copy of the known documents must start clean')
+  assert.deepEqual(clean.stale, [])
+  t.diagnostic('scratch copy: ' + String(clean.scanned.length) + ' files scanned, '
+    + String(clean.quoting.length) + ' quoting, none unpinned, ' + String(clean.history.length) + ' historical')
+
+  // 1. A NEW document quoting the counts - the gate's own sentence.
+  const intruder = 'docs/COMMANDS.md'
+  await mkdir(join(directory, 'docs'), { recursive: true })
+  await writeFile(join(directory, intruder), '# Commands' + NL + NL
+    + 'The pipeline measures 39 writing verbs / 18 drafting verbs against floors of 40 and 20.' + NL, 'utf8')
+  const withIntruder = await scanQuoters(directory, base)
+  assert.equal(withIntruder.unpinned.length, 1, 'a new quoter must fail: ' + JSON.stringify(withIntruder.unpinned))
+  assert.match(withIntruder.unpinned[0], /docs\/COMMANDS\.md/u, 'the failure must name the file')
+  assert.match(withIntruder.unpinned[0], /no test pins it/u)
+  assert.match(withIntruder.unpinned[0], /add|take the number out/u, 'the failure must say what to do')
+  console.log('# mutation 1 (new quoter): ' + withIntruder.unpinned[0].split(NL)[0])
+
+  // 2. The same file, on the list: green.
+  const listed = await scanQuoters(directory, { ...base, live: [...QUOTING_DOCS, intruder] })
+  assert.deepEqual(listed.unpinned, [], 'a listed document must pass: ' + JSON.stringify(listed.unpinned))
+  console.log('# mutation 2 (same file, now on the list): 0 unpinned, '
+    + String(listed.quoting.length) + ' file(s) quote a claim')
+
+  // 3. A stale exemption: the entry names a document that quotes nothing, and one that is gone.
+  await writeFile(join(directory, 'docs', 'NOTES.md'), '# Notes' + NL + NL
+    + 'No measurements on this page.' + NL, 'utf8')
+  const staleData = await scanQuoters(directory, {
+    ...base,
+    live: [...QUOTING_DOCS, intruder],
+    exemptions: [{ path: 'docs/NOTES.md', covers: ['verb-margin'], reason: 'this page used to quote the counts as an example' }],
+  })
+  assert.equal(staleData.stale.length, 1, 'a stale exemption must fail: ' + JSON.stringify(staleData.stale))
+  assert.match(staleData.stale[0], /docs\/NOTES\.md/u)
+  assert.match(staleData.stale[0], /stale|no longer quotes/u)
+  const stalePage = await scanQuoters(directory, {
+    ...base,
+    live: [...QUOTING_DOCS, intruder],
+    exemptions: [{ path: 'docs/GONE.md', covers: ['verb-margin'], reason: 'a file that does not exist any more' }],
+  })
+  assert.equal(stalePage.stale.length, 1, 'an exemption for a missing file must fail too')
+  console.log('# mutation 3 (stale exemption): ' + staleData.stale[0])
+
+  // 3b. An exemption covers the kinds it declares and no others: the same exempt file quoting a
+  // byte count as well must fail, so 'exempt this file' can never mean 'exempt anything'.
+  await writeFile(join(directory, 'docs', 'NOTES.md'), '# Notes' + NL + NL
+    + 'It carried 39 writing verbs / 18 drafting verbs once, and its SKILL.md is 33,843'
+    + ' repository bytes.' + NL, 'utf8')
+  const narrow = await scanQuoters(directory, {
+    ...base,
+    live: [...QUOTING_DOCS, intruder],
+    exemptions: [{ path: 'docs/NOTES.md', covers: ['verb-margin'], reason: 'the counts are quoted here as a worked example only' }],
+  })
+  assert.equal(narrow.unpinned.length, 1, 'an undeclared claim kind in an exempt file must fail')
+  assert.match(narrow.unpinned[0], /repository-bytes/u, 'the failure must name the undeclared kind')
+  console.log('# mutation 3b (narrow exemption): ' + narrow.unpinned[0].split(NL)[0])
+  await rm(join(directory, 'docs', 'NOTES.md'), { force: true })
+  // The intruder was proofs 1-3b's fixture; proofs 4 and 5 start from the known set again.
+  await rm(join(directory, intruder), { force: true })
+
+  // 4. An example page may declare its exemption ON THE PAGE, with a reason - and the same page
+  //    with a useless reason is refused, so the declaration is not a free pass.
+  const checker = 'docs/CHECKER.md'
+  const examplePage = '# The doc-claim checker' + NL + NL
+    + '<!-- doc-claim-exemption: example numbers for the checker, not a claim about the shipped body -->' + NL + NL
+    + "It matches '39 writing verbs / 18 drafting verbs' and reports a drift." + NL
+  await writeFile(join(directory, checker), examplePage, 'utf8')
+  const onPage = await scanQuoters(directory, base)
+  assert.deepEqual(onPage.unpinned, [], 'a page declaring its reason must pass: ' + JSON.stringify(onPage.unpinned))
+  assert.equal(onPage.exempted.length, 1, 'the exemption must be counted and printed')
+  assert.match(onPage.exempted[0], /not a claim about the shipped body/u)
+  await writeFile(join(directory, checker), examplePage.replace(
+    'example numbers for the checker, not a claim about the shipped body', 'example'), 'utf8')
+  const weakReason = await scanQuoters(directory, base)
+  assert.equal(weakReason.unpinned.length, 1, 'an exemption without a reason must fail')
+  assert.match(weakReason.unpinned[0], /no usable reason/u)
+  await writeFile(join(directory, checker), examplePage, 'utf8')
+  console.log('# mutation 4 (page exemption): ' + onPage.exempted[0])
+
+  // 5. The record stance: the same numbers are HISTORY in an old release section and PRESENT
+  //    TENSE in the current one. This is the rule behind the compromise, not the compromise.
+  const changelog = await readFile(join(directory, QUOTER_SCAN.record), 'utf8')
+  const heading = '## [0.4.1]'
+  const oldSection = changelog.indexOf(heading)
+  assert.ok(oldSection > 0, 'the copied changelog must carry an older release section')
+  const inserted = changelog.slice(0, oldSection) + heading + NL + NL
+    + '- The pipeline then carried 39 writing verbs / 18 drafting verbs.'
+    + changelog.slice(oldSection + heading.length)
+  await writeFile(join(directory, QUOTER_SCAN.record), inserted, 'utf8')
+  const appended = await scanQuoters(directory, base)
+  assert.deepEqual(appended.unpinned, [], 'a count inside an old release section is history, not a failure: '
+    + JSON.stringify(appended.unpinned))
+  assert.ok(appended.history.length >= 2, 'the added count must be classified as history: '
+    + JSON.stringify(appended.history))
+  const presentTense = appended.known.filter(line => /PRESENT TENSE/u.test(line))
+  assert.equal(presentTense.length, 1, 'the version section keeps exactly one present-tense claim: '
+    + JSON.stringify(presentTense))
+  console.log('# record stance: ' + String(appended.history.length) + ' claim(s) in old sections read as history, '
+    + String(presentTense.length) + ' present-tense claim pinned: ' + presentTense[0].slice(0, 130))
 })
