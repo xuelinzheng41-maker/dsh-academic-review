@@ -653,13 +653,25 @@ test('the pipeline\'s verb counts are pinned in all four documents, and the pin 
  * document that does spell it 'repository bytes'.
  * ------------------------------------------------------------------------------------------- */
 
-/** Directories the scan does not walk, with the reason each one is not a document to check. */
+/**
+ * Directories the scan does not walk, with the reason each one is not a document to check. Every
+ * skip has to be argued, because a skip is how a document escapes the net: vendor/ is safe
+ * because every file there carries a byte pin in vendor-manifest.json, so a number smuggled into
+ * one turns verify:vendor red without this scan's help.
+ *
+ * DOT-DIRECTORIES ARE WALKED. They used to be skipped wholesale, which was a list again: the one
+ * tracked Markdown file under a dot-directory, .github/PULL_REQUEST_TEMPLATE.md, quotes nothing
+ * today and nothing guarded it either - the next issue template or SECURITY.md could have quoted
+ * a count and stayed green. Only the two dot-directories that are not this repository's published
+ * text are named below, each with its reason. A stray local Markdown file inside a tool directory
+ * will be scanned too; that is intended, and the failure names the file and says what to do.
+ */
 const SCAN_SKIP = new Map([
   ['vendor', 'upstream text: a number inside a vendored body is not a claim this port makes'],
   ['node_modules', 'dependencies, not our prose'],
   ['dist', 'build output'],
   ['coverage', 'build output'],
-  ['.git', 'not a document'],
+  ['.git', 'the object store and its refs, not a document'],
   ['.agent-teams', 'team state, not published documentation'],
 ])
 
@@ -668,14 +680,14 @@ function toPosix(path) {
   return path.split(String.fromCharCode(92)).join('/')
 }
 
-/** Markdown files under a root, skipping the directories above and any dot-directory. */
+/** Markdown files under a root, skipping only the directories SCAN_SKIP names. */
 async function markdownFiles(root, prefix = '') {
   const entries = await readdir(prefix === '' ? root : join(root, prefix), { withFileTypes: true })
   const found = []
   for (const entry of entries) {
     const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
     if (entry.isDirectory()) {
-      if (SCAN_SKIP.has(entry.name) || entry.name.startsWith('.')) continue
+      if (SCAN_SKIP.has(entry.name)) continue
       found.push(...await markdownFiles(root, relative))
       continue
     }
@@ -708,10 +720,13 @@ const PINNED_RECORD_CLAIMS = [{ kind: 'verb-margin', skill: 'academic-pipeline' 
  *
  * The single entry today is a real measurement this repository cannot take: the 47 upstream
  * scripts that academic-pipeline's stages call and that this port deliberately does not vendor.
- * Their combined size was read from the upstream clone at vendoring time, which is why the number
- * lives in prose and in no code or data file here (grep for 1806561 finds nothing). Exempting the
- * WHOLE FILE would be the hole - the covers list makes any other claim shape in that document
- * fail, and the entry dies the day the sentence goes.
+ * Their combined size was read from the upstream clone at vendoring time, which is why no code
+ * and no data file here computes it: 'git grep -n 1806561' matches exactly one line in this
+ * repository, and that line is this comment. (Say it that way, not 'the grep finds nothing' - the
+ * sentence advertising the check contains the string it is talking about, so the wider claim is
+ * false at the moment someone is most likely to make it.) Exempting the WHOLE FILE would be the
+ * hole - the covers list makes any other claim shape in that document fail, and the entry dies
+ * the day the sentence goes.
  */
 const CLAIM_EXEMPTIONS = [
   {
@@ -719,7 +734,11 @@ const CLAIM_EXEMPTIONS = [
     covers: ['repository-bytes'],
     reason: 'the 1,806,561 bytes are upstream scripts this port does not vendor: they were'
       + ' measured in the upstream clone when the pipeline tree was vendored, and nothing in this'
-      + ' repository can recompute them. If those scripts are ever vendored, replace this'
+      + ' repository can recompute them. They are REPOSITORY bytes, read out of the object store'
+      + ' with git cat-file - the release gate re-derived them from the clone at 1ec249df and got'
+      + ' exactly 1,806,561. The same clone checked out on Windows shows 1,849,439 bytes, 42,878'
+      + ' more, one CRLF per line across those 47 files: anyone verifying this number must read'
+      + ' blobs, never working-tree files. If those scripts are ever vendored, replace this'
       + ' exemption with a pin',
   },
 ]
@@ -868,6 +887,12 @@ test('no document outside the known set quotes a measurement', async (t) => {
   assert.deepEqual(report.unpinned, [], 'a document quotes a measurement and nothing pins it:\n  '
     + report.unpinned.join('\n  '))
   assert.deepEqual(report.stale, [], 'an exemption no longer covers anything:\n  ' + report.stale.join('\n  '))
+  // The comment on SCAN_SKIP claims dot-directories are walked. That is the kind of sentence that
+  // goes stale the moment someone adds a blanket skip back, so it is asserted rather than promised:
+  // the one tracked Markdown file under a dot-directory must be in the walk.
+  assert.ok(report.scanned.includes('.github/PULL_REQUEST_TEMPLATE.md'),
+    'dot-directories must be walked: .github/PULL_REQUEST_TEMPLATE.md is a tracked document and the'
+    + ' scan skipped it. Scanned: ' + JSON.stringify(report.scanned))
   // THE PROPERTY THE COUNT USED TO STAND IN FOR, asserted directly (see the note above): every
   // present-tense claim in the section for the shipped version is pinned. A claim that is not
   // pinned cannot reach the pass line - the scan puts it in unpinned and the assertion above
