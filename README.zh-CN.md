@@ -1,8 +1,8 @@
 [English](README.md) | **简体中文**
 
-# dsh-academic-review
+# dsh-academic-skills
 
-[![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
+[![CI](https://github.com/xuelinzheng41-maker/dsh-academic-skills/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-skills/actions/workflows/ci.yml)
 
 > **范围：** 本移植提供 **五个** ARS 技能 —— `academic-paper-reviewer`、`deep-research`、
 > `academic-paper`、`sr-screener` 与 `academic-pipeline`；只有评审人（reviewer）配有工具、
@@ -133,7 +133,7 @@ vendored 文件本身永远不会被修改 —— 并把完整清单放进 `meta
 全都在上游仓库里，没有一个在本包中。逐字如下，追加在正文之后：
 
 ```text
-<!-- dsh-academic-review:port-notice:begin (not upstream text) -->
+<!-- dsh-academic-skills:port-notice:begin (not upstream text) -->
 **Port notice - not upstream text.** This DSH port does not ship 4 files that this skill's own instructions tell you to read:
 
 - `docs/PERFORMANCE.md` - named by `references/passport_as_reset_boundary.md`
@@ -144,7 +144,7 @@ vendored 文件本身永远不会被修改 —— 并把完整清单放进 `meta
 Do not fabricate or paraphrase the content of these files. If a step needs one, say the
 reference is unavailable in this port, continue with the material that is present, and
 tell the user which reference is missing.
-<!-- dsh-academic-review:port-notice:end -->
+<!-- dsh-academic-skills:port-notice:end -->
 ```
 
 **这一轮有两个提示块消失了，这是好消息。** 在 0.4.1 上，`deep-research` 与
@@ -249,7 +249,7 @@ DSH 右侧栏（sidebar-right）中的 **Academic Review** 标签页列出工作
 稿件名、模式、席位表（`eic`、`methodology`、`domain`、`perspective`、`da`，外加编辑综合席一行）
 以及逐席状态标签（`pending | dispatched | submitted | failed`）、按严重度统计的评审意见数、
 最后更新时间，和一个待办检查点徽标。报告就绪后，可以直接从面板打开编辑决定信。
-面板严格只读：它由三条需要鉴权的 GET 路由提供（`/plugins/dsh-academic-review/reviews`、
+面板严格只读：它由三条需要鉴权的 GET 路由提供（`/plugins/dsh-academic-skills/reviews`、
 `/reviews/<id>`、`/reviews/<id>/report`），不执行任何修改操作。
 
 ### 评审模式
@@ -409,18 +409,18 @@ qa-gate 对抗式造出的三种写入形态现在已是 `tests/write-policy.tes
 直接从本仓库把包加进一个 DSH profile：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills
 ```
 
 钉定的 tag 或发布 tarball 用法相同：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.5.0
-dsh plugin --profile <profile> add ./dsh-academic-review-0.5.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.0
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.0.tgz
 ```
 
 构建产物（`lib/`）是有意提交进仓库的，因此从 git 安装不需要构建步骤。bundle patch
-`cordis.patch.yml` 会插入一行插件（`id: academic-review`、`name: dsh-academic-review`），
+`cordis.patch.yml` 会插入一行插件（`id: academic-review`、`name: dsh-academic-skills`），
 并配置 `stateDir: .academic-review`。
 
 安装后，会话会获得五个 `academic_review_*` 工具和**五个**技能 —— `academic-paper-reviewer`、

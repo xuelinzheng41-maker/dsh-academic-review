@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `dsh-academic-review` are documented here.
+All notable changes to `dsh-academic-skills` are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,10 +10,54 @@ imply a change of license.
 
 ## [0.5.0] - 2026-10-28
 
-The fifth and last served skill, and a payload that shrank because a problem went
-away. **No tool, route or state schema changed**: the five tools, their arguments,
-the review-state schema, the panel routes and both slash commands are identical to
-0.4.1, and existing `.academic-review/` directories keep loading.
+The fifth and last served skill, a payload that shrank because a problem went
+away, and a rename. **The tools and the state schema did not change**: the five
+`academic_review_*` tools, their arguments, the review-state schema, both slash
+commands and the served skill names are identical to 0.4.1, and existing
+`.academic-review/` directories keep loading exactly as they are. **The panel URL
+changed**: the route prefix moved with the package name, so the three read-only GET
+routes are now under `/plugins/dsh-academic-skills/reviews` — a bookmark, script or
+reverse proxy that names the old prefix needs updating, and the browser client's API
+root moved with it. And the served text is **not** byte-for-byte what 0.4.1 served,
+even though all five payloads keep exactly their byte counts: the write-policy block
+and the port notice carry markers that name the package, so the rename rewrote those
+markers inside the served text and nothing else — they are the same length, which is
+why every total is unchanged.
+
+### Renamed — the package, the repository, the routes and the tarball
+
+- **Package:** `dsh-academic-skills` (was `dsh-academic-review`), version 0.5.0.
+  The directory a checkout sits in may keep its old name; nothing in the package
+  depends on it.
+- **Repository:** `xuelinzheng41-maker/dsh-academic-review` →
+  `xuelinzheng41-maker/dsh-academic-skills`. GitHub redirects the old paths and the
+  existing releases (v0.4.0, v0.4.1) are reachable under the new name.
+- **Install strings:** `dsh plugin --profile <profile> add
+  github:xuelinzheng41-maker/dsh-academic-skills` (optionally `…#v0.5.0`), or the
+  release tarball `./dsh-academic-skills-0.5.0.tgz`. The CI badge URL moved with the
+  repository.
+- **Panel routes:** `/plugins/dsh-academic-skills/reviews`, `…/reviews/<id>` and
+  `…/reviews/<id>/report`; the client's API root moved with them.
+- **Served text:** the `write-policy` and `port-notice` marker comments inside the
+  served block and the served notice were renamed with the package. Same structure,
+  same lengths, nothing else in the served text moved.
+
+**Why now.** The name was written when the plugin served one skill's worth of review.
+It now serves five skills, four of which are not the reviewer, so a name that says
+"review" understates what is in the box. Doing it in the release that adds the fifth
+tree means one upgrade, one re-pin, one explanation.
+
+**What did not change, and this is the whole list:** the plugin id
+(`academic-review`, so an existing `cordis.patch.yml` row still resolves), the five
+tool names (`academic_review_*`), the two slash commands (`/ars-review`,
+`/ars-review-status`), the state directory (`.academic-review/`), the served skill
+names (they are upstream's, not this package's) and the licence (CC BY-NC 4.0).
+Nothing needs migrating: point the same profile at the new name and the same state
+directories load.
+
+**Reading the rest of this file:** entries before 0.5.0 name the package, the
+repository and the route prefix as they were at the time. That is what was true then,
+and history here is not rewritten.
 
 ### Added — `academic-pipeline` (upstream 3.23.2, SKILL.md last_updated 2026-10-24)
 

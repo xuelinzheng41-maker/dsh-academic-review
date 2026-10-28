@@ -4,6 +4,16 @@ Recorded 2026-10-27T03:42:46.293Z by task `t4` (attempt `f9cf426d`, member `qa-v
 All commands ran on this machine against the packaged tarball installed into
 temporary DSH profiles — never against the working tree.
 
+**Renamed at 0.5.0 (2026-10-28): the captures below are left exactly as recorded.**
+The package, the GitHub repository and the panel route prefix were renamed from
+`dsh-academic-review` to `dsh-academic-skills` at 0.5.0. Everything in this file was
+observed on 2026-10-27 under the former names, so the tarball name, the profile
+`package.json` line and the route prefix shown here say `dsh-academic-review` — that
+is what the 0.1.0 artefacts were called, and a captured terminal session is evidence,
+so it is deliberately not revised. To re-run these steps against a current build,
+substitute the new names; to check what 0.1.0 actually did, read the captures as they
+stand.
+
 ## 0. Environment
 
 - DSH Desktop 2.0.18 runtime: Node 24.21.0 / pnpm 11.8.0 at `%USERPROFILE%\.dsh\dsh-runtimes\dsh-plugin-desktop-primary-runtime\dependencies\node\bin\node.exe`

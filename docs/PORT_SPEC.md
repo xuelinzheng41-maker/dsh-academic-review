@@ -1,6 +1,6 @@
-# DSH Port Spec — dsh-academic-review (0.5.0: reviewer surface + four prompt-only skills)
+# DSH Port Spec — dsh-academic-skills (0.5.0: five served skills — one wired reviewer, four prompt-only, one of them an orchestrator)
 
-Status: draft for T2/T3 implementation · Prepared by T1 · Target plugin: `dsh-academic-review`
+Status: implemented at 0.5.0; kept as the specification of record · Prepared by T1 · Target plugin: `dsh-academic-skills`
 
 This is an **unofficial DSH port** of the `academic-paper-reviewer` skill from
 Academic Research Skills (ARS) by Cheng-I Wu. Upstream: version 1.11.1 of the
@@ -197,8 +197,8 @@ and upstream text can name a file that lives in another ARS skill this port does
 not vendor. The provider therefore scans each served skill's *own* tree at load
 time (`src/references.ts`) and, when something it names is absent, appends a
 delimited block to the served body between
-`<!-- dsh-academic-review:port-notice:begin (not upstream text) -->` and
-`<!-- dsh-academic-review:port-notice:end -->`, listing at most 6 targets and
+`<!-- dsh-academic-skills:port-notice:begin (not upstream text) -->` and
+`<!-- dsh-academic-skills:port-notice:end -->`, listing at most 6 targets and
 instructing the model not to fabricate or paraphrase the missing content. The
 vendored files are never edited; the notice is runtime text only. The full list
 always travels in `metadata.unavailableReferences` (+
@@ -498,8 +498,9 @@ already contains it; wrapper repeats it as a hard rule).
 
 ### 2.2 How DSH tools are invoked
 
-- The plugin's main skill command (e.g. `dsh-academic-review`) runs in the
-  session; it uses the review-state tools (§3) to persist state between calls.
+- The reviewer skill (`academic-paper-reviewer`) is invoked in the session — directly
+  as a skill, or through its `/ars-review` command — and it uses the review-state
+  tools (§3) to persist state between calls.
 - **field_analyst pre-pass**: the session calls the `field-analyst` subagent
   with the paper path and mode. Result (4 cards) is stored via
   `academic_review_create` / state update and presented to the user. Review
@@ -520,7 +521,8 @@ already contains it; wrapper repeats it as a hard rule).
   seats get read access to the workspace and the manuscript; write access is
   restricted to the review-state directory via tool calls, never direct file
   writes by seats.
-- Modes: `full` = all 6 dispatches; `quick` = field-analyst + seat-eic only;
+- Modes: `full` = all 7 dispatches (field-analyst, the five seats, the synthesizer);
+  `quick` = field-analyst + seat-eic only;
   `methodology-focus` = field-analyst + seat-eic + seat-methodology;
   `guided`/`re-review`/`calibration` return a clear "not implemented in
   Phase 1" message in Phase 1 (documented, non-silent).
@@ -684,7 +686,7 @@ only:
 3. The artifact set is asserted (`state.json`, `seats/<seat>.json` +
    `seats/<seat>.md` for all five seats, `editorial_decision.md`,
    `revision_roadmap.md`).
-4. The three read-only routes (`/plugins/dsh-academic-review/reviews`,
+4. The three read-only routes (`/plugins/dsh-academic-skills/reviews`,
    `/reviews/<id>`, `/reviews/<id>/report`) are resolved through the real host
    prefix semantics (`tests/host-prefix-matcher.mjs`) and driven end to end:
    200 for list/detail/report, 404 for an unknown id, 401 unauthenticated,

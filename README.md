@@ -1,8 +1,8 @@
 **English** | [简体中文](README.zh-CN.md)
 
-# dsh-academic-review
+# dsh-academic-skills
 
-[![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
+[![CI](https://github.com/xuelinzheng41-maker/dsh-academic-skills/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-skills/actions/workflows/ci.yml)
 
 > **Scope:** this port serves **five** ARS skills — `academic-paper-reviewer`,
 > `deep-research`, `academic-paper`, `sr-screener` and `academic-pipeline` — and
@@ -170,7 +170,7 @@ the `scripts/adapters/` directory — all in the upstream repository, none of th
 this package. Here it is, verbatim, appended after the body:
 
 ```text
-<!-- dsh-academic-review:port-notice:begin (not upstream text) -->
+<!-- dsh-academic-skills:port-notice:begin (not upstream text) -->
 **Port notice - not upstream text.** This DSH port does not ship 4 files that this skill's own instructions tell you to read:
 
 - `docs/PERFORMANCE.md` - named by `references/passport_as_reset_boundary.md`
@@ -181,7 +181,7 @@ this package. Here it is, verbatim, appended after the body:
 Do not fabricate or paraphrase the content of these files. If a step needs one, say the
 reference is unavailable in this port, continue with the material that is present, and
 tell the user which reference is missing.
-<!-- dsh-academic-review:port-notice:end -->
+<!-- dsh-academic-skills:port-notice:end -->
 ```
 
 **Two notices disappeared this round, and that is the good news.** At 0.4.1
@@ -318,7 +318,7 @@ synthesizer row) with per-seat status chips
 last update, and a pending-checkpoint badge. From the panel you can open the
 editorial decision letter once the report is ready. The panel is strictly
 read-only: it is served by three authenticated GET routes
-(`/plugins/dsh-academic-review/reviews`,
+(`/plugins/dsh-academic-skills/reviews`,
 `/reviews/<id>`, `/reviews/<id>/report`) and performs no mutations.
 
 ### Review modes
@@ -530,19 +530,19 @@ the skill.
 Add the package to a DSH profile straight from this repository:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills
 ```
 
 A pinned tag or the release tarball works the same way:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.5.0
-dsh plugin --profile <profile> add ./dsh-academic-review-0.5.0.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.0
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.0.tgz
 ```
 
 The build output (`lib/`) is committed on purpose, so a git install needs no
 build step. The bundle patch `cordis.patch.yml` inserts one plugin row
-(`id: academic-review`, `name: dsh-academic-review`) configured with
+(`id: academic-review`, `name: dsh-academic-skills`) configured with
 `stateDir: .academic-review`.
 
 After installing, the session gains five `academic_review_*` tools and **five**
