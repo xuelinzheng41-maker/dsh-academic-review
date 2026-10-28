@@ -669,26 +669,53 @@ test('the pipeline\'s verb counts are pinned in all four documents, and the pin 
 const SCAN_SKIP = new Map([
   ['vendor', 'upstream text: a number inside a vendored body is not a claim this port makes'],
   ['node_modules', 'dependencies, not our prose'],
-  ['dist', 'build output'],
-  ['coverage', 'build output'],
+  ['dist', 'generated build output, not a document anyone edits'],
+  ['coverage', 'generated coverage reports, not a document anyone edits'],
   ['.git', 'the object store and its refs, not a document'],
   ['.agent-teams', 'team state, not published documentation'],
 ])
+
+/**
+ * THE KEYS OF SCAN_SKIP, listed so that ADDING ONE IS A FAILING ACT. The paragraph above says
+ * every skip has to be argued; a paragraph is not an assertion, and the gate showed exactly that:
+ * a directory holding a document that quotes a count was added to SCAN_SKIP and the suite stayed
+ * GREEN. It is the shape we keep killing - a set that absorbs anything quietly, one layer out from
+ * the hard-coded list of four documents. So the keys are pinned here and the reasons are checked as
+ * reasons: a new skip entry has to be written into this ledger to pass, which puts the argument in
+ * the diff of a file whose whole subject is why a document is not scanned.
+ */
+const SCAN_SKIP_KEYS = ['.agent-teams', '.git', 'coverage', 'dist', 'node_modules', 'vendor']
+
+/** A skip is only argued if its reason is a sentence, not a word: the same bar as a page exemption. */
+function assertSkipArgs(skip) {
+  assert.deepEqual([...skip.keys()].sort(), SCAN_SKIP_KEYS,
+    'SCAN_SKIP gained or lost a directory. Every skip is a document that escapes the scan, so a new'
+    + ' one has to be added to SCAN_SKIP_KEYS in the same diff, next to its reason.')
+  for (const [name, reason] of skip) {
+    const text = String(reason ?? '').trim()
+    assert.ok(text.length >= EXEMPTION_REASON_MIN,
+      'SCAN_SKIP["' + name + '"] needs a reason of at least ' + String(EXEMPTION_REASON_MIN)
+      + ' characters: ' + JSON.stringify(reason))
+    assert.ok(text.split(/\s+/u).length >= 3,
+      'SCAN_SKIP["' + name + '"] has a reason too short to argue anything ('
+      + String(text.split(/\s+/u).length) + ' word(s)): ' + JSON.stringify(reason))
+  }
+}
 
 /** A document path as the walk spells it, whatever platform joined it. */
 function toPosix(path) {
   return path.split(String.fromCharCode(92)).join('/')
 }
 
-/** Markdown files under a root, skipping only the directories SCAN_SKIP names. */
-async function markdownFiles(root, prefix = '') {
+/** Markdown files under a root, skipping only the directories in the skip map it is given. */
+async function markdownFiles(root, prefix = '', skip = SCAN_SKIP) {
   const entries = await readdir(prefix === '' ? root : join(root, prefix), { withFileTypes: true })
   const found = []
   for (const entry of entries) {
     const relative = prefix === '' ? entry.name : prefix + '/' + entry.name
     if (entry.isDirectory()) {
-      if (SCAN_SKIP.has(entry.name)) continue
-      found.push(...await markdownFiles(root, relative))
+      if (skip.has(entry.name)) continue
+      found.push(...await markdownFiles(root, relative, skip))
       continue
     }
     if (/\.mdx?$/iu.test(entry.name)) found.push(relative)
@@ -765,8 +792,9 @@ function claimShape(claim) {
  * Walk a root and classify every document that quotes a claim. Pure data in, pure data out, so
  * the proofs below run it against a scratch copy of the documents instead of the originals.
  */
-async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXEMPTIONS, pinnedRecord = PINNED_RECORD_CLAIMS }) {
-  const scanned = await markdownFiles(root)
+async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXEMPTIONS, pinnedRecord = PINNED_RECORD_CLAIMS, skip = SCAN_SKIP }) {
+  assertSkipArgs(skip)
+  const scanned = await markdownFiles(root, '', skip)
   const quoting = []
   const known = []
   const presentTense = []
@@ -1067,4 +1095,40 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   console.log('# record stance (c) present tense, unpinned: '
     + unpinnedCurrent.unpinned[0].split(NL)[0].slice(0, 190))
   await writeFile(join(directory, QUOTER_SCAN.record), changelog, 'utf8')
+
+  // 6. THE SKIP LIST CANNOT ABSORB A QUOTER. The comment on SCAN_SKIP says every skip has to be
+  //    argued. The gate showed that was prose: it put a quoter behind a new skip entry and the
+  //    suite stayed green. Both halves of the exposure are exercised here.
+  //    (i) a directory holding a quoter, and what the skip does to it.
+  await mkdir(join(directory, 'notes'), { recursive: true })
+  await writeFile(join(directory, 'notes', 'measurements.md'), '# Measurements' + NL + NL
+    + 'The pipeline measures 39 writing verbs / 18 drafting verbs.' + NL, 'utf8')
+  const exposed = await scanQuoters(directory, base)
+  assert.equal(exposed.unpinned.length, 1, 'the quoter behind the new directory must be visible first: '
+    + JSON.stringify(exposed.unpinned))
+  const smuggled = new Map(SCAN_SKIP)
+  smuggled.set('notes', 'a directory of working notes nobody reviews before merging')
+  const walked = await markdownFiles(directory, '', SCAN_SKIP)
+  const walkedSkipping = await markdownFiles(directory, '', smuggled)
+  assert.ok(walked.includes('notes/measurements.md'), 'the quoter must be in the walk before any skip')
+  assert.equal(walkedSkipping.includes('notes/measurements.md'), false,
+    'a skip entry really does hide a document - which is why it cannot be added quietly')
+  assert.throws(() => assertSkipArgs(smuggled), (error) => /SCAN_SKIP gained or lost/u.test(String(error && error.message)),
+    'a new skip key must fail until it is argued in SCAN_SKIP_KEYS')
+  await assert.rejects(() => scanQuoters(directory, { ...base, skip: smuggled }),
+    (error) => /SCAN_SKIP gained or lost/u.test(String(error && error.message)),
+    'the scan itself must refuse an unargued skip')
+  console.log('# mutation 6 (skip absorbs a quoter): notes/measurements.md leaves the walk, and the'
+    + ' skip map is refused until the key is argued')
+  await rm(join(directory, 'notes'), { recursive: true, force: true })
+
+  //    (ii) a reason that is blank, or a word: same bar as a page exemption.
+  for (const reason of ['', '   ', 'generated', 'build output', 'temp']) {
+    const weak = new Map(SCAN_SKIP)
+    weak.set('dist', reason)
+    assert.throws(() => assertSkipArgs(weak), (error) => /reason/u.test(String(error && error.message)),
+      'a skip reason of ' + JSON.stringify(reason) + ' must be refused')
+  }
+  console.log('# mutation 6b (skip reason): blank, one-word and bare-phrase reasons are all refused;'
+    + ' the live map passes')
 })
