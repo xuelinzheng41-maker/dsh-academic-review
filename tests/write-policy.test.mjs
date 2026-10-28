@@ -236,6 +236,24 @@ function policyMetadataProblems(metadata, entry, measuredBases) {
   return problems
 }
 
+/** The block's literal text: any edit to it must move this pin. */
+const BLOCK_SHA256 = '128eaed549fbecaa91d3813a891553af112a46af60b1fdf1e1d07d17e15e6b29'
+/** The same block with the package name elided: any edit that is NOT a rename moves this one. */
+const BLOCK_ELIDED_SHA256 = '3180645c35d067a76e821a674cc8cfcb0cf643d44a7522d4bf87789eb60484a8'
+/** Bytes once the two marker names are elided; 684 - 2 x (name - placeholder). */
+const BLOCK_ELIDED_BYTES = 664
+/** The elision placeholder. Changing it invalidates BLOCK_ELIDED_SHA256 and nothing else. */
+const NAME_PLACEHOLDER = '<package>'
+/**
+ * The package name as the block's own markers spell it, read out of the marker rather than
+ * from package.json: the pin must describe the text that ships, and the marker is that text.
+ */
+const MARKER_NAME = WRITE_POLICY_BEGIN.slice('<!-- '.length, WRITE_POLICY_BEGIN.indexOf(':'))
+/** Replace every occurrence of the package name, so a rename cannot move the elided pin. */
+function elideName(text) {
+  return text.split(MARKER_NAME).join(NAME_PLACEHOLDER)
+}
+
 test('the block is attached, not selected: a skill in no table still gets the full 684-byte block', async () => {
   const block = renderWritePolicyBlock()
   // The definitional probe, by the name the gate looks for: 'aa-not-a-skill' appears in
@@ -340,10 +358,24 @@ test('served bytes: every skill is body + the one 684-byte block + its own notic
   // render a per-skill block, and it is exactly the sort of thing a change to how the
   // metadata is justified could quietly break while every byte count still matched.
   assert.equal(renderWritePolicyBlock.length, 0, 'the renderer takes no argument: the block cannot be selected')
-  // A hash, so 'the block is unchanged' is a check rather than a promise.
-  assert.equal(createHash('sha256').update(block, 'utf8').digest('hex'),
-    '80f7e2350bb9ba8f7605fd76235c6024f28d81722bc488a92fec8d7a3ff33f1d',
-    'the block text moved; if that was intended, re-measure and re-report it')
+  // The block is pinned TWICE, because exactly one kind of edit is allowed to move its text:
+  // a rename of the package, whose name the markers carry. 0.5.0 renamed the package and the
+  // literal hash moved from 80f7e235... to 128eaed5... while the block stayed 684 bytes at
+  // arity 0 and every other byte of it stayed identical - the two marker names are the whole
+  // of the difference. So BLOCK_SHA256 catches ANY edit to the text, and BLOCK_ELIDED_SHA256 -
+  // the same block with the name, read out of the marker itself, replaced by a placeholder -
+  // catches every edit EXCEPT a rename. Neither can be re-pinned alone: a wording change can
+  // no longer hide inside a rename, and a rename can no longer carry a wording change,
+  // because the two pins are stated and checked separately.
+  assert.equal(createHash('sha256').update(block, 'utf8').digest('hex'), BLOCK_SHA256,
+    'the block text moved; if that was intended, re-measure and re-pin BOTH hashes')
+  // The name is in the markers and nowhere else: if it ever appears in the rule's prose, the
+  // elision below stops covering the bytes that moved and the elided pin is the thing that
+  // says so.
+  assert.equal(block.split(MARKER_NAME).length - 1, 2, 'the package name may appear only in the two markers')
+  assert.equal(bytes(elideName(block)), BLOCK_ELIDED_BYTES, 'the block lost or gained text outside its markers')
+  assert.equal(createHash('sha256').update(elideName(block), 'utf8').digest('hex'), BLOCK_ELIDED_SHA256,
+    'the block changed in something other than the package name')
   // The reviewer's tree is clean and has no notice, so its payload is exactly the
   // block followed by its byte-identical body.
   const reviewer = await served(REVIEW_SKILL_NAME)

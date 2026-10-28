@@ -23,7 +23,7 @@
  *   paths their markdown names; both totals therefore SHRANK, and the shrink is recorded
  *   with its cause so that a returned notice reads as a regression and not as a re-pin.
  *
- * @module dsh-academic-review/tests/served-payloads
+ * @module dsh-academic-skills/tests/served-payloads
  */
 
 import assert from 'node:assert/strict'
@@ -158,6 +158,34 @@ function byteLength(text) {
 /** git, in the repo, for the plumbing calls this file needs. */
 function git(args, options = {}) {
   return execFileSync('git', args, { cwd: repoRoot, maxBuffer: 1 << 28, encoding: 'utf8', ...options })
+}
+
+/** The package name as the block's markers spell it - the shipped text, not package.json. */
+const MARKER_NAME = WRITE_POLICY_BEGIN.slice('<!-- '.length, WRITE_POLICY_BEGIN.indexOf(':'))
+/**
+ * Every occurrence of the package name in a served payload that is NOT inside one of the
+ * payload's own markers, as a description rather than a count: a hit has to be readable.
+ */
+function nameOutsideMarkers(content) {
+  const boundaries = []
+  for (const marker of [WRITE_POLICY_BEGIN, WRITE_POLICY_END, PORT_NOTICE_BEGIN, PORT_NOTICE_END]) {
+    let at = content.indexOf(marker)
+    while (at >= 0) {
+      boundaries.push([at, at + marker.length])
+      at = content.indexOf(marker, at + 1)
+    }
+  }
+  const stray = []
+  let position = content.indexOf(MARKER_NAME)
+  while (position >= 0) {
+    const contained = boundaries.some(([start, end]) => position >= start && position + MARKER_NAME.length <= end)
+    if (contained === false) {
+      stray.push('character ' + String(position) + ' in '
+        + JSON.stringify(content.slice(Math.max(0, position - 24), position + 24)))
+    }
+    position = content.indexOf(MARKER_NAME, position + 1)
+  }
+  return stray
 }
 
 test('the payload is a class, not a list: count, tree/manifest bijection, bytes, line endings', async () => {
@@ -299,6 +327,19 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
     }
     assert.equal(byteLength(definition.content), BLOCK_BYTES + byteLength(body) + byteLength(notice),
       skill + ': the served payload must be block + body + notice')
+    // THE PACKAGE NAME MAY APPEAR ONLY INSIDE A MARKER, and a rename may not touch a body.
+    // Measured against a copy of the pre-rename lib, when 0.5.0 renamed the package: the five
+    // payloads differ at 12 / 12 / 24 / 12 / 12 bytes - one six-byte run per marker that names
+    // the package, four for the pipeline, which also earns the port notice - every byte of
+    // every run inside an occurrence of the name, and no payload changed length. Asserting the
+    // positions rather than the count keeps that measurement durable: a body renamed along with
+    // the package, or a marker-free mention of the name in a notice, fails here even while all
+    // the byte counts above still match. (Positions are character offsets on both sides - the
+    // name and the content are the same string - so no unit is mixed.)
+    assert.deepEqual(nameOutsideMarkers(definition.content), [],
+      skill + ': the package name may appear only inside the policy block or the notice')
+    assert.equal(definition.content.split(MARKER_NAME).length - 1, notice.trim() === '' ? 2 : 4,
+      skill + ': one marker name in each end of the block, plus one in each end of the notice')
     assert.equal(byteLength(definition.content), SERVED_BYTES[skill], skill + ': the served payload moved')
     // The CHANGE is the component check: a total can be right while a component is
     // wrong. A skill with no v0.4.1 total is an addition, and says so.
@@ -410,4 +451,22 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
     + 'academic-paper-reviewer, deep-research, sr-screener = block + body, no notice on this tree'
     + ' (academic-paper -' + String(NOTICE_LOST['academic-paper']) + ' and deep-research -'
     + String(NOTICE_LOST['deep-research']) + ' are former notices that the pipeline tree resolved)')
+})
+
+test('the name-confinement check bites: a body that spells the name is rejected', () => {
+  // The check above is only worth having if it can fail. Two fixture payloads built from the
+  // real markers: the canonical shape must be accepted, and the same shape with the package
+  // name spelled in the body must be rejected - which is the edit a mechanical rename could
+  // make by accident if a vendored body ever quoted the package name.
+  const block = renderWritePolicyBlock()
+  const notice = PORT_NOTICE_BEGIN + ' academic-pipeline: docs/ gone' + String.fromCharCode(10) + PORT_NOTICE_END
+  const body = '# Fixture skill' + String.fromCharCode(10, 10) + 'A short fixture body.' + String.fromCharCode(10)
+  assert.deepEqual(nameOutsideMarkers(block + body), [], 'the canonical payload must pass')
+  assert.equal((block + body).split(MARKER_NAME).length - 1, 2, 'the canonical payload names the package twice')
+  assert.deepEqual(nameOutsideMarkers(block + body + notice), [], 'a payload with a notice must pass')
+  assert.equal((block + body + notice).split(MARKER_NAME).length - 1, 4, 'a payload with a notice names the package four times')
+  const inBody = block + body.split('A short').join('A ' + MARKER_NAME + ' short')
+  assert.equal(nameOutsideMarkers(inBody).length, 1, 'the name in a body must be reported')
+  const bare = block + body + 'see ' + MARKER_NAME + ' for the rule' + String.fromCharCode(10)
+  assert.equal(nameOutsideMarkers(bare).length, 1, 'a marker-free mention after the body must be reported')
 })
