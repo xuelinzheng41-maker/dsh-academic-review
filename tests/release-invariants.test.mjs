@@ -31,7 +31,7 @@
  * where this suite cannot measure something, it says so in the pass line rather than
  * leaving the reader to infer that green means everything was checked.
  *
- * @module dsh-academic-review/tests/release-invariants
+ * @module dsh-academic-skills/tests/release-invariants
  */
 
 import assert from 'node:assert/strict'
@@ -110,7 +110,7 @@ test('every install line names the version in package.json, in both languages', 
   // the command shape stops it parsing prose that merely mentions the package. The deliberate
   // unversioned line stays legal and stays SEEN - it is an instruction, just not a pinned one.
   const COMMAND = /\b(?:dsh\s+plugin\b[^\n]*?\b(?:add|install)\b|(?:pnpm|npm|yarn)\s+(?:add|install|i)\b)/u
-  const PACKAGE_NAME = 'dsh-academic-review'
+  const PACKAGE_NAME = 'dsh-academic-skills'
 
   const perDoc = {}
   for (const doc of ['README.md', 'README.zh-CN.md']) {

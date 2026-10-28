@@ -1,4 +1,4 @@
-# Contributing to dsh-academic-review
+# Contributing to dsh-academic-skills
 
 Thanks for your interest in this unofficial port of ARS
 `academic-paper-reviewer`.

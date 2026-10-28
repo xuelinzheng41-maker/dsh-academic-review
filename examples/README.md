@@ -1,4 +1,4 @@
-# Examples — dsh-academic-review
+# Examples — dsh-academic-skills
 
 End-to-end example material for the plugin.
 

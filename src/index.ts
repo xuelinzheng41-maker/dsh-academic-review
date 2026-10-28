@@ -1,5 +1,5 @@
 /**
- * dsh-academic-review: an unofficial DSH port of the Academic Research Skills
+ * dsh-academic-skills: an unofficial DSH port of the Academic Research Skills
  * skill "academic-paper-reviewer" (Phase 1: reviewer only).
  *
  * The plugin registers two contributions into the host composition:
@@ -22,7 +22,7 @@
  * Installation (bundle):
  *   dsh plugin --profile <name> add <this package or a local path>
  *
- * @module dsh-academic-review
+ * @module dsh-academic-skills
  */
 
 import { resolve } from 'node:path'
@@ -124,7 +124,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   registerAcademicReviewTools(ctx, reviewBinding)
   // /ars-review and /ars-review-status (no business logic of their own).
   registerAcademicReviewCommands(ctx, reviewBinding)
-  // Read-only panel data surface (three GET routes under /plugins/dsh-academic-review/reviews).
+  // Read-only panel data surface (three GET routes under /plugins/dsh-academic-skills/reviews).
   registerAcademicReviewWebRoutes(ctx, { stateDir, ...(trimmed(config.workspaceRoot) === undefined ? {} : { workspaceRoot: resolve(trimmed(config.workspaceRoot) as string) }) })
   ctx.logger.info('academic-review: ' + String(skillNames.length) + ' skill(s) served from ' + vendorBasePath
     + ' [' + skillNames.join(', ') + ']; review state under <workspace>/' + stateDir + '/<review_id>')

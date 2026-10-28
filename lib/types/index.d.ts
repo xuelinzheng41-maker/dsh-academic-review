@@ -1,5 +1,5 @@
 /**
- * dsh-academic-review: an unofficial DSH port of the Academic Research Skills
+ * dsh-academic-skills: an unofficial DSH port of the Academic Research Skills
  * skill "academic-paper-reviewer" (Phase 1: reviewer only).
  *
  * The plugin registers two contributions into the host composition:
@@ -22,7 +22,7 @@
  * Installation (bundle):
  *   dsh plugin --profile <name> add <this package or a local path>
  *
- * @module dsh-academic-review
+ * @module dsh-academic-skills
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';

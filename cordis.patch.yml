@@ -1,4 +1,4 @@
-# dsh-academic-review bundle patch: mounts the academic-review plugin into
+# dsh-academic-skills bundle patch: mounts the academic-review plugin into
 # the host composition of a dsh profile. The plugin registers the
 # `academic-paper-reviewer` skill provider on the shared `skills` registry and
 # the five `academic_review_*` tools on the shared `tools` registry, so every
@@ -11,7 +11,7 @@
     - id: academic-review
       # Node-resolvable package name - must stay in sync with package.json
       # `name`.
-      name: dsh-academic-review
+      name: dsh-academic-skills
       config:
         # Review state lives under <session workspace>/<stateDir>/<review_id>/
         # (state.json + seats/<seat_id>.json + generated report documents).

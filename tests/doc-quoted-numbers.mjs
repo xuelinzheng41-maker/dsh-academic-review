@@ -30,7 +30,7 @@
  * that already happened, so it stays true across a re-vendor; pinning it would turn a
  * true sentence red and push someone to edit a record.
  *
- * @module dsh-academic-review/tests/doc-quoted-numbers
+ * @module dsh-academic-skills/tests/doc-quoted-numbers
  */
 
 /** Skill names as they appear in prose, longest first so academic-paper-reviewer wins. */

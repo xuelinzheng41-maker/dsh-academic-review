@@ -4,11 +4,11 @@
  * through the three authenticated GET routes registered by src/web.ts; the
  * browser never touches the filesystem and there are no mutation calls.
  *
- * @module dsh-academic-review/client
+ * @module dsh-academic-skills/client
  */
 
 /** Route prefix served by the plugin's web surface. */
-export const REVIEWS_API_ROOT = '/plugins/dsh-academic-review/reviews'
+export const REVIEWS_API_ROOT = '/plugins/dsh-academic-skills/reviews'
 
 /** The five Phase 1 seat ids, in panel order. */
 export const SEAT_IDS = ['eic', 'methodology', 'domain', 'perspective', 'da'] as const

@@ -1,6 +1,6 @@
-# THIRD-PARTY NOTICES — dsh-academic-review
+# THIRD-PARTY NOTICES — dsh-academic-skills
 
-This project, `dsh-academic-review`, is an **unofficial DSH port** of **Academic
+This project, `dsh-academic-skills`, is an **unofficial DSH port** of **Academic
 Research Skills (ARS)**. It serves five of that repository's skills, each vendored
 unmodified. It is not affiliated with, sponsored by, or endorsed by the upstream
 author or project.
@@ -136,10 +136,10 @@ Two statements that sound contradictory and are both true:
    file is ever edited.
 2. **What the model reads is not the vendored bytes alone.** When a skill is served,
    the provider prepends a delimited block to the body: write policy A inside
-   `<!-- dsh-academic-review:write-policy:begin (not upstream text) -->` …
-   `<!-- dsh-academic-review:write-policy:end -->`, and, where a skill's own
+   `<!-- dsh-academic-skills:write-policy:begin (not upstream text) -->` …
+   `<!-- dsh-academic-skills:write-policy:end -->`, and, where a skill's own
    instructions name a file this package does not ship, a port notice inside
-   `<!-- dsh-academic-review:port-notice:begin (not upstream text) -->` … end. Today
+   `<!-- dsh-academic-skills:port-notice:begin (not upstream text) -->` … end. Today
    only `academic-pipeline` carries a port notice (853 bytes, four targets); the two
    `academic-paper` and `deep-research` used to carry disappeared when the fifth tree
    resolved the file they named, which is why both of those payloads shrank.
@@ -186,7 +186,7 @@ reports produced by the plugin carry the attribution footer below.
 Every generated review report, editorial decision letter, and revision roadmap
 must end with:
 
-> Produced with dsh-academic-review, an unofficial DSH port of the
+> Produced with dsh-academic-skills, an unofficial DSH port of the
 > academic-paper-reviewer skill from Academic Research Skills by Cheng-I Wu
 > (https://github.com/Imbad0202/academic-research-skills), v1.11.1,
 > commit 1ec249df98728682dfbbdfb940a658338bfd6f80. CC BY-NC 4.0.

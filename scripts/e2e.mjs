@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Deterministic end-to-end harness for the dsh-academic-review plugin
+ * Deterministic end-to-end harness for the dsh-academic-skills plugin
  * (pnpm test:e2e).
  *
  * What it does, in order, against ONE throwaway workspace under the OS temp
@@ -41,7 +41,7 @@
  *
  * Exit code: 0 when every check passes, 1 otherwise (the failure is printed).
  *
- * @module dsh-academic-review/scripts/e2e
+ * @module dsh-academic-skills/scripts/e2e
  */
 
 import assert from 'node:assert/strict'
@@ -671,7 +671,7 @@ async function main() {
     const manuscript = join(runWorkspace, 'manuscript.md')
     await writeFile(manuscript, PAPER_TEXT, 'utf8')
 
-    console.log('dsh-academic-review deterministic E2E (pnpm test:e2e)')
+    console.log('dsh-academic-skills deterministic E2E (pnpm test:e2e)')
     console.log('node ' + process.version + ' on ' + process.platform + '-' + process.arch + ', cwd ' + process.cwd())
     console.log('temp root: ' + root)
     console.log('note: the state layer clock is not injectable (nowIso() calls new Date()), so plugin')

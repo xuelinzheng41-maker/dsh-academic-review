@@ -26,7 +26,7 @@
  * - NOT CHECKED: whether a skill's instructions tell a *model* to run its scripts.
  *   They do - that is what the skill is for - and approving that is the host's job.
  *
- * @module dsh-academic-review/tests/no-code-execution
+ * @module dsh-academic-skills/tests/no-code-execution
  */
 
 import assert from 'node:assert/strict'

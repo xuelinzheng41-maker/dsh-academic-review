@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in dsh-academic-review is broken or behaves unexpectedly.
+description: Something in dsh-academic-skills is broken or behaves unexpectedly.
 title: "[bug] "
 labels: ["bug"]
 body:

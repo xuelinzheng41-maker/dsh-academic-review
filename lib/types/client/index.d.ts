@@ -10,7 +10,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Required services: the browser locale registry and the slot registry. */
 export declare const inject: string[];
 /** Tab identity: the type id the pane body registers under, and the kind it opens by. */
-export declare const ACADEMIC_REVIEW_TAB_ID = "dsh-academic-review/review-panel";
+export declare const ACADEMIC_REVIEW_TAB_ID = "dsh-academic-skills/review-panel";
 export declare const ACADEMIC_REVIEW_TAB_KIND = "academic-review";
 /**
  * Register the dictionaries and the right-sidebar tab that renders the review

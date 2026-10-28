@@ -104,7 +104,7 @@ function assertReadOnly(requests) {
   assert.ok(requests.length > 0, 'the panel fetched something')
   for (const request of requests) {
     assert.equal(request.method, 'GET', 'panel request must be GET: ' + request.url)
-    assert.ok(request.url.startsWith('/plugins/dsh-academic-review/reviews'), 'unexpected URL: ' + request.url)
+    assert.ok(request.url.startsWith('/plugins/dsh-academic-skills/reviews'), 'unexpected URL: ' + request.url)
   }
 }
 

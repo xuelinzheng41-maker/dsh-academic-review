@@ -28,7 +28,7 @@
  * Nothing here writes to vendor/: the provider is read-only and the vendored
  * tree stays byte-identical to upstream (docs/PORT_SPEC.md section 1.2).
  *
- * @module dsh-academic-review/skills
+ * @module dsh-academic-skills/skills
  */
 import { type MissingReference, type SkillReferenceScopes } from './references.ts';
 import type { Context } from '@deepseek-ai/cordis';
@@ -207,9 +207,9 @@ export declare class VendoredSkillsProvider implements SkillProvider {
     private vendorManifest;
 }
 /** Opening marker of the port notice; it is not upstream text. */
-export declare const PORT_NOTICE_BEGIN = "<!-- dsh-academic-review:port-notice:begin (not upstream text) -->";
+export declare const PORT_NOTICE_BEGIN = "<!-- dsh-academic-skills:port-notice:begin (not upstream text) -->";
 /** Closing marker of the port notice. */
-export declare const PORT_NOTICE_END = "<!-- dsh-academic-review:port-notice:end -->";
+export declare const PORT_NOTICE_END = "<!-- dsh-academic-skills:port-notice:end -->";
 /**
  * Render the port notice appended to one served skill body.
  *

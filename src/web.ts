@@ -1,7 +1,7 @@
 /**
  * Read-only web surface for the Academic Review panel.
  *
- * Three GET routes under /plugins/dsh-academic-review/reviews, authenticated by
+ * Three GET routes under /plugins/dsh-academic-skills/reviews, authenticated by
  * the host connection gate (same wrapper the AgentTeams plugin uses). No POST,
  * no mutation: the only bytes ever read live under
  * <workspace>/<stateDir>/<review_id>/, and review ids are validated against a
@@ -12,7 +12,7 @@
  *   GET .../reviews/<id>       -> ReviewSummary (404 when unknown)
  *   GET .../reviews/<id>/report -> { markdown } (409 { error } when not written yet)
  *
- * @module dsh-academic-review/web
+ * @module dsh-academic-skills/web
  */
 
 import { readdir, readFile } from 'node:fs/promises'
@@ -45,7 +45,7 @@ interface RequestGate {
 }
 
 /** Route prefix shared by every panel data route. */
-export const REVIEWS_ROUTE_ROOT = '/plugins/dsh-academic-review/reviews'
+export const REVIEWS_ROUTE_ROOT = '/plugins/dsh-academic-skills/reviews'
 
 /** Per-seat summary served to the panel. */
 export interface SeatSummary {

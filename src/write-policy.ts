@@ -127,7 +127,7 @@
  * precisely because it is weak: it proves the record matches the detectors, and the
  * adversarial fixtures in the same suite demonstrate why the detectors cannot be
  * trusted with the serving decision.
- * * @module dsh-academic-review/write-policy
+ * * @module dsh-academic-skills/write-policy
  */
 
 import { readdirSync, type Dirent } from 'node:fs'
@@ -136,9 +136,9 @@ import { join } from 'node:path'
 /** Metadata value advertised for a skill that carries policy A. */
 export const WRITE_POLICY_NEW_PATHS_ONLY = 'new-paths-only'
 /** Opening marker of the prepended write-policy block; it is not upstream text. */
-export const WRITE_POLICY_BEGIN = '<!-- dsh-academic-review:write-policy:begin (not upstream text) -->'
+export const WRITE_POLICY_BEGIN = '<!-- dsh-academic-skills:write-policy:begin (not upstream text) -->'
 /** Closing marker of the prepended write-policy block. */
-export const WRITE_POLICY_END = '<!-- dsh-academic-review:write-policy:end -->'
+export const WRITE_POLICY_END = '<!-- dsh-academic-skills:write-policy:end -->'
 
 /**
  * Writing/drafting verbs for the prose rule. Counted on the vendored body, i.e.

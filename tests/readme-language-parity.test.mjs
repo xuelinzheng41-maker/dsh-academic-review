@@ -160,7 +160,7 @@ function assertSwitcher(name, text) {
   const lines = text.split('\n')
   assert.equal(lines[0], SWITCHER.get(name), name + ' must start with its language switcher')
   assert.equal(lines[1], '', name + ' needs a blank line between switcher and H1')
-  assert.equal(lines[2], '# dsh-academic-review', name + ' H1 must stay the project name')
+  assert.equal(lines[2], '# dsh-academic-skills', name + ' H1 must stay the project name')
 }
 
 test('both README files exist and open with their language switcher', async () => {
@@ -321,7 +321,7 @@ test('an actually-wrong switcher line is still rejected (negative control)', asy
   // The normalisation must not turn the check into a rubber stamp.
   const good = await readDoc(ENGLISH)
   const lines = good.split('\n')
-  const wrongFirstLine = ['# dsh-academic-review', ...lines.slice(1)].join('\n')
+  const wrongFirstLine = ['# dsh-academic-skills', ...lines.slice(1)].join('\n')
   assert.throws(() => assertSwitcher(ENGLISH, wrongFirstLine), /language switcher/u)
   const swapped = [SWITCHER.get(CHINESE), ...lines.slice(1)].join('\n')
   assert.throws(() => assertSwitcher(ENGLISH, swapped), /language switcher/u)

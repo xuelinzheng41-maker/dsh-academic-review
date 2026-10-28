@@ -44,7 +44,7 @@
  * bodies - the reviewer's are the canary and must never move - and the one
  * non-markdown vendored file, whose pin has to be tested, not assumed.
  *
- * @module dsh-academic-review/tests/skill-references
+ * @module dsh-academic-skills/tests/skill-references
  */
 
 import assert from 'node:assert/strict'
@@ -478,7 +478,7 @@ test('the served payload keeps its order and its byte counts (reviewer canary, t
   // assertions moved to academic-pipeline below rather than being deleted with the subject.
   assert.equal(paper.content.startsWith(WRITE_POLICY_BEGIN), true, 'the write-policy block must be first')
   assert.equal(paper.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block')
-  assert.equal(paper.content.indexOf(WRITE_POLICY_END), block.lastIndexOf('<!-- dsh-academic-review:write-policy:end -->'))
+  assert.equal(paper.content.indexOf(WRITE_POLICY_END), block.lastIndexOf('<!-- dsh-academic-skills:write-policy:end -->'))
   const blockEnd = paper.content.indexOf(WRITE_POLICY_END) + WRITE_POLICY_END.length
   const bodyStart = paper.content.indexOf(paperBody)
   assert.ok(bodyStart >= blockEnd, 'the vendored body must follow the write-policy block (block ends ' + String(blockEnd) + ', body starts ' + String(bodyStart) + ')')

@@ -1,4 +1,4 @@
-# Maintenance — dsh-academic-review
+# Maintenance — dsh-academic-skills
 
 ## Upstream sync policy
 

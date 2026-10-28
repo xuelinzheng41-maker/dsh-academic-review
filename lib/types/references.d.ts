@@ -41,7 +41,7 @@
  *    asserts against the allowlisted out-of-port areas, so nothing in the tree
  *    goes unreported even when it is not attributed to one skill.
  *
- * @module dsh-academic-review/references
+ * @module dsh-academic-skills/references
  */
 /** Inline code span, used to tell a syntax example from a real link. */
 export declare const INLINE_CODE: RegExp;

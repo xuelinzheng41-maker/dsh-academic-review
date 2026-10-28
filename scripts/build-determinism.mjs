@@ -194,7 +194,7 @@ const referenceRoot = REPO_ROOT
 console.log('build-determinism: building in place (' + referenceRoot + ')')
 build(REPO_ROOT)
 
-const tempRoot = await mkdtemp(join(tmpdir(), 'dsh-academic-review-determinism-'))
+const tempRoot = await mkdtemp(join(tmpdir(), 'dsh-academic-skills-determinism-'))
 console.log('build-determinism: building a second copy at ' + tempRoot)
 try {
   for (const input of BUILD_INPUTS) await copyInput(input, tempRoot)

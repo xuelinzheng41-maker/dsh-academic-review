@@ -1,5 +1,5 @@
 /**
- * Shared fixtures for the dsh-academic-review unit tests.
+ * Shared fixtures for the dsh-academic-skills unit tests.
  *
  * Every test runs against a throwaway workspace under the OS temp directory so
  * the repository never accumulates review state.
@@ -62,7 +62,7 @@ export const PAPER_TEXT = [
 
 /** Create a throwaway workspace plus one .md manuscript. */
 export async function makeWorkspace(label = 'review') {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-academic-review-' + label + '-'))
+  const root = await mkdtemp(join(tmpdir(), 'dsh-academic-skills-' + label + '-'))
   const paper = join(root, 'manuscript.md')
   await writeFile(paper, PAPER_TEXT, 'utf8')
   return {

@@ -50,7 +50,7 @@ approve (`academic_review_report --approve`) before anything is marked
   "disagreements": [ { "topic": "…", "seats": ["eic","methodology"], "stances": ["…","…"], "arbitration": "…" } ],
   "da_critical_adjudications": [ { "finding_id": "da-F1", "adjudicated": true,
       "outcome": "validated|rejected|unresolved", "rationale": "…" } ],
-  "report_footer": "Produced with dsh-academic-review, an unofficial DSH port of the academic-paper-reviewer skill from Academic Research Skills by Cheng-I Wu (https://github.com/Imbad0202/academic-research-skills), v1.11.1, commit 1ec249df98728682dfbbdfb940a658338bfd6f80. CC BY-NC 4.0.",
+  "report_footer": "Produced with dsh-academic-skills, an unofficial DSH port of the academic-paper-reviewer skill from Academic Research Skills by Cheng-I Wu (https://github.com/Imbad0202/academic-research-skills), v1.11.1, commit 1ec249df98728682dfbbdfb940a658338bfd6f80. CC BY-NC 4.0.",
   "created_at": "<ISO-8601>"
 }
 ```

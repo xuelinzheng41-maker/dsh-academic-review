@@ -46,7 +46,7 @@ interface NativeScope {
 export const inject = ['locale', 'slots']
 
 /** Tab identity: the type id the pane body registers under, and the kind it opens by. */
-export const ACADEMIC_REVIEW_TAB_ID = 'dsh-academic-review/review-panel'
+export const ACADEMIC_REVIEW_TAB_ID = 'dsh-academic-skills/review-panel'
 export const ACADEMIC_REVIEW_TAB_KIND = 'academic-review'
 
 /**

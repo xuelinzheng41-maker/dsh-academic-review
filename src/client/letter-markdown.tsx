@@ -11,7 +11,7 @@
  * indentation), block quotes, pipe tables, horizontal rules, fenced code.
  * Supported inline: `code`, **bold**, *emphasis*, _emphasis_.
  *
- * @module dsh-academic-review/client
+ * @module dsh-academic-skills/client
  */
 
 import type { ReactElement, ReactNode } from 'react'

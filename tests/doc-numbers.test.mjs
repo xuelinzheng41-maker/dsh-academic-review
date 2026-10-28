@@ -26,7 +26,7 @@
  * Skip semantics are deliberate: a document that stops quoting a number is not a
  * bug, so it is skipped with a diagnostic instead of failing.
  *
- * @module dsh-academic-review/tests/doc-numbers
+ * @module dsh-academic-skills/tests/doc-numbers
  */
 
 import assert from 'node:assert/strict'

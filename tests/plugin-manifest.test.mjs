@@ -18,7 +18,7 @@ async function manifest() {
 
 test('the package manifest declares the DSH plugin contract', async () => {
   const pkg = await manifest()
-  assert.equal(pkg.name, 'dsh-academic-review')
+  assert.equal(pkg.name, 'dsh-academic-skills')
   assert.equal(pkg.type, 'module')
   assert.equal(pkg.main, 'lib/index.js')
   assert.equal(pkg.license, 'CC-BY-NC-4.0')
@@ -62,7 +62,7 @@ test('the built host and browser entrypoints exist', async () => {
   await access(join(repoRoot, 'lib', 'tools.js'))
   const client = await readFile(join(repoRoot, 'lib', 'client.js'), 'utf8')
   assert.match(client, /window\.__ModuleLoader__\.load\(/)
-  assert.ok(client.includes(JSON.stringify('dsh-academic-review')))
+  assert.ok(client.includes(JSON.stringify('dsh-academic-skills')))
 })
 
 test('the plugin source never writes into vendor/', async () => {
