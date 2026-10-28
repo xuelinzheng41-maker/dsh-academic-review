@@ -633,6 +633,19 @@ test('the pipeline\'s verb counts are pinned in all four documents, and the pin 
  *             or that is asked to cover a kind it did not declare, is a FAILURE;
  *   unpinned  everything else, which fails and says what to do.
  *
+ * WHY THERE IS NO "EXACTLY ONE PRESENT-TENSE CLAIM" ASSERTION IN HERE. An earlier version of the
+ * proof below asserted that the current release section holds exactly one present-tense record
+ * claim, because until 0.5.0 shipped that claim was always the pipeline's '39 writing verbs / 18
+ * drafting verbs' sentence. It was a proxy for 'every release quotes the pipeline's counts', and
+ * the proxy's premise is false for a legitimate release shape: a release whose whole subject is
+ * that nothing served changed quotes no count at all. When 0.5.1 became the current section the
+ * count went to 0, and the only way to satisfy the assertion was to make the changelog quote the
+ * counts twice - which the four-document test forbids. So the count is PRINTED and never asserted;
+ * what is asserted is the property it was standing in for: every present-tense claim in the
+ * section for the shipped version is pinned, and zero claims is a pass. The number stays on the
+ * pass line on purpose - a guard that has nothing to do must still say so out loud, because a
+ * check that goes quiet when its subject is empty is how a guard dies unnoticed.
+ *
  * WHAT THIS SCAN DOES NOT SEE, stated so the green line does not imply more than it has: it
  * matches the claim shapes the parser knows (see CLAUSES). A bare "1,806,561 bytes" with no
  * 'repository' in front of it is not one of them, so the documents that quote the unvendored
@@ -737,6 +750,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
   const scanned = await markdownFiles(root)
   const quoting = []
   const known = []
+  const presentTense = []
   const history = []
   const exempted = []
   const unpinned = []
@@ -774,7 +788,9 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
             + ' is PRESENT TENSE, inside the section for ' + String(version) + ', and no test pins it:'
             + ' pin it above, or move the sentence into the release it describes')
         } else {
-          known.push(path + ':' + String(claim.line) + ' ' + claimShape(claim) + ' (record: PRESENT TENSE, pinned)')
+          const line = path + ':' + String(claim.line) + ' ' + claimShape(claim) + ' (record: PRESENT TENSE, pinned)'
+          known.push(line)
+          presentTense.push(line)
         }
       }
       continue
@@ -834,7 +850,7 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
       stale.push(path + ' declares a page exemption but quotes no claim any more - remove the marker')
     }
   }
-  return { scanned, quoting, known, history, exempted, unpinned, stale }
+  return { scanned, quoting, known, history, presentTense, exempted, unpinned, stale }
 }
 
 /** The scan inputs for this repository. */
@@ -852,11 +868,22 @@ test('no document outside the known set quotes a measurement', async (t) => {
   assert.deepEqual(report.unpinned, [], 'a document quotes a measurement and nothing pins it:\n  '
     + report.unpinned.join('\n  '))
   assert.deepEqual(report.stale, [], 'an exemption no longer covers anything:\n  ' + report.stale.join('\n  '))
+  // THE PROPERTY THE COUNT USED TO STAND IN FOR, asserted directly (see the note above): every
+  // present-tense claim in the section for the shipped version is pinned. A claim that is not
+  // pinned cannot reach the pass line - the scan puts it in unpinned and the assertion above
+  // fires - and this one says the property in its own words so the next reader does not have to
+  // infer it. Zero present-tense claims is a PASS: a release that changed nothing served has no
+  // count to quote.
+  assert.deepEqual(report.unpinned.filter(line => /PRESENT TENSE/u.test(line)), [],
+    'every present-tense record claim in the current release section must be pinned')
   console.log('# scanned ' + String(report.scanned.length) + ' Markdown files outside '
     + [...SCAN_SKIP.keys()].join('/') + '; ' + String(report.quoting.length) + ' quote a claim: '
     + report.quoting.map(entry => entry.path + ' (' + String(entry.claims.length) + ')').join(', ')
     + ' - ' + String(report.known.length) + ' pinned, ' + String(report.history.length)
-    + ' recorded as history, ' + String(report.exempted.length) + ' exempt with a reason')
+    + ' recorded as history, ' + String(report.exempted.length) + ' exempt with a reason; record stance: '
+    + String(report.presentTense.length) + ' present-tense claim(s) in the ' + QUOTER_SCAN.version
+    + ' section, ' + String(report.presentTense.length) + ' pinned (0 is a pass - a release that'
+    + ' changed nothing served quotes no count)')
 })
 
 test('the absence assertion bites: a new quoter fails, a listed one passes, a stale exemption fails', async (t) => {
@@ -949,24 +976,70 @@ test('the absence assertion bites: a new quoter fails, a listed one passes, a st
   await writeFile(join(directory, checker), examplePage, 'utf8')
   console.log('# mutation 4 (page exemption): ' + onPage.exempted[0])
 
-  // 5. The record stance: the same numbers are HISTORY in an old release section and PRESENT
-  //    TENSE in the current one. This is the rule behind the compromise, not the compromise.
+  // 5. THE RECORD STANCE, BOTH SIDES OF IT. The split is a rule - HISTORY unless the claim sits in
+  //    the section for the version in package.json - and a rule exercised on one side only is half
+  //    a rule. So the fixture demonstrates three cases, and NOT a count of how many present-tense
+  //    claims exist: that count is a proxy whose premise is false for a release that changed
+  //    nothing served (see the note at the top of this block).
   const changelog = await readFile(join(directory, QUOTER_SCAN.record), 'utf8')
-  const heading = '## [0.4.1]'
-  const oldSection = changelog.indexOf(heading)
-  assert.ok(oldSection > 0, 'the copied changelog must carry an older release section')
-  const inserted = changelog.slice(0, oldSection) + heading + NL + NL
-    + '- The pipeline then carried 39 writing verbs / 18 drafting verbs.'
-    + changelog.slice(oldSection + heading.length)
-  await writeFile(join(directory, QUOTER_SCAN.record), inserted, 'utf8')
-  const appended = await scanQuoters(directory, base)
-  assert.deepEqual(appended.unpinned, [], 'a count inside an old release section is history, not a failure: '
-    + JSON.stringify(appended.unpinned))
-  assert.ok(appended.history.length >= 2, 'the added count must be classified as history: '
-    + JSON.stringify(appended.history))
-  const presentTense = appended.known.filter(line => /PRESENT TENSE/u.test(line))
-  assert.equal(presentTense.length, 1, 'the version section keeps exactly one present-tense claim: '
-    + JSON.stringify(presentTense))
-  console.log('# record stance: ' + String(appended.history.length) + ' claim(s) in old sections read as history, '
-    + String(presentTense.length) + ' present-tense claim pinned: ' + presentTense[0].slice(0, 130))
+  const releaseLines = changelog.split(NL)
+  const headings = releaseLines
+    .map((line, index) => ({ line, index }))
+    .filter(entry => /^##\s/u.test(entry.line))
+  assert.ok(headings.length >= 2, 'the copied changelog must carry more than one release section')
+  const current = headings[0]
+  assert.match(current.line, new RegExp('\\[' + QUOTER_SCAN.version.replace(/\./gu, '\\.') + '\\]'),
+    'the copied changelog must open with the shipped version, or "current section" means nothing: '
+    + JSON.stringify(current.line))
+  const oldest = headings[headings.length - 1]
+  const withClaimAfter = (heading, sentence) => {
+    const copy = [...releaseLines]
+    copy.splice(heading.index + 1, 0, '', sentence)
+    return copy.join(NL)
+  }
+
+  // (a) the same numbers inside a release that has passed: history, and a pass.
+  await writeFile(join(directory, QUOTER_SCAN.record), withClaimAfter(oldest,
+    '- The academic-pipeline body then carried 39 writing verbs / 18 drafting verbs.'), 'utf8')
+  const historical = await scanQuoters(directory, base)
+  assert.deepEqual(historical.unpinned, [], 'a count inside a release that has passed is history, not a failure: '
+    + JSON.stringify(historical.unpinned))
+  // The inserted sentence goes into the OLDEST section, so it is the last history entry the scan
+  // reports; taking the last one, not the first, is what keeps this line about the fixture.
+  const recorded = historical.history.filter(line => /39 \/ 18|verb-margin/u.test(line))
+  assert.ok(recorded.length >= 2, 'the added count must join the history the changelog already holds: '
+    + JSON.stringify(historical.history))
+  const insertedAsHistory = recorded[recorded.length - 1]
+  assert.ok(Number(insertedAsHistory.slice(insertedAsHistory.indexOf(':') + 1, insertedAsHistory.indexOf(' '))) > current.index,
+    'the reported history entry must be the one inside a later section than the current one: ' + insertedAsHistory)
+  console.log('# record stance (a) history: ' + insertedAsHistory.slice(0, 190))
+
+  // (b) the same numbers, with their skill named, inside the CURRENT section: pinned, and a pass.
+  await writeFile(join(directory, QUOTER_SCAN.record), withClaimAfter(current,
+    '- The academic-pipeline body carries 39 writing verbs / 18 drafting verbs.'), 'utf8')
+  const present = await scanQuoters(directory, base)
+  assert.deepEqual(present.unpinned, [], 'a pinned present-tense claim must pass: ' + JSON.stringify(present.unpinned))
+  assert.equal(present.presentTense.length, 1, 'a present-tense claim in the current section must be pinned '
+    + 'and reported as such: ' + JSON.stringify(present.presentTense))
+  assert.match(present.presentTense[0], /PRESENT TENSE, pinned/u)
+  assert.match(present.presentTense[0], /39 \/ 18/u)
+  console.log('# record stance (b) present tense, pinned: ' + present.presentTense[0].slice(0, 190))
+
+  // (c) a claim shape nothing pins, inside the CURRENT section: a failure that names the section and
+  //     says it is unpinned. This is the mechanism the removed count assertion was standing next to,
+  //     and it is now exercised directly instead of inferred from a total.
+  await writeFile(join(directory, QUOTER_SCAN.record), withClaimAfter(current,
+    '- The academic-paper SKILL.md is 65,335 repository bytes.'), 'utf8')
+  const unpinnedCurrent = await scanQuoters(directory, base)
+  assert.equal(unpinnedCurrent.unpinned.length, 1, 'an unpinned present-tense claim must fail: '
+    + JSON.stringify(unpinnedCurrent.unpinned))
+  assert.match(unpinnedCurrent.unpinned[0], /PRESENT TENSE/u, 'the failure must say which stance fired')
+  assert.match(unpinnedCurrent.unpinned[0], new RegExp('inside the section for ' + QUOTER_SCAN.version.replace(/\./gu, '\\.'), 'u'),
+    'the failure must say WHICH section it is in')
+  assert.match(unpinnedCurrent.unpinned[0], /and no test pins it/u)
+  assert.match(unpinnedCurrent.unpinned[0], /repository-bytes/u, 'the failure must name the claim')
+  assert.match(unpinnedCurrent.unpinned[0], /pin it above|move the sentence/u, 'and what to do about it')
+  console.log('# record stance (c) present tense, unpinned: '
+    + unpinnedCurrent.unpinned[0].split(NL)[0].slice(0, 190))
+  await writeFile(join(directory, QUOTER_SCAN.record), changelog, 'utf8')
 })
