@@ -18,11 +18,17 @@ commands and the served skill names are identical to 0.4.1, and existing
 changed**: the route prefix moved with the package name, so the three read-only GET
 routes are now under `/plugins/dsh-academic-skills/reviews` — a bookmark, script or
 reverse proxy that names the old prefix needs updating, and the browser client's API
-root moved with it. And the served text is **not** byte-for-byte what 0.4.1 served,
-even though all five payloads keep exactly their byte counts: the write-policy block
-and the port notice carry markers that name the package, so the rename rewrote those
-markers inside the served text and nothing else — they are the same length, which is
-why every total is unchanged.
+root moved with it. And the served text is **not** byte-for-byte what 0.4.1 served.
+Two causes, kept apart because merging them would hide one. **The rename is
+length-neutral, not byte-neutral:** the write-policy block and the port notice carry
+markers that name the package, so the rename rewrote 12 bytes inside each served
+payload — 24 in `academic-pipeline`, which carries both — and changed no length at
+all, because `dsh-academic-review` and `dsh-academic-skills` are both 19 characters,
+which is why the totals that did not move did not move. **Separately**, two port
+notices dissolved when the fifth tree supplied the file they named, and for that
+reason alone two payloads shrank: `academic-paper` 65,113 → 64,541 and
+`deep-research` 52,316 → 51,753 (see *Changed* below). Neither cause is the other —
+the rename moved no byte count, and the shrinkage owes nothing to the rename.
 
 ### Renamed — the package, the repository, the routes and the tarball
 
@@ -40,7 +46,9 @@ why every total is unchanged.
   `…/reviews/<id>/report`; the client's API root moved with them.
 - **Served text:** the `write-policy` and `port-notice` marker comments inside the
   served block and the served notice were renamed with the package. Same structure,
-  same lengths, nothing else in the served text moved.
+  same lengths, and nothing else in the served text moved *for this reason* — the two
+  payloads that did shrink shrank because a port notice dissolved, which is a different
+  cause and is stated at the top of this entry.
 
 **Why now.** The name was written when the plugin served one skill's worth of review.
 It now serves five skills, four of which are not the reviewer, so a name that says
@@ -71,9 +79,10 @@ and history here is not rewritten.
   `prose-drafting`, sr-screener `bundled-script`, pipeline
   `orchestration-closure`), and on the reviewer and `deep-research` the key is
   **absent rather than null** — one basis per skill, naming the instrument that
-  fired, never a summary of the skill. The pipeline's own verb counts (39 writing / 18
-  drafting, both under the thresholds) are printed by the suite every run and stored
-  nowhere, which is the point: a near miss is not an instrument.
+  fired, never a summary of the skill. `academic-pipeline`'s own parsed body carries
+  39 writing verbs / 18 drafting verbs, under both thresholds; the suite prints those
+  two counts every run and stores them nowhere, which is the point: a near miss is not
+  an instrument.
 
 ### Changed — the payloads, and one of them got smaller
 

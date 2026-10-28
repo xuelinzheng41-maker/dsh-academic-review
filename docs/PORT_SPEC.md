@@ -140,10 +140,10 @@ dispatches `deep-research` / `academic-paper` / `academic-paper-reviewer` and
 tracks state, and it drafts nothing itself. It is the third **demonstrated** cause of
 writes, by a **third instrument — orchestration closure**: a stage table gives a
 served producer a slot, so a skill that writes nothing dispatches the skill that
-does. `writePolicyBasis: 'orchestration-closure'` on this one. Its verb counts are a
-near miss on both drafting thresholds (39 writing against 40, 18 drafting against
-20) and are printed by the suite every run and stored nowhere: a basis names the
-instrument that fired, never a summary of the skill.
+does. `writePolicyBasis: 'orchestration-closure'` on this one. `academic-pipeline`'s
+parsed body carries 39 writing verbs / 18 drafting verbs, a near miss on both drafting
+thresholds (40 and 20), and the suite prints those two counts every run and stores them
+nowhere: a basis names the instrument that fired, never a summary of the skill.
 
 **Demonstrated, never gated — the OR of three instruments.** A skill is *recorded*
 as a cause of writes when ANY of these holds, measured on its parsed body:

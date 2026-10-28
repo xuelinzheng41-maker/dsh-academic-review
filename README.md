@@ -257,10 +257,11 @@ workflow you are at, recommends modes, dispatches `deep-research`,
 state of the run. It does not write the paper itself; it is the thing that decides who
 does, and in what order. That is why its measured basis is
 **`orchestration-closure`** and not prose drafting or bundled-script execution: it
-causes writes by dispatching a producer it does not contain. Its verb counts are a
-near miss on both drafting thresholds — 39 writing verbs against a floor of 40, 18
-drafting against 20 — and they are printed on every test run and stored nowhere,
-because a basis names the instrument that fired, never a summary of the skill.
+causes writes by dispatching a producer it does not contain. `academic-pipeline`'s
+own parsed body carries 39 writing verbs / 18 drafting verbs, a near miss on both
+drafting thresholds (40 and 20); the suite prints those two counts on every run and
+stores them nowhere, because a basis names the instrument that fired, never a summary
+of the skill.
 
 **What it cannot do here.** Its integrity stages — the ones that check a manuscript, a
 corpus, a passport or a claim audit — call **47 scripts from the upstream
@@ -583,10 +584,13 @@ The vendored tree is byte-identical to upstream and is checked against
 ### 0.4.1 → 0.5.0
 
 0.5.0 adds the fifth and last served skill — upstream's orchestrator,
-`academic-pipeline`, at **3.23.2** (SKILL.md `last_updated` 2026-10-24). **No tool,
-route or state schema changed**: the five tools, their arguments, the review-state
-schema, the panel routes and both slash commands are identical to 0.4.1, so existing
-`.academic-review/` directories keep loading.
+`academic-pipeline`, at **3.23.2** (SKILL.md `last_updated` 2026-10-24) — and renames
+the package. **The tools and the state schema did not change**: the five tools, their
+arguments, the review-state schema, both slash commands and the served skill names are
+identical to 0.4.1, so existing `.academic-review/` directories keep loading. **The
+panel URL changed**: the route prefix moved with the package name, so the three
+read-only GET routes are now under `/plugins/dsh-academic-skills/reviews` — update any
+bookmark, script or reverse proxy that names the old prefix.
 
 - **New:** `academic-pipeline`, served prompt-only — no tools, no state, no GUI, no
   slash command. It detects stages, recommends modes, dispatches `deep-research` /
