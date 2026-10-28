@@ -53,11 +53,13 @@ the change is comment-only, verified line by line (sixteen changed lines, none o
 code) — so every corpus verdict is identical.
 
 - **One more fixed here, and not about the instrument:** `docs/UPSTREAM_INVENTORY.md` said
-  the suite "re-measures the 44 vendored rows on every run" while the suite measures 74 and
-  prints it — 44 was the pre-0.5.0 reach, the reviewer's 28 and the shared 16, left behind
-  when the pipeline's 30 rows arrived. The direction is the part worth recording: it
-  claimed *less* coverage than existed, which is why nobody chased it. A number that
-  flatters the tool gets audited; a number that understates it sits there.
+  the suite "re-measures the 44 vendored rows on every run" while it re-measures every
+  vendored byte row in that document and prints the total — 74 when this note was written,
+  and the number lives in that printed line rather than here. 44 was the pre-0.5.0 reach,
+  the reviewer's 28 and the shared 16, left behind when the pipeline's 30 rows arrived. The
+  direction is the part worth recording: it claimed *less* coverage than existed, which is
+  why nobody chased it. A number that flatters the tool gets audited; a number that
+  understates it sits there.
 
 ### Found — one number this repository cannot recompute, exempted by name
 

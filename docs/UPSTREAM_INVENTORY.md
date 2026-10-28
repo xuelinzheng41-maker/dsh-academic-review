@@ -16,15 +16,15 @@ how the previous edition of this table went wrong — by exactly one byte per li
 on all 88 rows, the 74 vendored files and the 14 upstream-only scripts alike. To
 re-derive any row, `git cat-file -s <commit>:<path>` in the upstream clone, or
 `stat` the file under `vendor/`; the two must agree, because the pipeline reads
-the object store too. `tests/release-invariants.test.mjs` re-measures the 74
-vendored rows (58 in the two tree tables, 16 under `shared/`) on every run, so that
-column cannot drift silently again. The 14
-upstream-only sizes cannot be stat()ed from this package, so the suite reaches them
-in two steps rather than trusting them: on every run, with no clone and no
-environment variable, it builds a throwaway fixture repository and proves the check
-itself can fail; and when `DSH_UPSTREAM_CLONE` names a clone of the pinned commit
-the fourteen are compared against that object store, while without it the run
-NAMES all fourteen as unverified rather than reporting a skip.
+the object store too. `tests/release-invariants.test.mjs` re-measures every vendored
+byte row in this document on every run, and prints how many rows it measured and which it
+could not; that line is where the coverage is stated, so no count of it is repeated here
+and none can go stale in a sentence nobody asserts. The 14 upstream-only sizes cannot be
+stat()ed from this package, so the suite reaches them in two steps rather than trusting
+them: on every run, with no clone and no environment variable, it builds a throwaway
+fixture repository and proves the check itself can fail; and when `DSH_UPSTREAM_CLONE`
+names a clone of the pinned commit the fourteen are compared against that object store,
+while without it the run NAMES all fourteen as unverified rather than reporting a skip.
 
 ## academic-paper-reviewer/ (28 files, all vendored unmodified)
 
