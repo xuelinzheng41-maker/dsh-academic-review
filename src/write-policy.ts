@@ -68,9 +68,10 @@
  *    the same line, and (b) is checked against the disk, not against the text.
  * 3. ORCHESTRATION CLOSURE ({@link orchestrationSignals}): the body gives a skill
  *    this package SERVES, and that instruments one and two MEASURED as a producer,
- *    a slot it can be dispatched from - the line's own verb is the dispatch, or a
- *    stage table places it. A name this package does not serve is inert, a skill
- *    naming itself does not qualify, and a body that merely mentions a producer
+ *    a slot it can be dispatched from - the line's own verb takes the producer as
+ *    its object, or a stage table places it. A name this package does not serve is
+ *    inert, a skill naming itself does not qualify, and a body that merely mentions
+ *    a producer
  *    ('| Need to write a paper (not review) | academic-paper |') is routing the
  *    user elsewhere, which is not orchestration.
  *
@@ -317,7 +318,16 @@ export function readableReferenceLines(body: string): string[] {
 export function referencedSkillsIn(line: string, candidates: readonly string[]): string[] {
   const found = new Set<string>()
   for (const match of line.matchAll(/`([^`\n]+)`|\*\*([^*\n]+)\*\*/gu)) {
-    const token = (match[1] ?? match[2] ?? '').trim().replace(/[.,;:!?)]+$/u, '')
+    // Strip the wrappers a token can arrive wearing - '**`name`**' is a code span inside
+    // emphasis, and the reference is to the same skill either way. Only the WRAPPING is
+    // stripped: plain prose still has to be inside a code span or bold to be a reference
+    // at all, so this widens recognition of marked references, not of unmarked words.
+    const token = (match[1] ?? match[2] ?? '')
+      .trim()
+      .replace(/^[`*"']+/u, '')
+      .replace(/[`*"']+$/u, '')
+      .trim()
+      .replace(/[.,;:!?)]+$/u, '')
     const segments = token.split('/')
     for (const name of candidates) {
       if (token === name || segments.includes(name)) found.add(name)
@@ -333,6 +343,33 @@ export function referencedSkillsIn(line: string, candidates: readonly string[]):
     if (dispatched.test(line) || labelled.test(line)) found.add(name)
   }
   return [...found]
+}
+
+/**
+ * Whether a directive line takes ONE served skill as the object of its own dispatch verb:
+ * 'Run `academic-paper` on the outline', 'Dispatch the `sr-screener` skill'.
+ *
+ * This is the second half of the binding and it exists because the first half was not
+ * enough. Requiring only "the line starts with a dispatch verb and names a producer
+ * somewhere" records a basis for 'Run the audit on the draft `academic-paper` produced' -
+ * a sentence about auditing, which mentions the paper and dispatches nothing. So the name
+ * must FOLLOW the verb, separated by nothing but the article and the word "skill": the
+ * producer is what is dispatched, not something the line happens to name. The cost is
+ * stated where it belongs: 'Delegate the write stage to `academic-paper`' is a real
+ * dispatch that this predicate refuses, because the verb's object is the stage - dispatch
+ * by role, which the module header already lists as this instrument's blind spot.
+ * @param line - one readable line.
+ * @param name - the served skill name to look for.
+ * @returns whether the line dispatches that skill as its object.
+ */
+export function dispatchesAsObject(line: string, name: string): boolean {
+  if (!DIRECTIVE_DISPATCH.test(line)) return false
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const object = new RegExp(
+    DIRECTIVE_DISPATCH.source + '\\s+(?:the\\s+)?(?:skill\\s+)?(?:`|\\*\\*)?' + escaped + '(?:`|\\*\\*)?\\b',
+    'iu',
+  )
+  return object.test(line)
 }
 
 /**
@@ -352,9 +389,16 @@ export function tableCellsOf(line: string): string[] {
  * anywhere in the row is not evidence. '| **Upstream: academic-paper -> reviewer** |
  * Receives the paper ... enters Phase 0 |' mentions a producer and a phase and means
  * neither that the reviewer runs it nor that it owns a stage - the phase belongs to
- * the reviewer itself. So the slot must be bound to the skill: an ordinal first cell
- * ('| 2 | WRITE | academic-paper |'), or the cell straight after the skill's own cell
- * carrying the dispatch ('| academic-paper | Dispatched (writing stages) |').
+ * the reviewer itself. So the slot must be bound to the skill: an ordinal first cell,
+ * '| 2 | WRITE | `academic-paper` | plan |', or the cell straight after the skill's own
+ * cell carrying the dispatch, '| `academic-paper` | Dispatched (writing stages) |'.
+ *
+ * Both examples are written WITH their backticks, because that is what makes them fire:
+ * a reference needs a syntactic marker - code span, bold, the literal word "skill", or a
+ * dispatch verb pointing at the name - and the bare form of either row, with the name as
+ * plain text, is a row that names nothing this instrument can see. Read the examples above
+ * as the inputs they are; an earlier version of this comment showed them unmarked, which
+ * described the slot logic correctly and the input shape wrongly.
  * @param line - one readable line.
  * @param name - the served skill name to look for.
  * @returns whether the line slots that skill.
@@ -362,7 +406,7 @@ export function tableCellsOf(line: string): string[] {
 export function slotsSkill(line: string, name: string): boolean {
   const referenced = referencedSkillsIn(line, [name]).length > 0
   if (!referenced) return false
-  if (DIRECTIVE_DISPATCH.test(line)) return true
+  if (dispatchesAsObject(line, name)) return true
   if (!/^\s*\|/u.test(line)) return false
   const cells = tableCellsOf(line)
   const index = cells.findIndex(cell => referencedSkillsIn(cell, [name]).length > 0)
@@ -380,8 +424,10 @@ export function slotsSkill(line: string, name: string): boolean {
  * note in this corpus says things like 'the orchestrator dispatches academic-paper' or
  * '| Need to write a paper (not review) | academic-paper |' - true sentences that are
  * not this body dispatching anything. So evidence must be one of two shapes the body
- * cannot accidentally wear: a directive line whose own verb is the dispatch, or a
- * stage-table row that gives the skill a stage slot. Fenced code and quotations are
+ * cannot accidentally wear: a directive line whose own verb is the dispatch AND whose
+ * object is the producer (so 'Run the audit on the draft `academic-paper` produced' is a
+ * mention, not a dispatch), or a stage-table row that gives the skill a stage slot. Fenced
+ * code and quotations are
  * excluded first, because an example is not an order.
  *
  * NON-TRANSITIVE, DELIBERATELY: a body qualifies only when it slots a producer that was

@@ -691,36 +691,105 @@ test('the orchestration instrument can fire: a stage table that gives a producer
   }).dispatchesProducer, true)
 })
 
-test('the orchestration predicate is narrow: examples, quotations, self-references and routing rows are inert', () => {
+test('the orchestration predicate: every shape the gate fired on fires, every shape it stayed inert on stays inert', () => {
+  // The gate attacked this instrument with its own fixtures and reported which shapes do
+  // and do not count. Those shapes now live here, so the next change to the predicate is
+  // measured against the same evidence instead of against a claim about it.
   const served = ['a-skill', 'academic-paper', 'sr-screener']
   const producers = ['academic-paper', 'sr-screener']
   const measure = body => orchestrationSignals({ body, self: 'a-skill', servedSkills: served, producerSkills: producers })
-
-  // A producer named inside a fenced code block is an example, not an order.
-  const fenced = ['# Skill', 'For reference, the pipeline runs:', '```', '| 2 | WRITE | `academic-paper` | full |', '- Run `sr-screener`.', '```', 'That is all.'].join('\n')
-  assert.equal(measure(fenced).dispatchesProducer, false, 'a fenced example must be inert')
-  // A quotation is somebody else's sentence.
-  const quoted = ['# Skill', '> | 2 | WRITE | `academic-paper` | full |', '> - Run `sr-screener`.'].join('\n')
-  assert.equal(measure(quoted).dispatchesProducer, false, 'a quotation must be inert')
-  // Naming yourself tells us nothing about what you dispatch.
-  const self = ['# Skill', '| 1 | STAGE | `a-skill` |', '- Run `a-skill`.'].join('\n')
-  assert.equal(measure(self).dispatchesProducer, false, 'a self-reference must not qualify')
-  // A name this package does not serve is inert, whatever it looks like.
-  const unserved = ['# Skill', '| 1 | WRITE | `some-other-paper-skill` |'].join('\n')
-  assert.equal(measure(unserved).dispatchesProducer, false)
-  // A ROUTING row - 'the user wants X, so point them at Y' - is not a dispatch, and
-  // this corpus is full of them. Neither is a boundary note phrased as prose.
-  const routing = ['# Skill', '| If the user asks for | Use |', '| --- | --- |', '| Writing a paper (not this) | `academic-paper` |', '| Need to write a paper | `academic-paper` |'].join('\n')
-  assert.equal(measure(routing).dispatchesProducer, false, 'routing rows must not count as dispatch')
-  // A stage word merely present in a row is not a slot for the name in that row.
-  const borrowedPhase = ['| **Upstream: academic-paper -> a-skill** | Receives the paper and enters Phase 0 |'].join('\n')
-  assert.equal(measure(borrowedPhase).dispatchesProducer, false, 'the phase belongs to the row subject, not to academic-paper')
-  // Prose that merely contains a producer's name.
-  assert.equal(measure('An academic-paper draft is reviewed here; the sr-screener workbook arrives alongside.').dispatchesProducer, false)
-  // And the same bodies the other way: the reference is still recorded as a mention.
-  assert.deepEqual(measure(routing).servedMentions, ['academic-paper'])
+  const fires = [
+    ['stage row that slots a producer', '| 2 | WRITE | `academic-paper` | plan |'],
+    ['dispatch cell beside the producer', '| `academic-paper` | Dispatched (writing stages) |'],
+    ['directive line taking the producer as its object', '- Run `academic-paper` on the finished outline.'],
+    ['bold-wrapped code span in a stage row', '| 4 | **`academic-paper`** | stage 4 |'],
+  ]
+  for (const [label, line] of fires) {
+    assert.equal(measure(line + '\n').dispatchesProducer, true, label + ' must fire: ' + line)
+  }
+  const inert = [
+    ['fenced stage row', ['```', '| 2 | WRITE | `academic-paper` | plan |', '- Run `sr-screener`.', '```']],
+    ['quotation', ['> | 2 | WRITE | `academic-paper` | plan |', '> - Run `sr-screener`.']],
+    ['self reference', ['| 1 | STAGE | `a-skill` |', '- Run `a-skill`.']],
+    ['unserved name', ['| 1 | WRITE | `some-other-paper-skill` |']],
+    ['routing row', ['| Need to write a paper | `academic-paper` |']],
+    ['upstream-arrow row with a borrowed phase', ['| **Upstream: academic-paper -> a-skill** | Receives the paper and enters Phase 0 |']],
+    ['third-person narration', ['The orchestrator dispatches `academic-paper` when the outline is ready.']],
+    ['dispatch by role', ['Then hand off to the writing stage.']],
+    ['passive voice', ['The materials can be handed off to `academic-paper`.']],
+    ['stage row whose name carries no marker', ['| 2 | WRITE | academic-paper | plan |']],
+    ['prose that merely ranks the producer', ['An academic-paper draft is reviewed here; the sr-screener workbook arrives alongside.']],
+  ]
+  for (const [label, lines] of inert) {
+    assert.equal(measure(lines.join('\n') + '\n').dispatchesProducer, false, label + ' must stay inert')
+  }
+  // Inert is not the same as unnoticed: a mention is still recorded as a mention, which is
+  // how a reader can tell 'it names the producer' from 'it dispatches the producer'.
+  assert.deepEqual(measure('| Need to write a paper | `academic-paper` |\n').servedMentions, ['academic-paper'])
+  assert.deepEqual(measure('The materials can be handed off to `academic-paper`.\n').servedMentions, ['academic-paper'])
+  assert.deepEqual(measure('The materials can be handed off to `academic-paper`.\n').producerMentions, [])
 })
 
+test('edge (a): the dispatch verb must take the producer as its object, not merely name it', () => {
+  // Found by the gate. 'Run the audit on the draft `academic-paper` produced' is a
+  // sentence about auditing: the line's verb is a dispatch, the producer is named, and the
+  // paper is the object of nobody. Requiring only 'directive line + name somewhere'
+  // recorded a basis that was not true. FIXED, not documented, because the tighter rule is
+  // the more defensible one and costs nothing this corpus does: no vendored body writes a
+  // directive line at all, and the true positives - a producer as the verb's object - keep
+  // firing.
+  const served = ['a-skill', 'academic-paper']
+  const producers = ['academic-paper']
+  const measure = body => orchestrationSignals({ body, self: 'a-skill', servedSkills: served, producerSkills: producers })
+  const otherObject = measure('Run the audit on the draft `academic-paper` produced.\n')
+  assert.equal(otherObject.dispatchesProducer, false, 'a producer named as somebody else\'s object must not qualify')
+  assert.deepEqual(otherObject.servedMentions, ['academic-paper'], 'it is still a mention')
+  assert.deepEqual(otherObject.producerMentions, [])
+  // The same line with the producer as the object of the dispatch does fire.
+  assert.equal(measure('Run `academic-paper` on the finished outline.\n').dispatchesProducer, true)
+  assert.equal(measure('- Dispatch the `academic-paper` skill.\n').dispatchesProducer, true)
+  // And the cost of the fix, stated: a dispatch whose object is a STAGE is refused, which
+  // is the dispatch-by-role blind spot the module header already records.
+  assert.equal(measure('Delegate the write stage to `academic-paper`.\n').dispatchesProducer, false,
+    'dispatch by role is inert by construction - this is the recorded blind spot, not a bug')
+})
+
+test('edge (b): a bold-wrapped code span is a reference, and widening it re-admits nothing', () => {
+  // The gate found that `**`academic-paper`**` was not recognised, so a stage row written
+  // that way did not fire. The cause was the token arriving with its wrappers still on: the
+  // bold alternative matched first and the code span inside it was never compared. The
+  // wrappers are now stripped before the comparison. This widens recognition of MARKED
+  // references only - nothing becomes visible that was not already inside a code span or
+  // bold - and all ten inert shapes above stay inert, which is the property that made the
+  // widening safe rather than convenient.
+  const served = ['a-skill', 'academic-paper', 'sr-screener']
+  const producers = ['academic-paper', 'sr-screener']
+  const measure = body => orchestrationSignals({ body, self: 'a-skill', servedSkills: served, producerSkills: producers })
+  assert.equal(measure('| 4 | **`academic-paper`** | stage 4 |\n').dispatchesProducer, true)
+  assert.equal(measure('| 4 | **`sr-screener`** | stage 4 |\n').dispatchesProducer, true)
+  // Unmarked bold was already recognised, and stays so.
+  assert.equal(measure('| 4 | **academic-paper** | stage 4 |\n').dispatchesProducer, true)
+  // The wrapping is stripped, not searched: prose with the name in quotes and no marker
+  // is still nothing, and a fenced or quoted bold span is still an example.
+  assert.equal(measure('A **academic-paper** draft is mentioned here.\n').dispatchesProducer, false)
+  assert.equal(measure('```\n| 4 | **`academic-paper`** | stage 4 |\n```\n').dispatchesProducer, false)
+  assert.equal(measure('> | 4 | **`academic-paper`** | stage 4 |\n').dispatchesProducer, false)
+})
+
+test('the instrument fires for exactly the skills in the table, and for no fifth skill', async () => {
+  // The safety property, stated directly: if a change to the predicate made this instrument
+  // fire for a skill the table does not list, THIS is the assertion that fails. The record
+  // test checks the same thing through the record; this one checks the detector's own
+  // output, so a future edit cannot pass by editing the record at the same time.
+  const measured = await qualificationsOf()
+  const firing = measured.filter(entry => entry.orchestration.dispatchesProducer).map(entry => entry.skill).sort()
+  const recorded = FILE_PRODUCING_SKILLS
+    .filter(entry => entry.basis === 'orchestration-closure')
+    .map(entry => entry.skill)
+    .sort()
+  assert.deepEqual(firing, recorded, 'the third instrument must fire for the recorded skills and no others')
+  assert.deepEqual(firing, [PIPELINE_SKILL_NAME])
+})
 test('closure is one step, and that is a choice the suite pins', () => {
   // A names B, B names C, C is a measured producer. Transitivity would qualify A on the
   // strength of a claim nobody made about A, and would spread as the graph grows. So the
