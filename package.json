@@ -1,6 +1,6 @@
 {
   "name": "dsh-academic-skills",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": false,
   "description": "Unofficial DSH port of Academic Research Skills: a 5-seat journal peer-review panel (five review-state tools, a read-only panel, two slash commands) plus five prompt-only skills - deep-research, academic-paper, academic-paper-reviewer, sr-screener and the academic-pipeline orchestrator. Three are measured file producers under write policy A (prose drafting, sr-screener's bundled Python, and the pipeline through the skills it dispatches); sr-screener needs Python 3.9+ on the host, and the pipeline's integrity stages additionally need an upstream checkout with jsonschema, yaml and pypdf, which this package deliberately does not ship.",
   "type": "module",

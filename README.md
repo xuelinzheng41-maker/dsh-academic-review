@@ -233,12 +233,18 @@ that names 18 shared paths can reach 81 files, because several of the paths it n
 are *directories* (`shared/contracts/review_target/`, `shared/contracts/re_review/`,
 `cross_model/`), and a directory reference pulls in everything under it.
 
-The walk reads **Markdown only**, and that is load-bearing rather than convenient: 26
-of the 120 payload files contain 67 reference-shaped strings, 42 of which would dangle
-if the walk read them. A path inside a Python docstring or a JSON-schema string is data
-a program consumes, not an instruction telling the agent to open a file in this port —
-so `pnpm test` reads 222 Markdown files and 0 payload files, and the in-port-dangling
-count stays a meaningful zero.
+The walk reads **Markdown only**, and that is load-bearing rather than convenient. A path
+inside a Python docstring or a JSON-schema string is data a program consumes, not an
+instruction telling the agent to open a file in this port — so the reference check reads
+this tree's Markdown and none of the served payload files, which is why the in-port-dangling
+count stays a meaningful zero. The exclusion is worth measuring rather than asserting,
+because of what it hides: a reference inside a payload, if the walk read it, could dangle
+against the same payload — nothing another payload contains can ever fill it. The suite
+measures exactly that on every run, and `pnpm test` prints it in the walk test's own line:
+how many Markdown files were read, how many payload files were not, how many payload files
+carry reference-shaped strings, how many strings that is, and how many of them would
+dangle. Those figures are not repeated here, because a count about what a scan sees belongs
+to the scan.
 
 Say it plainly: **the pipeline inherits upstream instructions that this port cannot
 satisfy.** It is served faithfully, minus the files its notice names — and its
@@ -537,8 +543,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skill
 A pinned tag or the release tarball works the same way:
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.1
-dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.1.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.2
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.2.tgz
 ```
 
 The build output (`lib/`) is committed on purpose, so a git install needs no

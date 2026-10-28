@@ -8,6 +8,45 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.5.2] - 2026-10-28
+
+Nothing served changed: the same five skills and the payloads they served at 0.5.1, the
+same 684-byte write-policy block with the same hash, and the same one 853-byte notice. What
+changed is again what can be **checked**, and this time the change closes a class instead
+of an instance.
+
+### Fixed — the last sentence whose subject was what a guard sees
+
+`docs/PORT_SPEC.md` still printed three of the reference walk's figures after both READMEs
+had stopped, which makes it the last instance of a class worth naming now that it is closed:
+a sentence whose subject is what a guard **sees** rather than what the tree **contains**,
+backed only by inequalities — `>=` floors and one `> 0` — chosen so the assertions survive
+the tree growing. A floor is the right assertion and the wrong number to quote, because the
+combination rots in exactly one direction: the document ends up claiming *less* coverage
+than the run has, and an understatement about your own instrument is the wrong nobody
+investigates. An older release's notes still carry that sentence with smaller figures, which
+is the drift preserved in the one place drift is supposed to be preserved: the record.
+
+### Changed — the net refuses that claim family instead of pinning it
+
+The doc-quoted-number net now knows the walk's figures as a family it **refuses**, not one
+it pins: a figure that is right today is rejected exactly like one that is wrong, because no
+reader should have to decide whether a sentence is still true. The numbers live in the line
+the walk test prints on every run, and both READMEs and the port spec point at that line
+instead of quoting it. That is a stronger stance than pinning, and it is the correct one for
+numbers the checks only guarantee with a floor: pinning would have meant a second copy of the
+walk inside the doc checker, which is the defect this suite keeps re-learning.
+
+### Changed — a fixture directory that could have collided with a real skip
+
+The skip-list proof put its quoting fixture in a directory called `notes` — which is exactly
+what a maintainer would call a real scratch directory, and therefore exactly what a future
+skip entry might swallow. The day that happened, the proof would fail with a message about a
+quoter that no longer exists, sending the next reader to hunt a bug in the scanner. The
+fixture now lives in `quoter-fixture-t70`: a name nothing would ever skip cannot collide.
+
+One number fewer in prose, one refusal more in the net.
+
 ## [0.5.1] - 2026-10-28
 
 Two limits the gate wrote down became guards. **No tool, route, state schema or served

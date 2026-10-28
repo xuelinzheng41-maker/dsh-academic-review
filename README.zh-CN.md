@@ -187,10 +187,14 @@ vendoring 的技能里的文件。把第五棵树 vendoring 进来就把它解�
 （`shared/contracts/review_target/`、`shared/contracts/re_review/`、`cross_model/`），
 而一条目录引用会把其下所有文件一并拉进来。
 
-遍历**只读 Markdown**，而且这是承重设计而不是图省事：120 个载荷文件里有 26 个含合计 67 处
-引用形状的字符串，若遍历去读它们，其中 42 处会悬空。Python docstring 或 JSON schema 字符串里
-的路径是程序消费的数据，不是让 agent 去打开本移植里某个文件的指令 —— 因此 `pnpm test` 读 222 个
-Markdown 文件、0 个载荷文件，而“端口内悬空”这个计数才仍然是一个有意义的 0。
+遍历**只读 Markdown**，而且这是承重设计而不是图省事。Python docstring 或 JSON schema 字符串里
+的路径是程序消费的数据，不是让 agent 去打开本移植里某个文件的指令 —— 所以引用检查只读这棵树里
+的 Markdown、一个载荷文件都不读，正因如此“端口内悬空”这个计数才仍然是一个有意义的 0。这条排除
+值得测量而不是只靠断言，因为被它挡住的东西才有意思：载荷里的一处引用若被遍历读到，就可能对同一
+个载荷悬空 —— 另一个载荷里的任何东西都补不上它。套件每次运行都把这件事量出来，并由 `pnpm test`
+在遍历测试自己那一行打印：读了多少个 Markdown 文件、多少个载荷文件没有读、多少个载荷文件携带
+引用形状的字符串、那样的字符串共多少处、其中多少处会悬空。这些数字不在本文重复，因为关于扫描
+看见了什么，计数属于扫描本身。
 
 直说就是：**流水线继承了本移植无法满足的上游指令。** 它被忠实提供，只是缺了提示块点名的那些
 文件 —— 而它的完整性阶段还要 47 个根本不在这里的脚本，那是另一个、也是更强的说法。见
@@ -415,8 +419,8 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skill
 钉定的 tag 或发布 tarball 用法相同：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.1
-dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.1.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-skills#v0.5.2
+dsh plugin --profile <profile> add ./dsh-academic-skills-0.5.2.tgz
 ```
 
 构建产物（`lib/`）是有意提交进仓库的，因此从 git 安装不需要构建步骤。bundle patch

@@ -350,13 +350,17 @@ because several `shared/` targets are *directories*
 directory reference pulls in everything under it: the reviewer's tree names 18
 `shared/` paths and reaches 81 files.
 
-The walk reads **Markdown only**, deliberately: 26 of the 120 payload files carry
-67 reference-shaped strings and 42 of them would dangle if the walk read them. A
-path inside a Python docstring or a JSON schema string is data a program consumes,
-not an instruction telling the agent to open a file in this port — and an empty file
-is allowed payload, since `academic-pipeline`'s one payload file is an empty
-`.gitkeep`; the rule is "Markdown plus payload equals the manifest total", not
-"every payload file is text".
+The walk reads **Markdown only**, deliberately. A path inside a Python docstring or a
+JSON schema string is data a program consumes, not an instruction telling the agent to
+open a file in this port — and what that exclusion hides is worth measuring rather than
+assuming: a reference inside a payload, if the walk read it, could dangle against that
+same payload. `tests/skill-references.test.mjs` measures precisely that on every run and
+prints the figures in its walk test's own line — how many Markdown files it read, how many
+payload files it did not read, how many payload files carry reference-shaped strings, how
+many strings that is, and how many of them would dangle — so none of them is repeated
+here: a count about what a guard sees belongs to the guard. And an empty file is allowed
+payload, since `academic-pipeline`'s one payload file is an empty `.gitkeep`; the rule is
+"Markdown plus payload equals the manifest total", not "every payload file is text".
 
 ### 1.4 `scripts/` dependency map (advisory checkers)
 
