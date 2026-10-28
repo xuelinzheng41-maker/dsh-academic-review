@@ -21,10 +21,12 @@
  * test would silently pass while a whole document rotted - which is precisely the
  * bug this module now exists to prevent.
  *
- * Three kinds of claim are read:
+ * Five kinds of claim are read:
  * - file-production: writing/drafting verb counts for a named skill;
  * - repository-bytes: the on-disk size of a skill's SKILL.md;
- * - shared-scope: distinct missing shared/ targets and the number of sites naming them.
+ * - shared-scope: distinct missing shared/ targets and the number of sites naming them;
+ * - verb-margin: the same counts written as a margin, "39 writing verbs / 18 drafting verbs";
+ * - drafting-floors: the thresholds themselves, "40 and 20" / "writing verbs ≥ 40 ...".
  *
  * What this module does NOT do: pin a changelog. A release entry records something
  * that already happened, so it stays true across a re-vendor; pinning it would turn a
@@ -37,6 +39,11 @@
 const SKILL_TOKENS = [
   { token: 'academic-paper-reviewer', skill: 'academic-paper-reviewer' },
   { token: 'academic-paper', skill: 'academic-paper' },
+  // The fifth skill, added in 0.5.0 and missing from this table until its counts were
+  // quoted: without it a sentence about the pipeline was attributed to whichever skill was
+  // named last before it, which is the t35 misattribution waiting to happen in a new
+  // paragraph. Longest first is preserved: 'academic-pipeline' is not a prefix of another.
+  { token: 'academic-pipeline', skill: 'academic-pipeline' },
   { token: 'deep-research', skill: 'deep-research' },
   { token: 'the reviewer', skill: 'academic-paper-reviewer' },
   // The fourth skill. Without this entry a claim about sr-screener was attributed
@@ -58,6 +65,9 @@ const NUMERIC = {
   /** A byte size, possibly written with thousands separators: 65,335. */
   bytes: String.raw`([\d,]{3,})`,
 }
+
+/** How a threshold is written in prose: '≥ 40', 'at or above 40', wrapped or not. */
+const COMPARATOR = String.raw`(?:≥|>=|at(?:[ \t]*\n?[ \t]*)or(?:[ \t]*\n?[ \t]*)above)`
 
 /** Whitespace policy per language. See the module note: this is what differs. */
 const SEPARATOR = {
@@ -140,10 +150,91 @@ const CLAUSES = [
     ].join(SEPARATOR.Chinese),
     fields: ['distinct', 'sites'],
   },
+
+  // THE PIPELINE'S MARGIN. academic-pipeline carries 39 writing verbs against a floor of 40 and
+  // 18 drafting against 20, so it is the one skill whose counts are quoted as a NEAR MISS rather
+  // than as a qualification - and every document that says so writes it as
+  // "39 writing verbs / 18 drafting verbs". Until this clause existed that shape matched no
+  // pattern, so the only number the code deliberately refuses to store was the only number
+  // nothing checked, in four documents.
+  {
+    kind: 'verb-margin',
+    language: 'English',
+    // 'verbs' on both sides and a slash between them: a claim about where a skill sits relative
+    // to a threshold, not the 'and' form above, and the two must not be confused.
+    pattern: [
+      NUMERIC.count,
+      'writing',
+      String.raw`verbs?` + TIGHT.English + String.raw`\/` + TIGHT.English + NUMERIC.count,
+      'drafting',
+      String.raw`verbs?`,
+    ].join(SEPARATOR.English),
+    fields: ['writingVerbs', 'draftingVerbs'],
+  },
+  {
+    kind: 'verb-margin',
+    language: 'Chinese',
+    pattern: [
+      NUMERIC.count,
+      '个写作动词' + TIGHT.Chinese + String.raw`\/` + TIGHT.Chinese + NUMERIC.count,
+      '个起草动词',
+    ].join(SEPARATOR.Chinese),
+    fields: ['writingVerbs', 'draftingVerbs'],
+  },
+  // THE FLOORS. 40 and 20 are numbers too: where a document prints them they are claims about
+  // the constants the detector uses, so a threshold that moves in code must move in prose.
+  {
+    kind: 'drafting-floors',
+    language: 'English',
+    // "a near miss on both drafting thresholds (40 and 20)"
+    pattern: [
+      'thresholds' + TIGHT.English + String.raw`\(` + TIGHT.English + NUMERIC.count,
+      'and',
+      NUMERIC.count + TIGHT.English + String.raw`\)`,
+    ].join(SEPARATOR.English),
+    fields: ['writingFloor', 'draftingFloor'],
+  },
+  {
+    kind: 'drafting-floors',
+    language: 'English',
+    // "writing verbs ≥ 40 **and** drafting verbs at or above 20" - the instrument defined in
+    // prose, which is the same two constants stated as a rule instead of as a margin.
+    pattern: [
+      'writing', 'verbs', COMPARATOR, NUMERIC.count,
+      String.raw`\*{0,2}and\*{0,2}`,
+      'drafting', 'verbs', COMPARATOR, NUMERIC.count,
+    ].join(SEPARATOR.English),
+    fields: ['writingFloor', 'draftingFloor'],
+  },
+  {
+    kind: 'drafting-floors',
+    language: 'Chinese',
+    // "对两条起草阈值（40 与 20）都是擦边未过"
+    pattern: [
+      '阈值' + TIGHT.Chinese + String.raw`[\uff08(]` + TIGHT.Chinese + NUMERIC.count,
+      '与',
+      NUMERIC.count + TIGHT.Chinese + String.raw`[\uff09)]`,
+    ].join(SEPARATOR.Chinese),
+    fields: ['writingFloor', 'draftingFloor'],
+  },
+  {
+    kind: 'drafting-floors',
+    language: 'Chinese',
+    // "写作动词 ≥ 40 **且** 起草动词 ≥ 20"
+    pattern: [
+      '写作动词', COMPARATOR, NUMERIC.count,
+      String.raw`\*{0,2}且\*{0,2}`,
+      '起草动词', COMPARATOR, NUMERIC.count,
+    ].join(SEPARATOR.Chinese),
+    fields: ['writingFloor', 'draftingFloor'],
+  },
 ]
 
 /** The claim kinds this module understands. */
-export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope']
+export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope', 'verb-margin', 'drafting-floors']
+
+/** Claims that are about the instrument rather than about one skill, so they name none. */
+const NO_SKILL_KINDS = new Set(['shared-scope', 'drafting-floors'])
 
 /** The doc line a match starts on, 1-based, for the failure message. */
 function lineOf(text, index) {
@@ -234,7 +325,7 @@ export function quotedClaims(text, docName) {
       definition.fields.forEach((field, offset) => {
         claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
       })
-      if (definition.kind !== 'shared-scope') {
+      if (NO_SKILL_KINDS.has(definition.kind) === false) {
         const skill = skillOfClaim(text, match.index)
         if (skill === undefined) continue
         claim.skill = skill
@@ -250,6 +341,8 @@ export function quotedClaims(text, docName) {
 /** How a measurement is named in a failure message. */
 const MEASUREMENT_OF = {
   'file-production': (claim) => 'fileProductionSignals(' + claim.skill + ')',
+  'verb-margin': (claim) => 'fileProductionSignals(' + claim.skill + ')',
+  'drafting-floors': () => 'FILE_PRODUCING_MIN_WRITING_VERBS / FILE_PRODUCING_MIN_DRAFTING_VERBS',
   'repository-bytes': (claim) => 'the vendored vendor/' + claim.skill + '/SKILL.md',
   'shared-scope': () => 'missingReferencesByScope()',
 }
@@ -257,6 +350,8 @@ const MEASUREMENT_OF = {
 /** What was measured, rendered for a failure message. */
 function rendered(kind, measured) {
   if (kind === 'file-production') return String(measured.writingVerbs) + '/' + String(measured.draftingVerbs) + ' (writing/drafting)'
+  if (kind === 'verb-margin') return String(measured.writingVerbs) + '/' + String(measured.draftingVerbs) + ' (writing/drafting)'
+  if (kind === 'drafting-floors') return String(measured.writingFloor) + ' writing / ' + String(measured.draftingFloor) + ' drafting'
   if (kind === 'repository-bytes') return String(measured.bytes) + ' repository bytes'
   return String(measured.distinct) + ' distinct references over ' + String(measured.sites) + ' reference sites'
 }
@@ -264,6 +359,8 @@ function rendered(kind, measured) {
 /** What the document said, rendered for a failure message. */
 function quoted(claim) {
   if (claim.kind === 'file-production') return String(claim.writingVerbs) + '/' + String(claim.draftingVerbs) + ' (writing/drafting)'
+  if (claim.kind === 'verb-margin') return String(claim.writingVerbs) + '/' + String(claim.draftingVerbs) + ' (writing/drafting)'
+  if (claim.kind === 'drafting-floors') return String(claim.writingFloor) + ' writing / ' + String(claim.draftingFloor) + ' drafting'
   if (claim.kind === 'repository-bytes') return String(claim.bytes) + ' repository bytes'
   return String(claim.distinct) + ' distinct references over ' + String(claim.sites) + ' reference sites'
 }
@@ -271,6 +368,8 @@ function quoted(claim) {
 /** Whether a claim and a measurement agree, per claim kind. */
 function agrees(claim, measured) {
   if (claim.kind === 'file-production') return claim.writingVerbs === measured.writingVerbs && claim.draftingVerbs === measured.draftingVerbs
+  if (claim.kind === 'verb-margin') return claim.writingVerbs === measured.writingVerbs && claim.draftingVerbs === measured.draftingVerbs
+  if (claim.kind === 'drafting-floors') return claim.writingFloor === measured.writingFloor && claim.draftingFloor === measured.draftingFloor
   if (claim.kind === 'repository-bytes') return claim.bytes === measured.bytes
   return claim.distinct === measured.distinct && claim.sites === measured.sites
 }
@@ -286,7 +385,8 @@ export function claimDrift(claim, measured) {
   const where = claim.doc + ':' + String(claim.line) + ' (' + claim.language + ')'
   const subject = claim.kind === 'shared-scope'
     ? 'the shared/ scope'
-    : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+    : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
+      : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
   return where + ' says ' + subject + ' is ' + quoted(claim)
     + ', but ' + MEASUREMENT_OF[claim.kind](claim) + ' measures ' + rendered(claim.kind, measured)
     + ' - update the document to the measured numbers, in every language'

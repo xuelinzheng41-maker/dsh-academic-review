@@ -1,10 +1,13 @@
 /**
- * The numbers the docs quote must equal the numbers the code measures (t25, t26).
+ * The numbers the docs quote must equal the numbers the code measures (t25, t26, t56).
  *
- * English and Chinese documents are parsed alike: the docs quote three kinds of
- * measurement in prose - file-production verb counts, the repository-byte size of
- * a skill's SKILL.md, and the shared-scope "N distinct references (M sites)" - and
- * every one of those is a copy of something the code computes. Rounds one to three
+ * English and Chinese documents are parsed alike: the docs quote five kinds of
+ * measurement in prose - file-production verb counts, the repository-byte size of a
+ * skill's SKILL.md, the shared-scope "N distinct references (M sites)", the same verb
+ * counts written as a MARGIN ("39 writing verbs / 18 drafting verbs", the shape every
+ * document that quotes academic-pipeline's near miss uses), and the thresholds
+ * themselves ("40 and 20", "writing verbs ≥ 40") - and every one of those is a copy of
+ * something the code computes. Rounds one to three
  * were all spent on copies of measurements that stopped being true.
  *
  * t25 was monolingual: README.zh-CN.md:69 says the same thing in Chinese
@@ -43,7 +46,11 @@ import {
   resolveReference,
 } from '../lib/references.js'
 import { defaultVendorBasePath, parseSkillDocument } from '../lib/skills.js'
-import { fileProductionSignals } from '../lib/write-policy.js'
+import {
+  FILE_PRODUCING_MIN_DRAFTING_VERBS,
+  FILE_PRODUCING_MIN_WRITING_VERBS,
+  fileProductionSignals,
+} from '../lib/write-policy.js'
 import { CLAIM_KINDS, claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -100,7 +107,12 @@ async function measureSharedScope() {
 
 /** The measurement a claim is about, taken from live code. */
 async function measure(claim) {
-  if (claim.kind === 'file-production') return measureFileProduction(claim.skill)
+  if (claim.kind === 'file-production' || claim.kind === 'verb-margin') return measureFileProduction(claim.skill)
+  if (claim.kind === 'drafting-floors') {
+    // The thresholds ARE numbers the documents print, so they are measured against the
+    // constants the detector uses, never against literals typed into this file.
+    return { writingFloor: FILE_PRODUCING_MIN_WRITING_VERBS, draftingFloor: FILE_PRODUCING_MIN_DRAFTING_VERBS }
+  }
   if (claim.kind === 'repository-bytes') return measureRepositoryBytes(claim.skill)
   return measureSharedScope()
 }
@@ -117,7 +129,7 @@ async function collectClaims(log) {
     }
     for (const claim of found) {
       log('# ' + doc + ':' + String(claim.line) + ' [' + claim.language + '] claims ' + claim.kind + ' '
-        + (claim.skill ?? 'shared-scope') + ' = ' + JSON.stringify(claim.quote).slice(0, 96))
+        + (claim.skill ?? claim.kind) + ' = ' + JSON.stringify(claim.quote).slice(0, 96))
     }
     claims.push(...found)
   }
@@ -136,7 +148,7 @@ test('every number the docs quote, in any language, equals what the code measure
     const drift = claimDrift(claim, measured)
     assert.equal(drift, undefined, drift ?? '')
     console.log('# ' + claim.doc + ':' + String(claim.line) + ' [' + claim.language + '] agrees: '
-      + claim.kind + ' ' + (claim.skill ?? 'shared-scope') + ' = ' + JSON.stringify(measured))
+      + claim.kind + ' ' + (claim.skill ?? claim.kind) + ' = ' + JSON.stringify(measured))
   }
 
   // A Chinese document must be read as Chinese. If the clauses were English-only,
@@ -203,7 +215,7 @@ test('the parser reads both languages and is not a rubber stamp in either', asyn
   assert.equal(scopeChinese.language, 'Chinese')
   assert.deepEqual([scopeChinese.distinct, scopeChinese.sites], [11, 16])
 
-  // A document that quotes none of the three kinds is not a claim and must not
+  // A document that quotes none of the kinds is not a claim and must not
   // fail: this is the skip path, exercised here so it cannot rot.
   assert.deepEqual(quotedClaims('It is the only vendored skill that writes files into the workspace.', 'README.md'), [])
   assert.deepEqual(quotedClaims('它是唯一会写文件的技能。', 'README.zh-CN.md'), [])
@@ -214,7 +226,8 @@ const BILINGUAL = { 'README.md': 'English', 'README.zh-CN.md': 'Chinese' }
 
 /** The numbers one claim asserts, as plain data: what the two languages must share. */
 function numbersOf(claim) {
-  if (claim.kind === 'file-production') return { writingVerbs: claim.writingVerbs, draftingVerbs: claim.draftingVerbs }
+  if (claim.kind === 'file-production' || claim.kind === 'verb-margin') return { writingVerbs: claim.writingVerbs, draftingVerbs: claim.draftingVerbs }
+  if (claim.kind === 'drafting-floors') return { writingFloor: claim.writingFloor, draftingFloor: claim.draftingFloor }
   if (claim.kind === 'repository-bytes') return { bytes: claim.bytes }
   return { distinct: claim.distinct, sites: claim.sites }
 }
@@ -227,12 +240,17 @@ function projection(claim) {
 /** A claim as prose, for a message that has to name what each side said. */
 function describeClaim(claim) {
   const where = claim.doc + ':' + String(claim.line) + ' (' + claim.language + ')'
-  const subject = claim.kind === 'shared-scope' ? 'the shared/ scope' : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
-  const numbers = claim.kind === 'file-production'
+  const subject = claim.kind === 'shared-scope'
+    ? 'the shared/ scope'
+    : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
+      : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+  const numbers = claim.kind === 'file-production' || claim.kind === 'verb-margin'
     ? claim.writingVerbs + '/' + claim.draftingVerbs + ' (writing/drafting)'
-    : claim.kind === 'repository-bytes'
-      ? claim.bytes + ' repository bytes'
-      : claim.distinct + ' distinct references over ' + claim.sites + ' reference sites'
+    : claim.kind === 'drafting-floors'
+      ? claim.writingFloor + ' writing / ' + claim.draftingFloor + ' drafting'
+      : claim.kind === 'repository-bytes'
+        ? claim.bytes + ' repository bytes'
+        : claim.distinct + ' distinct references over ' + claim.sites + ' reference sites'
   return where + ' says ' + subject + ' is ' + numbers
 }
 
@@ -430,4 +448,135 @@ test('a number quoted about the fourth skill is measured against the fourth skil
     'the two producers must not measure the same, or this test would pass for the wrong reason')
   console.log('# the two producers differ as measured: academic-paper ' + paper.writingVerbs + '/' + paper.draftingVerbs
     + ' versus sr-screener ' + screener.writingVerbs + '/' + screener.draftingVerbs)
+})
+
+/**
+ * The four documents that quote academic-pipeline's verb counts. Every one of them said it in
+ * prose before this test existed, and none of them was checked: the counts are printed by the
+ * suite every run and stored nowhere in code, deliberately, so the one number the code refuses
+ * to store was the only number nothing verified - four places, four ways to drift.
+ */
+const PIPELINE_VERB_DOCS = ['README.md', 'README.zh-CN.md', join('docs', 'PORT_SPEC.md'), 'CHANGELOG.md']
+
+/** Documents that print the thresholds themselves next to those counts. */
+const FLOOR_DOCS = ['README.md', 'README.zh-CN.md', join('docs', 'PORT_SPEC.md')]
+
+/** Escape a document name for use inside a regular expression. */
+function literal(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+/**
+ * One document with its quoted count rewritten, by offset rather than by searching for the
+ * quote: the quote is whitespace-collapsed for messages and need not appear in the raw text.
+ * Returns the text and the claim the doctor found, so a silent no-op cannot pass as a proof.
+ */
+function doctorQuotedNumber(text, doc, kind, skill, from, to) {
+  const claim = quotedClaims(text, doc)
+    .find(found => found.kind === kind && (found.skill ?? null) === skill)
+  assert.ok(claim !== undefined, doc + ' quotes no ' + kind + ' claim to doctor - the fixture is stale')
+  const raw = text.slice(claim.index, claim.index + claim.length)
+  const rewritten = raw.replace(String(from), String(to))
+  assert.notEqual(rewritten, raw, 'the ' + kind + ' claim in ' + doc + ' carries no ' + String(from)
+    + ' to rewrite - the fixture is stale, not the pinner')
+  return { text: text.slice(0, claim.index) + rewritten + text.slice(claim.index + claim.length), claim: { ...claim, index: claim.index } }
+}
+
+test('the pipeline\'s verb counts are pinned in all four documents, and the pin bites in each', async (t) => {
+  const measured = await measureFileProduction('academic-pipeline')
+  const floors = {
+    writingFloor: FILE_PRODUCING_MIN_WRITING_VERBS,
+    draftingFloor: FILE_PRODUCING_MIN_DRAFTING_VERBS,
+  }
+  t.diagnostic('academic-pipeline measures ' + String(measured.writingVerbs) + ' writing / '
+    + String(measured.draftingVerbs) + ' drafting against floors of ' + String(floors.writingFloor)
+    + ' / ' + String(floors.draftingFloor))
+
+  // The sentences also claim POSITION, not just counts: 'a near miss on both thresholds',
+  // 'both under the thresholds', '对两条起草阈值都是擦边未过'. That claim is true only while the
+  // measured counts sit below the floors, so it is asserted here rather than read out of the
+  // prose - if the pipeline ever clears a threshold, its recorded basis is dead and the
+  // documents that call it a near miss are wrong.
+  assert.ok(measured.writingVerbs < floors.writingFloor,
+    'the documents call this a near miss on writing verbs, but the body measures '
+    + String(measured.writingVerbs) + ' against a floor of ' + String(floors.writingFloor))
+  assert.ok(measured.draftingVerbs < floors.draftingFloor,
+    'the documents call this a near miss on drafting verbs, but the body measures '
+    + String(measured.draftingVerbs) + ' against a floor of ' + String(floors.draftingFloor))
+
+  const quoting = []
+  for (const doc of PIPELINE_VERB_DOCS) {
+    const text = await readFile(join(repoRoot, doc), 'utf8')
+    const claims = quotedClaims(text, doc).filter(claim => claim.kind === 'verb-margin')
+    assert.equal(claims.length, 1, doc + ' must quote the pipeline\'s counts exactly once, as\n'
+      + '  "39 writing verbs / 18 drafting verbs" (or its Chinese equivalent), because that shape\n'
+      + '  is what makes them checkable. Found ' + String(claims.length) + ': '
+      + JSON.stringify(claims.map(claim => claim.quote)))
+    const [claim] = claims
+    // Attribution is half the check: a claim about the pipeline measured against the reviewer
+    // would pass on numbers that were never about it.
+    assert.equal(claim.skill, 'academic-pipeline',
+      doc + ':' + String(claim.line) + ' quotes counts but names no skill in its own sentence; '
+      + 'it was attributed to ' + String(claim.skill ?? 'nothing'))
+    assert.equal(claimDrift(claim, measured), undefined, 'the quoted counts must equal what the body measures')
+    quoting.push({ doc, text, claim })
+    console.log('# ' + describeClaim(claim) + ' -> measured ' + String(measured.writingVerbs)
+      + '/' + String(measured.draftingVerbs))
+  }
+  assert.equal(quoting.length, PIPELINE_VERB_DOCS.length, 'all four documents must be pinned')
+
+  // THE THRESHOLDS, where a document prints them. CHANGELOG.md says 'under both thresholds'
+  // without numbers, so it contributes nothing here; the other three print 40 and 20 and are
+  // measured against the constants.
+  for (const doc of FLOOR_DOCS) {
+    const text = await readFile(join(repoRoot, doc), 'utf8')
+    const claims = quotedClaims(text, doc).filter(claim => claim.kind === 'drafting-floors')
+    assert.ok(claims.length > 0, doc + ' prints the drafting thresholds, so the parser must see them as claims')
+    for (const claim of claims) {
+      assert.equal(claimDrift(claim, floors), undefined, doc + ':' + String(claim.line)
+        + ' quotes the thresholds; they must equal the constants the detector uses')
+    }
+    console.log('# ' + doc + ': ' + String(claims.length) + ' threshold claim(s), all equal to '
+      + String(floors.writingFloor) + ' / ' + String(floors.draftingFloor))
+  }
+
+  // THE MUTATION, one document at a time, four for four: nudging the quoted writing count by one
+  // must fail in every one of them and name the file and both numbers. This is the gate's proof
+  // inverted - it nudged 39 -> 38 and the suite stayed green.
+  const failures = []
+  for (const { doc, text, claim } of quoting) {
+    const doctored = doctorQuotedNumber(text, doc, 'verb-margin', 'academic-pipeline',
+      claim.writingVerbs, claim.writingVerbs - 1)
+    const after = quotedClaims(doctored.text, doc).find(found => found.kind === 'verb-margin')
+    assert.ok(after !== undefined, 'the doctored copy of ' + doc + ' must still yield the claim')
+    assert.equal(after.writingVerbs, claim.writingVerbs - 1,
+      'the nudge did not take effect in ' + doc + ': the claim reads ' + String(after.writingVerbs))
+    const drift = claimDrift(after, measured)
+    assert.ok(drift !== undefined, doc + ': a one-verb nudge must FAIL, and this one passed - the pin does not bite')
+    assert.match(drift, new RegExp(literal(doc) + ':' + String(after.line), 'u'),
+      'the failure must name the document and line: ' + drift)
+    assert.match(drift, new RegExp(String(claim.writingVerbs - 1) + '/' + String(claim.draftingVerbs), 'u'),
+      'the failure must name the number the document quotes: ' + drift)
+    assert.match(drift, new RegExp(String(measured.writingVerbs) + '/' + String(measured.draftingVerbs), 'u'),
+      'the failure must name the number the code measures: ' + drift)
+    failures.push(doc)
+    console.log('# mutation: ' + doc + ' ' + String(claim.writingVerbs) + ' -> ' + String(claim.writingVerbs - 1)
+      + ' fails with: ' + drift)
+  }
+  assert.deepEqual(failures.sort(), [...PIPELINE_VERB_DOCS].sort(), 'four for four: every document must fail when nudged')
+
+  // ...and the thresholds bite too: one nudge of the floor, in each document that prints it.
+  for (const doc of FLOOR_DOCS) {
+    const text = await readFile(join(repoRoot, doc), 'utf8')
+    const doctored = doctorQuotedNumber(text, doc, 'drafting-floors', null,
+      floors.writingFloor, floors.writingFloor + 1)
+    const after = quotedClaims(doctored.text, doc).find(found => found.kind === 'drafting-floors')
+    assert.ok(after !== undefined, 'the doctored copy of ' + doc + ' must still yield a threshold claim')
+    assert.equal(after.writingFloor, floors.writingFloor + 1, 'the floor nudge did not take effect in ' + doc)
+    const drift = claimDrift(after, floors)
+    assert.ok(drift !== undefined, doc + ': a floor nudged by one must fail, and this one passed')
+    assert.match(drift, /FILE_PRODUCING_MIN_WRITING_VERBS/u, 'the failure must name the constant: ' + drift)
+    console.log('# mutation: ' + doc + ' floor ' + String(floors.writingFloor) + ' -> '
+      + String(floors.writingFloor + 1) + ' fails with: ' + drift)
+  }
 })
