@@ -52,7 +52,7 @@ import {
   FILE_PRODUCING_MIN_WRITING_VERBS,
   fileProductionSignals,
 } from '../lib/write-policy.js'
-import { CLAIM_KINDS, UNPINNABLE_KINDS, claimDrift, quotedClaims } from './doc-quoted-numbers.mjs'
+import { CLAIM_KINDS, UNPINNABLE_KINDS, claimDrift, historyVersionAt, quotedClaims } from './doc-quoted-numbers.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorBasePath = defaultVendorBasePath()
@@ -115,7 +115,57 @@ async function measure(claim) {
     return { writingFloor: FILE_PRODUCING_MIN_WRITING_VERBS, draftingFloor: FILE_PRODUCING_MIN_DRAFTING_VERBS }
   }
   if (claim.kind === 'repository-bytes') return measureRepositoryBytes(claim.skill)
+  if (claim.kind === 'payload-composition') return measurePayloadComposition()
   return measureSharedScope()
+}
+
+/**
+ * THE PAYLOAD COMPOSITION, COUNTED FROM THE PINNED FILE LIST (t73).
+ *
+ * vendor-manifest.json is the measurement: every vendored file is in it with its hash, verify:vendor
+ * proves the tree and the manifest agree, and the payload is the non-Markdown half of it. Nothing
+ * here is a stored count - a number typed into this file would be the very defect the claim is
+ * about. The suffix is taken from the last dot of the basename, with a leading dot counting as a
+ * suffix so that '.gitkeep' reads as its own extension: that is how the documents write it, and it
+ * keeps the empty placeholder VISIBLE as payload of a kind rather than as "no extension".
+ *
+ * Markdown means '.md', which is what the reference walk reads. An '.mdx' or '.markdown' file would
+ * therefore arrive as a new extension and fail the sentence - deliberately, so that the question
+ * "is this file a document or payload?" is asked out loud instead of being classified by a regex.
+ */
+let payloadCompositionCache
+
+/** The composition of one manifest. Pure data in, pure data out, so a mutation can doctor a copy. */
+function compositionOfManifest(manifest) {
+  const paths = Object.keys(manifest.files ?? {})
+  assert.ok(paths.length > 0, 'vendor-manifest.json must list the vendored files, or this measurement measures nothing')
+  const byExtension = {}
+  let total = 0
+  for (const path of paths) {
+    const suffix = extensionOf(path)
+    if (suffix === 'md') continue
+    byExtension[suffix] = (byExtension[suffix] ?? 0) + 1
+    total += 1
+  }
+  const summed = Object.values(byExtension).reduce((sum, count) => sum + count, 0)
+  assert.equal(summed, total, 'the composition must add up before it is compared with anything: '
+    + String(summed) + ' suffix counts against a total of ' + String(total))
+  return { total, byExtension }
+}
+
+async function measurePayloadComposition() {
+  if (payloadCompositionCache !== undefined) return payloadCompositionCache
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  payloadCompositionCache = compositionOfManifest(manifest)
+  return payloadCompositionCache
+}
+
+/** The suffix of a path, counting a leading dot as a suffix: '.gitkeep' -gt 'gitkeep'. */
+function extensionOf(path) {
+  const base = String(path).split('/').pop() ?? String(path)
+  if (base.startsWith('.') && base.indexOf('.', 1) === -1) return base.slice(1).toLowerCase()
+  const at = base.lastIndexOf('.')
+  return at <= 0 ? '' : base.slice(at + 1).toLowerCase()
 }
 
 /** Every claim the documents make, with per-document skip diagnostics. */
@@ -136,11 +186,28 @@ async function collectClaims(log) {
       log('# ' + doc + ' quotes no measurement this test knows; nothing to pin there')
       continue
     }
+    // A claim inside a section headed by an OLDER release is a record of that release, not a claim
+    // about this one - the stance the changelog has always had, now stated for any document (the
+    // READMEs' Upgrade chapter reproduces older counts). Printed with the version that makes it
+    // history, so a skip is never silent, and left out of the sweep so the record is not "corrected".
+    const current = []
     for (const claim of found) {
+      const historical = historyVersionAt(text, claim.line, QUOTER_SCAN.version)
+      if (historical !== undefined) {
+        log('# ' + doc + ':' + String(claim.line) + ' ' + claim.kind + ' is HISTORY: '
+          + JSON.stringify(historical.heading) + ' records the ' + historical.version + ' release, and a'
+          + ' number in a record of a state that has passed is not corrected')
+        continue
+      }
+      current.push(claim)
       log('# ' + doc + ':' + String(claim.line) + ' [' + claim.language + '] claims ' + claim.kind + ' '
         + (claim.skill ?? claim.kind) + ' = ' + JSON.stringify(claim.quote).slice(0, 96))
     }
-    claims.push(...found)
+    if (current.length === 0) {
+      log('# ' + doc + ' quotes nothing outside an older release\'s section; nothing to pin there')
+      continue
+    }
+    claims.push(...current)
   }
   return claims
 }
@@ -267,6 +334,7 @@ function numbersOf(claim) {
   if (claim.kind === 'drafting-floors') return { writingFloor: claim.writingFloor, draftingFloor: claim.draftingFloor }
   if (claim.kind === 'repository-bytes') return { bytes: claim.bytes }
   if (claim.kind === 'walk-figures') return { count: claim.count, subject: claim.subject }
+  if (claim.kind === 'payload-composition') return { total: claim.total, byExtension: claim.byExtension ?? {} }
   return { distinct: claim.distinct, sites: claim.sites }
 }
 
@@ -281,11 +349,14 @@ function describeClaim(claim) {
   const subject = claim.kind === 'shared-scope'
     ? 'the shared/ scope'
     : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
-      : claim.kind === 'walk-figures' ? 'the walk\'s count of ' + claim.subject
+      : claim.kind === 'payload-composition' ? 'the payload composition'
+        : claim.kind === 'walk-figures' ? 'the walk\'s count of ' + claim.subject
         : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
   const numbers = claim.kind === 'walk-figures'
     ? claim.count + ' (' + claim.subject + ')'
-    : claim.kind === 'file-production' || claim.kind === 'verb-margin'
+    : claim.kind === 'payload-composition'
+      ? claim.total + ' non-Markdown files (' + Object.entries(claim.byExtension ?? {}).sort().map(([key, value]) => key + ' ' + String(value)).join(', ') + ')'
+      : claim.kind === 'file-production' || claim.kind === 'verb-margin'
       ? claim.writingVerbs + '/' + claim.draftingVerbs + ' (writing/drafting)'
       : claim.kind === 'drafting-floors'
       ? claim.writingFloor + ' writing / ' + claim.draftingFloor + ' drafting'
@@ -308,7 +379,13 @@ test('the English and Chinese READMEs tell the same story, or the disagreement i
   // Retiring a number from both READMEs therefore needs no edit here.
   const claimsByDoc = {}
   for (const doc of Object.keys(BILINGUAL)) {
-    claimsByDoc[doc] = quotedClaims(await readFile(join(repoRoot, doc), 'utf8'), doc)
+    const pairText = await readFile(join(repoRoot, doc), 'utf8')
+    // Only present-tense claims: a section headed by an OLDER release is a record, and the two
+    // languages are allowed to have written different records over time (the English Upgrade chapter
+    // carries one more historical composition than the Chinese one). Without this filter the pair
+    // would be compared over history, and the honest fix for a mismatch would be to rewrite history.
+    claimsByDoc[doc] = quotedClaims(pairText, doc)
+      .filter(claim => historyVersionAt(pairText, claim.line, QUOTER_SCAN.version) === undefined)
     // A document written in Chinese must be read by the Chinese clauses. If it were
     // read by an English-only pass it would look exactly like a document that had
     // stopped quoting numbers, and the pair could disagree with impunity.
@@ -799,6 +876,8 @@ function claimShape(claim) {
   const numbers = claim.kind === 'drafting-floors'
     ? claim.writingFloor + ' / ' + claim.draftingFloor
     : claim.kind === 'walk-figures' ? claim.count + ' (' + claim.subject + ')'
+      : claim.kind === 'payload-composition'
+        ? claim.total + ' (' + Object.entries(claim.byExtension ?? {}).sort().map(([key, value]) => key + ' ' + String(value)).join(', ') + ')'
       : claim.kind === 'repository-bytes'
       ? claim.bytes + ' bytes'
       : claim.kind === 'shared-scope'
@@ -893,8 +972,22 @@ async function scanQuoters(root, { live, record, version, exemptions = CLAIM_EXE
       if (marker !== null) {
         unpinned.push(path + ' is pinned against a live measurement, so it must not exempt itself'
           + ' (' + JSON.stringify(marker[1]) + ')')
-      } else {
-        known.push(path + ' (live: every claim is compared by the tests above)')
+        continue
+      }
+      // A live document can still hold a RECORD of an older release - the READMEs' Upgrade chapter
+      // does - and the sweep above skips those claims by section. The scan has to say the same thing:
+      // a live document whose claim is inside a section headed by an older release is history, and
+      // saying "every claim is compared" over it would claim a pin that does not exist.
+      for (const claim of remaining) {
+        const historical = historyVersionAt(text, claim.line, version)
+        if (historical !== undefined) {
+          history.push(path + ':' + String(claim.line) + ' ' + claimShape(claim) + ' is HISTORY: '
+            + JSON.stringify(historical.heading) + ' records the ' + historical.version + ' release, and a'
+            + ' number in a record of a state that has passed is not corrected')
+        } else {
+          known.push(path + ':' + String(claim.line) + ' ' + claimShape(claim)
+            + ' (live: compared by the tests above)')
+        }
       }
       continue
     }
@@ -1459,3 +1552,148 @@ test('the walk\'s five numbers cannot come back as prose: a figure is refused wi
     + String(tree.figures.found - tree.figures.history - tree.figures.allowed) + ' refused; 0 refused is'
     + ' the pass, and 0 in the READMEs above is the decision holding')
 })
+
+/* ---------------------------------------------------------------------------------------------
+ * THE PAYLOAD COMPOSITION IS PINNED, NOT RETIRED (t73).
+ *
+ * '**120** non-Markdown files in all (`.json` 109, `.py` 6, ...)' is the sixth phrasing of the
+ * walk's payload count, and when the gate changed 120 to 121 the suite stayed green while '120
+ * payload files' in the same file failed. The five walk figures were retired because nothing could
+ * pin them; THIS one is different, and the difference is the whole point: vendor-manifest.json
+ * lists every vendored file with its hash, verify:vendor proves the tree and the manifest agree,
+ * and the payload is the non-Markdown half of that list. So the total and each suffix are
+ * arithmetic over a pinned certificate, and the SET of suffixes can be compared with the set the
+ * sentence names - which is what a future .toml or .csv has to survive.
+ *
+ * Nothing below is a stored count. The measurement is recomputed from the manifest on every run,
+ * and the mutations doctor COPIES of the sentence and of the manifest rather than the real ones.
+ * ------------------------------------------------------------------------------------------- */
+
+test('the payload composition is pinned to the manifest: the total, every suffix, and the set of suffixes', async (t) => {
+  const measured = await measurePayloadComposition()
+  const suffixes = Object.keys(measured.byExtension).sort()
+  const render = (composition) => Object.entries(composition.byExtension).sort()
+    .map(([suffix, count]) => suffix + ' ' + String(count)).join(', ')
+  assert.ok(suffixes.length >= 2, 'the payload must have a composition worth pinning, saw: '
+    + JSON.stringify(measured))
+  assert.equal(Object.values(measured.byExtension).reduce((sum, count) => sum + count, 0), measured.total,
+    'the suffixes must add up to the total, or the sentence is being compared with a lie')
+
+  // BOTH LANGUAGES CARRY THE SAME SHAPE, and both are measured - a parity test that compared the
+  // two sentences with each other would pass if both were wrong in the same way.
+  const present = {}
+  for (const doc of Object.keys(BILINGUAL)) {
+    const text = await readFile(join(repoRoot, doc), 'utf8')
+    const claims = quotedClaims(text, doc).filter(claim => claim.kind === 'payload-composition'
+      && historyVersionAt(text, claim.line, QUOTER_SCAN.version) === undefined)
+    assert.ok(claims.length >= 1, doc + ' must quote the payload composition in the present tense at'
+      + ' least once, or this test compares nothing: ' + JSON.stringify(claims.map(claim => claim.line)))
+    present[doc] = { text, claim: claims[0], claims }
+    // EVERY present-tense copy is compared, not just the first: a second restatement is allowed and
+    // must be right, and there is no reason to forbid it - only to measure it.
+    for (const claim of claims) {
+      const drift = claimDrift(claim, measured)
+      assert.equal(drift, undefined, drift ?? '')
+      t.diagnostic(doc + ':' + String(claim.line) + ' ' + describeClaim(claim))
+    }
+  }
+  console.log('# payload composition: ' + String(suffixes.length) + ' extensions, '
+    + String(measured.total) + ' files (' + render(measured) + '), all agree with the manifest in'
+    + ' both languages')
+
+  const readme = present['README.md']
+  // Doctor the CLAIM'S OWN SPAN, never a phrase found by searching the document: the same words
+  // appear in the Upgrade chapter as a record, and a string replace would sooner or later hit the
+  // history copy and prove something about the wrong sentence.
+  const doctor = (claim, transform) => {
+    const quote = readme.text.slice(claim.index, claim.index + claim.length)
+    const doctored = transform(quote)
+    assert.notEqual(doctored, quote, 'the fixture must actually change the sentence: ' + JSON.stringify(quote))
+    return readme.text.slice(0, claim.index) + doctored + readme.text.slice(claim.index + claim.length)
+  }
+  const claimOf = (text) => quotedClaims(text, 'README.md', { keepSkillless: true })
+    .filter(claim => claim.kind === 'payload-composition')
+    .find(claim => historyVersionAt(text, claim.line, QUOTER_SCAN.version) === undefined)
+  const driftOf = (text, composition) => claimDrift(claimOf(text), composition ?? measured)
+
+  // 1. THE TOTAL. 120 -> 121, the gate's own mutation, which used to be invisible.
+  const bumped = doctor(readme.claim, quote => quote.replace(String(readme.claim.total), '121'))
+  const totalDrift = driftOf(bumped)
+  assert.notEqual(totalDrift, undefined, 'a wrong total must fail')
+  assert.match(totalDrift, /says the payload composition is 121 non-Markdown files/u)
+  assert.match(totalDrift, /measures 120 non-Markdown files/u)
+  console.log('# mutation (total 120 -> 121): ' + totalDrift.slice(0, 260))
+
+  // 2. ONE SUFFIX. 109 -> 108 with the total untouched: the sum is still what the sentence says,
+  //    so only the per-suffix comparison can catch this.
+  const json = doctor(readme.claim, quote => quote.replace('`.json` 109', '`.json` 108'))
+  const suffixDrift = driftOf(json)
+  assert.notEqual(suffixDrift, undefined, 'a wrong suffix must fail')
+  assert.match(suffixDrift, /json 108/u, 'the failure must name the suffix it read: ' + suffixDrift)
+  assert.match(suffixDrift, /json 109/u, 'and what the manifest says: ' + suffixDrift)
+  console.log('# mutation (json 109 -> 108): ' + suffixDrift.slice(0, 260))
+
+  // 3. A REAL FILE WITH A NEW EXTENSION, which is what a vendored .toml would be. The manifest is
+  //    the measurement, so the mutation is a doctored manifest - and it must fail BOTH ways: the
+  //    suffix set gains something the sentence does not name, and the total moves.
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const withToml = compositionOfManifest({ files: { ...manifest.files, 'academic-paper/templates/new.toml': 'x' } })
+  assert.deepEqual([withToml.total, withToml.byExtension.toml], [measured.total + 1, 1],
+    'the doctored manifest must move the total by one and add the suffix')
+  const tomlDrift = driftOf(readme.text, withToml)
+  assert.notEqual(tomlDrift, undefined, 'a new payload extension must fail')
+  assert.match(tomlDrift, /toml 1/u, 'the failure must name the suffix the sentence omits: ' + tomlDrift)
+  assert.match(tomlDrift, /measures 121 non-Markdown files/u, 'and the total it no longer matches')
+  console.log('# mutation (a vendored .toml): ' + tomlDrift.slice(0, 300))
+
+  // 4. THE OTHER DIRECTION: a suffix the sentence names and the tree does not have. A total that
+  //    still adds up is not enough - the set has to match.
+  const phantom = doctor(readme.claim, quote => quote.replace('`.json` 109', '`.json` 108, `.toml` 1'))
+  const phantomClaim = claimOf(phantom)
+  assert.equal(phantomClaim.total, measured.total, 'this mutation keeps the total honest on purpose')
+  const phantomDrift = driftOf(phantom)
+  assert.notEqual(phantomDrift, undefined, 'a suffix that is not in the tree must fail')
+  assert.match(phantomDrift, /toml 1/u)
+  console.log('# mutation (a suffix the tree does not have): ' + phantomDrift.slice(0, 260))
+
+  // 5. THE STANCE IS PRESENT-TENSE ONLY. The changelog's 0.4.0 record carries an older composition
+  //    (89 files, .json 79) that does NOT match today's tree, and it must stay green - it is a
+  //    record of a state that has passed, not a claim about this one. The 0.5.0 record carries the
+  //    current numbers and is history for the same reason, not because it happens to be right.
+  const scan = await scanQuoters(repoRoot, QUOTER_SCAN)
+  const recordCompositions = scan.history.filter(line => /CHANGELOG\.md:\d+ payload-composition/u.test(line))
+  assert.ok(recordCompositions.length >= 2, 'the changelog holds at least two recorded compositions'
+    + ' (0.5.0 and 0.4.0) and both must be history: ' + JSON.stringify(scan.history))
+  assert.ok(recordCompositions.some(line => /79 \(|\.json 79|json 79/u.test(line)),
+    'the 0.4.0 record with the OLD composition (89 files, json 79) must be the one held as history,'
+    + ' because that is the case a blanket ban would have broken: ' + JSON.stringify(recordCompositions))
+  assert.deepEqual(scan.unpinned.filter(line => /payload-composition/u.test(line)), [],
+    'a composition nobody pins is a hole: ' + JSON.stringify(scan.unpinned))
+  console.log('# record stance (payload composition as history): ' + recordCompositions[0].slice(0, 240))
+
+  // ...and the same sentence in the CURRENT release section is not history: it is an unpinned
+  //    present-tense claim, refused exactly like the other one, so history is a stance about a
+  //    section and never a blanket ban on the shape.
+  const changelogText = await readFile(join(repoRoot, QUOTER_SCAN.record), 'utf8')
+  const withCurrent = insertIntoCurrentRelease(changelogText, QUOTER_SCAN.version,
+    '- The package carries ' + String(measured.total) + ' non-Markdown files ('
+    + suffixes.map(suffix => '`.' + suffix + '` ' + String(measured.byExtension[suffix])).join(', ') + ').')
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-composition-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  await writeFile(join(directory, QUOTER_SCAN.record), withCurrent, 'utf8')
+  const inRelease = await scanQuoters(directory, { ...QUOTER_SCAN })
+  const refused = inRelease.unpinned.filter(line => /payload-composition/u.test(line))
+  assert.equal(refused.length, 1, 'a composition in the current release section must be refused: '
+    + JSON.stringify(inRelease.unpinned))
+  assert.match(refused[0], /PRESENT TENSE/u)
+  console.log('# mutation (composition in the current release section): ' + refused[0].slice(0, 240))
+})
+
+/** Copy of a changelog with one sentence inserted under the heading of the named release. */
+function insertIntoCurrentRelease(text, version, sentence) {
+  const rows = text.split(String.fromCharCode(10))
+  const at = rows.findIndex(row => /^##\s/u.test(row) && row.includes(version))
+  if (at === -1) throw new Error('the changelog has no section for ' + version)
+  rows.splice(at + 1, 0, '', sentence)
+  return rows.join(String.fromCharCode(10))
+}

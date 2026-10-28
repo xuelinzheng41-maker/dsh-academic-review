@@ -320,7 +320,46 @@ const CLAUSES = [
     fields: ['count'],
     attribution: INSTRUMENT_CHINESE,
   },
+  // THE PAYLOAD COMPOSITION (t73): '**120** non-Markdown files in all (.json 109, .py 6, ...)'.
+  // Unlike the walk's five figures this one is CHECKABLE - the manifest lists every vendored file,
+  // so the total and each per-extension count are arithmetic over the pinned file list, and the set
+  // of extensions in the tree can be compared with the set named in the sentence. So it is PINNED:
+  // a total or a suffix that drifts fails, and an extension that appears in the tree without an
+  // entry in the sentence fails too, which is what a future .toml or .csv cannot hide behind.
+  {
+    kind: 'payload-composition',
+    language: 'English',
+    pattern: String.raw`\*{0,2}(\d{1,4})\*{0,2}` + SEPARATOR.English
+      + String.raw`non-markdown` + SEPARATOR.English + String.raw`files?[^()]{0,80}\(([^)]*)\)`,
+    fields: ['total'],
+    parse: (match, claim) => { claim.byExtension = parseComposition(match[2]) },
+  },
+  {
+    kind: 'payload-composition',
+    language: 'Chinese',
+    pattern: String.raw`\*{0,2}(\d{1,4})\*{0,2}` + SEPARATOR.Chinese
+      + String.raw`\u4e2a?\u975e` + SEPARATOR.Chinese + String.raw`Markdown` + SEPARATOR.Chinese
+      + String.raw`\u6587\u4ef6[^\uff08\uff09()]{0,80}[\uff08(]([^\uff09)]*)[\uff09)]`,
+    fields: ['total'],
+    parse: (match, claim) => { claim.byExtension = parseComposition(match[2]) },
+  },
 ]
+
+/**
+ * The per-extension counts inside a composition sentence: '\u0060.json\u0060 109, \u0060.py\u0060 6, ...'.
+ * The separators are the Arabic comma and the ideographic comma, because the two languages write the
+ * list differently; the backticks around each suffix are optional, since prose sometimes drops them.
+ * A suffix is taken from a leading dot so that '.gitkeep' reads as its own extension - which is how
+ * the documents write it, and which is what keeps the empty placeholder visible instead of
+ * classified as "no extension".
+ */
+function parseComposition(text) {
+  const byExtension = {}
+  for (const match of String(text).matchAll(/`?\.([A-Za-z0-9_]+)`?[ \t]*(\d{1,4})/gu)) {
+    byExtension[match[1].toLowerCase()] = Number(match[2])
+  }
+  return byExtension
+}
 
 /**
  * CLAIMS THAT MUST NOT BE PINNED, ONLY KEPT OUT OF PROSE.
@@ -335,7 +374,7 @@ const CLAUSES = [
  * quietly, not even with the value that happens to be right today.
 
 /** The claim kinds this module understands. */
-export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope', 'verb-margin', 'drafting-floors', 'walk-figures']
+export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope', 'verb-margin', 'drafting-floors', 'walk-figures', 'payload-composition']
 
 /**
  * Kinds whose numbers may not appear in prose at all, because no measurement a document could be
@@ -357,7 +396,7 @@ export const CLAIM_KINDS = ['file-production', 'repository-bytes', 'shared-scope
 export const UNPINNABLE_KINDS = new Set(['walk-figures'])
 
 /** Claims that are about the instrument rather than about one skill, so they name none. */
-const NO_SKILL_KINDS = new Set(['shared-scope', 'drafting-floors', 'walk-figures'])
+const NO_SKILL_KINDS = new Set(['shared-scope', 'drafting-floors', 'walk-figures', 'payload-composition'])
 
 /** The doc line a match starts on, 1-based, for the failure message. */
 function lineOf(text, index) {
@@ -452,6 +491,7 @@ export function quotedClaims(text, docName, options = {}) {
         const sentence = sentenceAround(text, match.index)
         if (definition.attribution.test(text.slice(sentence.start, sentence.end)) === false) continue
       }
+      if (definition.parse !== undefined) definition.parse(match, claim)
       if (definition.subject !== undefined) claim.subject = definition.subject
       definition.fields.forEach((field, offset) => {
         claim[field] = field === 'bytes' ? toCount(match[offset + 1]) : Number(match[offset + 1])
@@ -473,6 +513,53 @@ export function quotedClaims(text, docName, options = {}) {
     || (left.skill ?? '').localeCompare(right.skill ?? ''))
 }
 
+/** 'json 109, py 6, tex 1' - a composition the way a failure message needs it. */
+function renderComposition(byExtension) {
+  const entries = Object.entries(byExtension ?? {}).sort((left, right) => left[0].localeCompare(right[0]))
+  return entries.map(([suffix, count]) => suffix + ' ' + String(count)).join(', ')
+}
+
+/** Compare two dotted versions as number tuples. */
+function compareVersions(left, right) {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const one = left[index] ?? 0
+    const other = right[index] ?? 0
+    if (one !== other) return one < other ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * THE SECTION A CLAIM SITS IN, WHEN THAT SECTION IS A RECORD OF A RELEASED STATE (t73).
+ *
+ * The changelog has had this stance from the start: a number inside a release that has passed is
+ * history and is never corrected. The READMEs have the same structure - an 'Upgrade' chapter whose
+ * subsections are headed '0.4.1 -> 0.5.0' - and a number there is a record of that release too.
+ * So the rule is stated once, for any document: the nearest heading above the claim, and if the
+ * newest version it names is OLDER than the version being released, the claim is history.
+ *
+ * This does not soften anything: a claim is skipped only when its own section is headed by an older
+ * release, the skip is printed with the version that makes it history, and a section naming the
+ * current version (or no version at all) is present tense and pinned. What it prevents is the
+ * alternative - refusing the composition claim in the READMEs because an upgrade note reproduces an
+ * older count, which would push the whole family out of the net to avoid one paragraph.
+ */
+export function historyVersionAt(text, line, current) {
+  const rows = String(text).split('\n')
+  let heading
+  for (let index = Math.min(line, rows.length) - 1; index >= 0; index -= 1) {
+    if (/^#{1,4}\s/u.test(rows[index])) { heading = { text: rows[index], line: index + 1 }; break }
+  }
+  if (heading === undefined) return undefined
+  const versions = [...heading.text.matchAll(/(\d+)\.(\d+)\.(\d+)/gu)]
+    .map(match => [Number(match[1]), Number(match[2]), Number(match[3])])
+  if (versions.length === 0) return undefined
+  const newest = versions.reduce((best, candidate) => (compareVersions(candidate, best) > 0 ? candidate : best))
+  const now = String(current).split('.').map(Number)
+  if (compareVersions(newest, now) >= 0) return undefined
+  return { version: newest.join('.'), heading: heading.text.trim() }
+}
+
 /** How a measurement is named in a failure message. */
 const MEASUREMENT_OF = {
   'file-production': (claim) => 'fileProductionSignals(' + claim.skill + ')',
@@ -484,6 +571,7 @@ const MEASUREMENT_OF = {
   // and its arithmetic lives in tests/skill-references.test.mjs, not in a module this net can call.
   // A claim of this kind therefore never agrees - see agrees() - and the message says why.
   'walk-figures': () => 'the reference walk\'s printed line (tests/skill-references.test.mjs), which is not a number a document may hold',
+  'payload-composition': () => 'vendor-manifest.json (markdown plus payload equals the manifest total)',
 }
 
 /** What was measured, rendered for a failure message. */
@@ -493,6 +581,7 @@ function rendered(kind, measured) {
   if (kind === 'drafting-floors') return String(measured.writingFloor) + ' writing / ' + String(measured.draftingFloor) + ' drafting'
   if (kind === 'repository-bytes') return String(measured.bytes) + ' repository bytes'
   if (kind === 'walk-figures') return 'whatever the walk measures on this run'
+  if (kind === 'payload-composition') return String(measured.total) + ' non-Markdown files (' + renderComposition(measured.byExtension) + ')'
   return String(measured.distinct) + ' distinct references over ' + String(measured.sites) + ' reference sites'
 }
 
@@ -503,6 +592,7 @@ function quoted(claim) {
   if (claim.kind === 'drafting-floors') return String(claim.writingFloor) + ' writing / ' + String(claim.draftingFloor) + ' drafting'
   if (claim.kind === 'repository-bytes') return String(claim.bytes) + ' repository bytes'
   if (claim.kind === 'walk-figures') return String(claim.count) + ' (' + String(claim.subject) + ')'
+  if (claim.kind === 'payload-composition') return String(claim.total) + ' non-Markdown files (' + renderComposition(claim.byExtension) + ')'
   return String(claim.distinct) + ' distinct references over ' + String(claim.sites) + ' reference sites'
 }
 
@@ -515,6 +605,15 @@ function agrees(claim, measured) {
   // A figure the suite prints as a floor has no constant to agree with, so it never agrees: the
   // honest answer is "this may not be quoted", not "this happens to be right today".
   if (claim.kind === 'walk-figures') return false
+  if (claim.kind === 'payload-composition') {
+    if (claim.total !== measured.total) return false
+    const theirs = claim.byExtension ?? {}
+    const mine = measured.byExtension ?? {}
+    for (const suffix of new Set([...Object.keys(theirs), ...Object.keys(mine)])) {
+      if (theirs[suffix] !== mine[suffix]) return false
+    }
+    return true
+  }
   return claim.distinct === measured.distinct && claim.sites === measured.sites
 }
 
@@ -531,7 +630,8 @@ export function claimDrift(claim, measured) {
     ? 'the shared/ scope'
     : claim.kind === 'drafting-floors' ? 'the drafting thresholds'
       : claim.kind === 'walk-figures' ? 'the walk\'s count of ' + String(claim.subject)
-        : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
+        : claim.kind === 'payload-composition' ? 'the payload composition'
+          : claim.kind === 'repository-bytes' ? 'SKILL.md of ' + claim.skill : claim.skill
   return where + ' says ' + subject + ' is ' + quoted(claim)
     + ', but ' + MEASUREMENT_OF[claim.kind](claim) + ' measures ' + rendered(claim.kind, measured)
     + ' - update the document to the measured numbers, in every language'
