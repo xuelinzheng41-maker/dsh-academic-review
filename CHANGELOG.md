@@ -8,6 +8,90 @@ The plugin is licensed **CC BY-NC 4.0** (see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); version numbers here never
 imply a change of license.
 
+## [0.5.0] - 2026-10-28
+
+The fifth and last served skill, and a payload that shrank because a problem went
+away. **No tool, route or state schema changed**: the five tools, their arguments,
+the review-state schema, the panel routes and both slash commands are identical to
+0.4.1, and existing `.academic-review/` directories keep loading.
+
+### Added — `academic-pipeline` (upstream 3.23.2, SKILL.md last_updated 2026-10-24)
+
+- **30 files** (SKILL.md, 5 agents, 20 references, 1 template, 3 examples), served
+  prompt-only: no tool, no state, no GUI, no slash command. An **orchestrator** — it
+  detects stages, recommends modes, dispatches `deep-research` / `academic-paper` /
+  `academic-paper-reviewer` and tracks state; it does not write the paper itself.
+- **A third write-record instrument, `orchestration-closure`**: a stage table gives a
+  served producer a slot, so a skill that writes nothing dispatches the skill that
+  does. `writePolicyBasis` now sits on three of the five skills (paper
+  `prose-drafting`, sr-screener `bundled-script`, pipeline
+  `orchestration-closure`), and on the reviewer and `deep-research` the key is
+  **absent rather than null** — one basis per skill, naming the instrument that
+  fired, never a summary of the skill. The pipeline's own verb counts (39 writing / 18
+  drafting, both under the thresholds) are printed by the suite every run and stored
+  nowhere, which is the point: a near miss is not an instrument.
+
+### Changed — the payloads, and one of them got smaller
+
+- `academic-paper` **65,113 → 64,541** (−572) and `deep-research` **52,316 → 51,753**
+  (−563): both used to carry a port notice for
+  `academic-pipeline/references/literature_corpus_consumers.md`, a file that existed
+  only in a skill this port did not vendor. The fifth tree supplies it, so the
+  notices are gone and the payloads shrank by exactly the text each no longer needs.
+  That is an improvement recorded with its cause, not a shrinking number.
+- `academic-pipeline` is the **only** skill served with a port notice today: **853
+  bytes**, four dangling targets (`docs/PERFORMANCE.md`, two `docs/design/` specs,
+  `scripts/adapters/`). The reviewer (47,984) and `sr-screener` (33,212) are
+  unchanged; five payloads total **257,424 bytes**, of which 3,420 are the 684-byte
+  write-policy block, five times over.
+- Distinct dangling targets across the port: **11 → 9**, all under `docs/`,
+  `examples/` or `scripts/`, none in port. The shared scope specifically went
+  **11 distinct references over 16 sites → 7 over 9** (5 `docs/design/`, 1
+  `examples/`, 1 `scripts/adapters/`, 0 `academic-pipeline/`), and the movement is
+  recorded with its cause: it has gone 14 → 11 → 7 because each later tree resolved
+  references an earlier one left dangling.
+
+### Vendoring — 342 files
+
+- **199 skill files** (28 + 53 + 63 + 25 + 30) + **143 shared** = 342 (was 279).
+- The registry-receipt rule now supplies **nothing extra** (`byScan: 143`,
+  `byRegistryReceipt: 0`): `shared/contracts/README.md`, new with the pipeline tree,
+  names `shared/review_criteria_sources/`, so the path scan reaches both criteria
+  receipts. The rule is still tested with that one mention blanked, and must then
+  supply exactly those two files.
+- **120 non-Markdown files** (`.json` 109, `.py` 6, `.js` 2, `.tex` 1, `.yaml` 1,
+  `.gitkeep` 1). The last is an empty placeholder in the pipeline tree — the case
+  that keeps "non-Markdown" from meaning "code", and "payload" from meaning "text".
+
+### The honest edge, recorded in the docs rather than left to be discovered
+
+`academic-pipeline`'s integrity stages call **47 upstream scripts** (36 named directly,
+11 imported), **1,806,561 bytes** between them, whose third-party imports include
+`jsonschema`, `yaml`, `pypdf` and `defusedxml`. **This port vendors none of them**,
+deliberately: shipping 1.8 MB of Python the plugin never executes, cannot audit and
+cannot test would be worse than not shipping it. The upstream `scripts/` directory is
+642 files and stays out. Consequence, stated plainly in both languages: every stage
+that depends on those checks **fails rather than pretends**, and the host must supply
+the upstream repository and a Python 3 environment with those packages for those
+stages to run at all. This is a stronger statement than `sr-screener`'s, whose six
+scripts ship inside its own tree — there, the plugin can say "they are here and I
+never run them"; here there is nothing to run.
+
+### The structural lesson
+
+The reachable unit is not the skill, it is the **reference closure**. One new shared
+file, `shared/contracts/README.md`, pulled 23 files into view that no skill names.
+And vendoring a tree closed dangling references *inside `shared/` files that no skill
+owns*: four references this port used to report as missing resolved when the pipeline
+arrived, and three of those four are named only from `shared/`.
+
+### Docs
+
+`README.md` and `README.zh-CN.md` now describe five skills, the five payloads and the
+two notices that disappeared; `docs/PORT_SPEC.md` gains §1.7 for the unshipped
+scripts; `docs/UPSTREAM_INVENTORY.md` carries byte rows for the pipeline tree;
+`THIRD_PARTY_NOTICES.md` attributes the fifth tree and the 342-file vendored set.
+
 ## [0.4.1] - 2026-10-28
 
 A hardening release. **No tool, route, state schema or served payload changed**: the

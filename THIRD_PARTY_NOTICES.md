@@ -1,7 +1,7 @@
 # THIRD-PARTY NOTICES — dsh-academic-review
 
 This project, `dsh-academic-review`, is an **unofficial DSH port** of **Academic
-Research Skills (ARS)**. It serves four of that repository's skills, each vendored
+Research Skills (ARS)**. It serves five of that repository's skills, each vendored
 unmodified. It is not affiliated with, sponsored by, or endorsed by the upstream
 author or project.
 
@@ -18,7 +18,7 @@ author or project.
   (CC BY-NC 4.0) — https://creativecommons.org/licenses/by-nc/4.0/ —
   **Copyright (c) 2026 Cheng-I Wu**, as stated in the upstream `LICENSE`.
 
-### The four vendored skills, with the version each declares for itself
+### The five vendored skills, with the version each declares for itself
 
 These versions are read from each tree's **own** frontmatter
 (`vendor/<skill>/SKILL.md`, `metadata.version` and `metadata.last_updated`). They
@@ -31,14 +31,15 @@ the upstream's numbers and are not harmonised here.
 | `deep-research` | 2.12.1 | 2026-08-15 | 53 |
 | `academic-paper` | 3.3.1 | 2026-08-15 | 63 |
 | `sr-screener` | 1.0.0 | 2026-09-29 | 25 |
+| `academic-pipeline` | 3.23.2 | 2026-10-24 | 30 |
 
 **No vendored tree carries a per-skill licence or author field that could differ
-from the repository licence.** All four frontmatters were read to check: their only
+from the repository licence.** All five frontmatters were read to check: their only
 keys are `name`, `description`, and a `metadata` block holding `version`,
 `last_updated`, `status`, `data_access_level`, `task_type` and `related_skills`.
 No `license`, `licence`, `copyright` or `author` key exists in any of them, and no
 skill directory contains a `LICENSE` file of its own. The repository licence above
-therefore governs all four uniformly, and nothing overrides it.
+therefore governs all five uniformly, and nothing overrides it.
 
 ## Preferred citation (surfaced from upstream `CITATION.cff`, not paraphrased)
 
@@ -60,7 +61,7 @@ resolves to the latest, so it identifies the work rather than the commit this po
 pins. For material reproduced here, cite the software as above and name the commit
 `1ec249df98728682dfbbdfb940a658338bfd6f80`.
 
-## Vendored upstream content — 279 files
+## Vendored upstream content — 342 files
 
 Every file listed below was copied **unmodified** from the pinned commit. Composition
 per tree, counted from `vendor-manifest.json`:
@@ -74,27 +75,32 @@ per tree, counted from `vendor-manifest.json`:
 - `vendor/sr-screener/` — **25 files**: 15 Markdown (SKILL.md, 4 agents, 7
   references, 3 examples) plus 6 Python scripts under `scripts/`, 2 `.js` workflow
   templates and 2 `.json` templates.
-- `vendor/shared/` — **110 files**: 108 reached by scanning the four skill trees'
-  own references (contracts, references, routing core, handoff schemas, mode
-  spectrum, model tiering, provenance and review-target criteria closure), plus **2
-  vendored because a criteria-registry receipt names them** rather than because any
-  vendored Markdown does:
-  `shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json`
-  and `shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json`.
-  The split is recorded deliberately: "every shared file is referenced by some
-  skill" would be a false simplification, and those two files are precisely the
-  counter-example.
+- `vendor/academic-pipeline/` — **30 files**: 29 Markdown (SKILL.md, 5 agents, 20
+  references, 1 template, 3 examples) plus one **empty** `.gitkeep` placeholder in
+  `references/adapters/`. That placeholder is why the rule here is "Markdown plus
+  payload equals the manifest total" rather than "payload means code".
+- `vendor/shared/` — **143 files**, every one of them reached by scanning the five
+  skill trees' own references (contracts and their directories, references, routing
+  core, handoff schemas, mode spectrum, model tiering, provenance and review-target
+  criteria closure). Two of them used to arrive by a different route: the
+  criteria-registry receipts `shared/review_criteria_sources/msr-2027-technical-papers.2026-08-24.json`
+  and `shared/review_criteria_sources/sigsoft-empirical-standards.2026-08-24.json`
+  were vendored *only* because a registry cites their criterion ids. They are now
+  reached by path, because `shared/contracts/README.md` names them, and the scan
+  records `byScan: 143`, `byRegistryReceipt: 0`. The receipt rule is still tested
+  (blank that one mention and the scan loses exactly those two files, which the rule
+  must then supply); it is simply no longer what vendors them.
 
-Totals: 169 skill files + 110 shared = **279**. Byte identity is enforced by
+Totals: 199 skill files + 143 shared = **342**. Byte identity is enforced by
 `vendor-manifest.json` (per-file SHA-256), `pnpm verify:vendor`, and the test
 suite. A file-by-file inventory with sizes for the reviewer tree is in
 `docs/UPSTREAM_INVENTORY.md`; the port's structural spec is `docs/PORT_SPEC.md`.
 
-## 89 of those files are not Markdown — including executable code
+## 120 of those files are not Markdown — including executable code
 
 A notices file is not only about prose, so the payload is called out explicitly:
-**89 of the 279 vendored files are not Markdown** — `.json` 79, `.py` 6, `.js` 2,
-`.tex` 1, `.yaml` 1.
+**120 of the 342 vendored files are not Markdown** — `.json` 109, `.py` 6, `.js` 2,
+`.tex` 1, `.yaml` 1, `.gitkeep` 1 (an empty placeholder, not text and not code).
 
 - The `.json`/`.yaml` files are contracts, schemas, criteria sources and
   configuration templates.
@@ -111,6 +117,17 @@ has **Python 3.9+** (standard library only; `openpyxl` optional), and then it is
 host's shell that runs them — not this plugin, which ships text and runs no vendored
 program.
 
+**What was deliberately NOT copied is worth stating too**, because a notices file that
+only lists what is present tells half the story. `academic-pipeline`'s integrity
+stages call **47 scripts from the upstream repository's root `scripts/` directory**
+(36 named directly in its own Markdown, 11 more that those import),
+**1,806,561 bytes** between them. **This port vendors none of them**, by decision:
+shipping 1.8 MB of Python that the plugin never executes, cannot audit and cannot test
+would look like a capability the package does not have. The upstream `scripts/`
+directory is 642 files and all of it stays out. The visible consequence is that those
+stages fail rather than pretend, and the host must supply the upstream repository and a
+Python 3 environment with `jsonschema`, `yaml` and `pypdf` for them to run at all.
+
 ## The one thing this plugin adds to the served text
 
 Two statements that sound contradictory and are both true:
@@ -122,7 +139,10 @@ Two statements that sound contradictory and are both true:
    `<!-- dsh-academic-review:write-policy:begin (not upstream text) -->` …
    `<!-- dsh-academic-review:write-policy:end -->`, and, where a skill's own
    instructions name a file this package does not ship, a port notice inside
-   `<!-- dsh-academic-review:port-notice:begin (not upstream text) -->` … end.
+   `<!-- dsh-academic-review:port-notice:begin (not upstream text) -->` … end. Today
+   only `academic-pipeline` carries a port notice (853 bytes, four targets); the two
+   `academic-paper` and `deep-research` used to carry disappeared when the fifth tree
+   resolved the file they named, which is why both of those payloads shrank.
 
 Both are runtime text, marked and delimited as **not upstream text**, and neither is
 written into a vendored file. So "the vendored files are byte-identical to upstream"

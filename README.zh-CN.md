@@ -4,30 +4,33 @@
 
 [![CI](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xuelinzheng41-maker/dsh-academic-review/actions/workflows/ci.yml)
 
-> **范围：** 本移植提供 **四个** ARS 技能 —— `academic-paper-reviewer`、`deep-research`、
-> `academic-paper` 与 `sr-screener`；只有评审人（reviewer）配有工具、评审状态和 GUI 面板。
-> 其余三个都是纯提示词（prompt-only）：`deep-research` 是研究流水线，`academic-paper` 是
-> 写作流水线，`sr-screener` 是筛查流水线 —— 而它的可用性取决于能否在你自己的宿主上运行它
-> 自带的 Python 脚本（`Python 3.9+`；本插件随包提供这些脚本，但从不运行它们）。
-> `academic-pipeline` **不**在本次发布范围内。评审输入仅支持 `.md` / `.tex` / `.txt`：
-> 不做 PDF 解析，也没有 OCR。插件自身的工具与命令永远不会改写你的稿件（见
-> [写入策略 A](#写入策略-a--只写新路径)）；四个随包技能全部把同一条规则作为**指令**前置到
-> 正文之前 —— 每个技能都是同样的 684 字节，无论它是否会写文件。那是指令，不是强制。
+> **范围：** 本移植提供 **五个** ARS 技能 —— `academic-paper-reviewer`、`deep-research`、
+> `academic-paper`、`sr-screener` 与 `academic-pipeline`；只有评审人（reviewer）配有工具、
+> 评审状态和 GUI 面板。其余四个都是纯提示词（prompt-only）：`deep-research` 是研究流水线，
+> `academic-paper` 是写作流水线，`sr-screener` 是筛查流水线 —— 而它的可用性取决于能否在你
+> 自己的宿主上运行它自带的 Python 脚本（`Python 3.9+`；本插件随包提供这些脚本，但从不运行
+> 它们）—— `academic-pipeline` 则是一个调度器，负责分派其余三者，而它的完整性阶段需要本移植
+> 刻意不随附的上游仓库与 Python 3 环境（见
+> [第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)）。评审输入仅支持
+> `.md` / `.tex` / `.txt`：不做 PDF 解析，也没有 OCR。插件自身的工具与命令永远不会改写你的
+> 稿件（见 [写入策略 A](#写入策略-a--只写新路径)）；五个随包技能全部把同一条规则作为**指令**
+> 前置到正文之前 —— 每个技能都是同样的 684 字节，无论它是否会写文件。那是指令，不是强制。
 
 这是 Academic Research Skills（ARS，学术研究技能）中 `academic-paper-reviewer`、
-`deep-research`、`academic-paper` 与 `sr-screener` 四个技能面向 DeepSeek Harness 的
-**非官方 DSH 移植（unofficial DSH port）**。本项目与上游作者及上游项目无任何关联，
+`deep-research`、`academic-paper`、`sr-screener` 与 `academic-pipeline` 五个技能面向
+DeepSeek Harness 的 **非官方 DSH 移植（unofficial DSH port）**。本项目与上游作者及上游项目无任何关联，
 未获其资助，也未获其背书。
 
-本插件通过一个 DSH 技能提供者（skill provider）同时提供四棵随包内置（vendored）的上游技能树。
+本插件通过一个 DSH 技能提供者（skill provider）同时提供五棵随包内置（vendored）的上游技能树。
 只有评审人接入了插件代码：5 席同行评审面板所需的评审状态工具（不可变的逐席报告存储、
 稿件 SHA-256 钉定，以及上游协议要求的两处人工检查点），外加只读面板和两个斜杠命令。
-`deep-research`、`academic-paper` 与 `sr-screener` 则 **原样提供，没有工具、没有状态、
-也没有 GUI**：`deep-research` 运行在宿主自身的 `web_search` / `web_fetch` 与文件工具之上，
-因此其产出质量受这些宿主工具实际能触及的范围限制；`academic-paper` 用同样的宿主文件工具来
-起草，`sr-screener` 则通过宿主的 shell 运行它自带的 Python 来写文件 —— 因此
-[写入策略 A](#写入策略-a--只写新路径) 以文本形式前置到这两者的被提供正文之前，作为模型被告知
-要遵守的规则。
+`deep-research`、`academic-paper`、`sr-screener` 与 `academic-pipeline` 则 **原样提供，
+没有工具、没有状态、也没有 GUI**：`deep-research` 运行在宿主自身的 `web_search` /
+`web_fetch` 与文件工具之上，因此其产出质量受这些宿主工具实际能触及的范围限制；
+`academic-paper` 用同样的宿主文件工具来起草；`sr-screener` 通过宿主的 shell 运行它自带的
+Python 来写文件；`academic-pipeline` 负责编排其余三者 —— 因此
+[写入策略 A](#写入策略-a--只写新路径) 以文本形式前置到五个被提供正文之前，作为模型被告知要
+遵守的规则。
 
 ## 归属与许可
 
@@ -45,14 +48,14 @@
 
 ## 本插件提供什么
 
-### 提供的技能（四个）
+### 提供的技能（五个）
 
-四棵技能树都按钉定的 ARS commit `1ec249df98728682dfbbdfb940a658338bfd6f80` 原样 vendored 到
+五棵技能树都按钉定的 ARS commit `1ec249df98728682dfbbdfb940a658338bfd6f80` 原样 vendored 到
 `vendor/` 下，并保留各自的上游名称。版本列取自每棵 vendored `SKILL.md` frontmatter 中的
 `metadata.version`，在加载时读取 —— 不是插件里写死的数字。
 
-**每一行都带写入策略块，这是有意的。** 684 字节的策略 A 段落被前置到四个被提供正文的每一个
-之前 —— 同一段 684 字节出现四次，不是某些行才有的特性、也不是某些行没有 —— 因为我们无法证明
+**每一行都带写入策略块，这是有意的。** 684 字节的策略 A 段落被前置到五个被提供正文的每一个
+之前 —— 同一段 684 字节出现五次，不是某些行才有的特性、也不是某些行没有 —— 因为我们无法证明
 一个技能永远不会写文件。缺块是代价高昂的错误；多一块则只是让读者多读 684 字节、即两个标记之间
 九行非空规则文本，而不改变任何行为。各行不同的是其余部分：本插件新增了什么，以及该技能需要宿主
 提供什么。
@@ -63,10 +66,12 @@
 | `deep-research` | **2.12.1**（SKILL.md `last_updated` 2026-08-15） | 没有工具、没有状态、没有 GUI、没有斜杠命令；上游正文原样加载，靠会话自己的网页与文件工具查证材料。 | `vendor/deep-research` |
 | `academic-paper` | **3.3.1**（SKILL.md `last_updated` 2026-08-15） | 没有工具、没有状态、没有 GUI、没有斜杠命令。靠会话自己的文件工具起草；`writePolicyBasis: 'prose-drafting'` 记录的是把它实测为文件产出者的那件仪器。 | `vendor/academic-paper` |
 | `sr-screener` | **1.0.0**（SKILL.md `last_updated` 2026-09-29） | **它需要宿主上有 `Python 3.9+`**：筛查靠在宿主上运行它自带的六个脚本完成，而这些脚本本插件只随包提供并钉定，从不运行、从不审计、也不保证存在。没有工具、没有状态、没有 GUI、没有斜杠命令；`writePolicyBasis: 'bundled-script'` 记录把它实测出来的那件仪器。 | `vendor/sr-screener` |
+| `academic-pipeline` | **3.23.2**（SKILL.md `last_updated` 2026-10-24） | **它是调度器，不是写作者**：它识别阶段、推荐模式、分派 `deep-research` / `academic-paper` / `academic-paper-reviewer` 并跟踪状态。没有工具、没有状态、没有 GUI、没有斜杠命令；`writePolicyBasis: 'orchestration-closure'` 记录第三件仪器。**它的完整性阶段需要 47 个本移植不随附的上游脚本** —— 见[第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)。 | `vendor/academic-pipeline` |
 
-随包文件共 **279 个**：技能文件 169 个（28 + 53 + 63 + 25），加上 110 个 shared
-（108 个由路径扫描得到，2 个按 registry receipt 随包，因为没有任何随包 Markdown 提到它们）。
-每一条都由 `vendor-manifest.json` 里的 SHA-256 钉定，并由 `pnpm verify:vendor` 校验。
+随包文件共 **342 个**：技能文件 199 个（28 + 53 + 63 + 25 + 30），加上 143 个 shared ——
+每一个都由路径扫描得到，包括那两份评审标准登记回执：现在由 `shared/contracts/README.md` 点名，
+而不是由回执规则补入。每一条都由 `vendor-manifest.json` 里的 SHA-256 钉定，并由
+`pnpm verify:vendor` 校验。
 
 `deep-research` 是上游的 13 个 agent 的研究流水线，需要网页搜索、页面抓取和文件工具。
 本插件不提供其中任何一个，也不做任何拦截：你的 DSH 宿主已经交给会话的
@@ -87,18 +92,27 @@
 而且这是可测的：`sr-screener` 有 24 个写作动词、3 个起草动词，都低于 40 与 20 这两条阈值，
 所以起草这件仪器对它永远不会触发。
 
-**两个技能是*被实测到的*文件产出者，但用的是两种不同机制。** `academic-paper` 起草文档；
-`sr-screener` 靠运行自己的脚本来写。那是记录，不是闸门：四个被提供的正文都携带同一段 684
-字节的块，`writePolicy: 'new-paths-only'` 与 `writePolicyEnforced: false` 出现在四个技能的
-metadata 里，而 `writePolicyBasis` —— 实测出这个技能的那件仪器 —— 只在这两个上出现。
+`academic-pipeline` 是上游的调度器（30 个文件：它的 `SKILL.md`、5 个 agent、20 个 references、
+1 个 template、3 个 examples —— 而 20 个 references 里有一个是
+`references/adapters/.gitkeep`，一个空占位文件；这一点值得明说，因为正是它让“非 Markdown”
+不等于“代码”）。它**识别阶段、推荐模式、分派其余三个技能并跟踪状态**；它自己不起草论文。它的
+`SKILL.md` 为 59,581 字节，而且是唯一一棵自身 Markdown 点名了本包未随附文件的被提供技能树 ——
+所以它也是唯一带移植提示块被提供的技能。它要什么而拿不到，是
+[第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)的主题。
 
-`.tex` 与十个新载荷文件是同一件事的两次证明。`academic-paper` 的树里有
-`templates/latex_article_template.tex`（4,844 B）—— 它在本移植 vendoring `sr-screener`
-之前的那三棵树里是唯一的非 Markdown 文件，也是本移植第一次随包提供的非 Markdown 载荷；
-`sr-screener` 的树现在自带十个（6 个 `.py`、2 个 `.js`、2 个 `.json`），整个包一共带
-**89 个**非 Markdown 文件（`.json` 79、`.py` 6、`.js` 2、`.tex` 1、`.yaml` 1），
-每一个都从 git 对象库钉定，而不是取自工作区。`.tex` 证明了 vendoring 流程与扩展名无关，
-这十个又证明了一次。
+**三个技能是*被实测到的*文件产出者，但用的是三种不同机制。** `academic-paper` 起草文档；
+`sr-screener` 靠运行自己的脚本来写；`academic-pipeline` 靠分派一个它自己并不包含的产出者来写。
+那是记录，不是闸门：五个被提供的正文都携带同一段 684 字节的块，`writePolicy: 'new-paths-only'`
+与 `writePolicyEnforced: false` 出现在五个技能的 metadata 里，而 `writePolicyBasis` —— 实测出
+这个技能的那件仪器 —— 只在这三个上出现。
+
+`.tex` 与载荷文件是同一件事的四次证明。`academic-paper` 的树里有
+`templates/latex_article_template.tex`（4,844 B）—— 本移植第一次随包提供的非 Markdown 载荷。
+`sr-screener` 的树自带十个（6 个 `.py`、2 个 `.js`、2 个 `.json`），整个包一共带
+**120 个**非 Markdown 文件（`.json` 109、`.py` 6、`.js` 2、`.tex` 1、`.yaml` 1、
+`.gitkeep` 1），每一个都从 git 对象库钉定，而不是取自工作区。`.tex` 证明了 vendoring 流程
+与扩展名无关；这十个又证明了一次；109 个 JSON 文件证明它是一整类载荷而不是例外清单；那个空的
+`.gitkeep` 则证明规则是“Markdown 加载荷等于 manifest 总数”，而不是“载荷就意味着代码”。
 
 它们**没有**得到什么，和它们得到什么一样重要：没有工具、没有评审状态、没有 GUI 面板、
 没有斜杠命令 —— 它们那些模式是自己提示词里的模式，不是本插件的模式。它们**依赖**的是宿主：
@@ -108,25 +122,24 @@ metadata 里，而 `writePolicyBasis` —— 实测出这个技能的那件仪�
 
 ### 本移植未随附的内容 —— 移植提示块
 
-被提供的技能就是上游文本，而上游文本有时会让 agent 去打开一个位于*另一个* ARS 技能里的文件。
-本移植无法随附这些文件，于是明确说出来。当某个技能的**自身**说明指向一个本包并未包含的文件时，
-提供者会在被提供的正文末尾追加一段带标记的块 —— 这只是运行时文本，vendored 文件本身永远不会被修改 ——
-并把完整清单放进 `metadata.unavailableReferences` / `metadata.unavailableReferenceCount`。
-提示块里会告知模型：不要臆造缺失内容。
+被提供的技能就是上游文本，而上游文本有时会让 agent 去打开一个位于*另一个* ARS 技能里、或位于
+上游仓库本身的文件。本移植无法随附这些文件，于是明确说出来。当某个技能的**自身**说明指向一个
+本包并未包含的文件时，提供者会在被提供的正文末尾追加一段带标记的块 —— 这只是运行时文本，
+vendored 文件本身永远不会被修改 —— 并把完整清单放进 `metadata.unavailableReferences` /
+`metadata.unavailableReferenceCount`。提示块里会告知模型：不要臆造缺失内容。
 
-目前共有 **两** 个自身树内的例子（出现在四个技能中的两个里），而且指向同一个文件：
-`deep-research/agents/bibliography_agent.md` 与
-`academic-paper/agents/literature_strategist_agent.md` 都指向
-`academic-pipeline/references/literature_corpus_consumers.md`，而这是本移植未随附的上游技能。
-评审人自身树是干净的，`sr-screener` 的也是，所以这两者永远不会收到提示块 ——
-“带前置块”和“带提示块”是两件互相独立的事。下面就是你会看到追加在 `deep-research`
-正文之后的块（`academic-paper` 那份只有 `named by` 路径不同），逐字如下：
+**五个技能里今天只有一个会收到提示块：`academic-pipeline`，853 字节，点名四个目标。**
+它的树点名了 `docs/PERFORMANCE.md`、两个 `docs/design/` 规格和 `scripts/adapters/` 目录 ——
+全都在上游仓库里，没有一个在本包中。逐字如下，追加在正文之后：
 
 ```text
 <!-- dsh-academic-review:port-notice:begin (not upstream text) -->
-**Port notice - not upstream text.** This DSH port does not ship 1 file that this skill's own instructions tell you to read:
+**Port notice - not upstream text.** This DSH port does not ship 4 files that this skill's own instructions tell you to read:
 
-- `academic-pipeline/references/literature_corpus_consumers.md` - named by `agents/bibliography_agent.md`
+- `docs/PERFORMANCE.md` - named by `references/passport_as_reset_boundary.md`
+- `docs/design/2026-04-26-ars-v3.6.5-consumer-integration-design.md` - named by `references/literature_corpus_consumers.md`
+- `docs/design/2026-04-30-ars-v3.6.7-step-6-orchestrator-hooks-spec.md` - named by `references/passport_as_reset_boundary.md`
+- `scripts/adapters/` - named by `references/adapters/overview.md`
 
 Do not fabricate or paraphrase the content of these files. If a step needs one, say the
 reference is unavailable in this port, continue with the material that is present, and
@@ -134,33 +147,89 @@ tell the user which reference is missing.
 <!-- dsh-academic-review:port-notice:end -->
 ```
 
-**如实的局限。** `vendor/shared/` 下的共享协议文件 —— *四个*技能都会读 —— 含有 **11 个不同**
-引用（16 处引用位置）指向本移植未随附的上游目录：`academic-pipeline/` 下 4 个、
-`docs/design/` 下 5 个、`examples/` 下 1 个、`scripts/adapters/` 下 1 个。
+**这一轮有两个提示块消失了，这是好消息。** 在 0.4.1 上，`deep-research` 与
+`academic-paper` 各自带一个，都是为
+`academic-pipeline/references/literature_corpus_consumers.md` —— 一个只存在于本移植当时未
+vendoring 的技能里的文件。把第五棵树 vendoring 进来就把它解析了，于是两个提示块都消失，两个
+载荷都**变小**：`academic-paper` 少 572 字节（65,113 → 64,541），`deep-research` 少 563 字节
+（52,316 → 51,753）。载荷变小通常是缺陷；在这里，它恰好就是各技能不再需要的那段提示块。
+评审人自身树是干净的，`sr-screener` 的也是：“带前置块”和“带提示块”是两件互相独立的事。
+
+| 技能 | 被提供载荷 | 其中前置块 | 其中提示块 |
+| --- | --- | --- | --- |
+| `academic-paper` | 64,541 | 684 | 0 |
+| `academic-paper-reviewer` | 47,984 | 684 | 0 |
+| `academic-pipeline` | 59,934 | 684 | 853 |
+| `deep-research` | 51,753 | 684 | 0 |
+| `sr-screener` | 33,212 | 684 | 0 |
+| **合计** | **257,424** | 3,420 | 853 |
+
+**如实的局限。** `vendor/shared/` 下的共享协议文件 —— *五个*技能都会读 —— 仍然含有
+**7 个不同**引用（9 处引用位置）指向本移植未随附的上游目录：`docs/design/` 下 5 个、
+`examples/` 下 1 个、`scripts/adapters/` 下 1 个，而 `academic-pipeline/` 下的已经**归零**。
 这些只出现在技能 **metadata** 中（`metadata.unavailableSharedReferences` /
-`metadata.unavailableSharedReferenceCount`），并且刻意 **不**追加到技能正文：`shared/` 被每个
-被提供的技能同样地引用，由它派生的正文提示块也会同时出现在评审人身上，从而改变评审人被提供的字节。
+`metadata.unavailableSharedReferenceCount`），并且刻意 **不**追加到技能正文：`shared/` 被
+每个被提供的技能同样地引用，由它派生的正文提示块也会同时出现在评审人身上，从而改变评审人被提供的
+字节。
 
-这份清单是**算出来的，不是手工维护的**，而且算出来的结果在动：vendoring `academic-paper` 之后，
-它从 14 个不同目标降到 11 个 —— 过去悬在 `academic-paper/` 下的 3 个目标，现在落在随包内置的树
-里解析成功。手写清单到今天还会写着 14。
+**看着这个数字动，而不是假定它。** 它走过了 14 → 11 → 7，每一步都是因为后来的树解析了更早的
+树留下的悬空引用：vendoring `academic-paper` 把 14 变成 11，vendoring
+`academic-pipeline` 把 11 变成 7 —— 而它解析掉的四个目标全都是
+`academic-pipeline/references/...` 路径，此前正是 `shared/` 里的文件在指向它们。手写清单到今天
+还会写着 14。一个只变小、却不说明原因的数字读起来像侵蚀；这一个变小，是因为移植成熟了。
 
-本移植里出现两个不同的 shared 计数，它们量的是两件事。包**持有 110 个 shared 文件**
-（108 个由扫描随包树的 Markdown 得到，另有 2 个仅凭 criteria-registry 引用就随包），而四棵技能树
-**合计触达 98 个不同的 shared 目标** —— 多出来的文件是那 98 个目标拉进来的 shared-to-shared
-闭包，所以两个数字相差 12，谁都没错。`sr-screener` 对两者都不增加：它直接点名 5 个
-`shared/` 路径，顺着这些文件自身的引用走下来共触达 74 个，而这 74 个本来就已经通过更早的树
-进入闭包了。
+**闭包也跟着动了，而回执换了主人。** 包**持有 143 个 shared 文件**，五棵树的引用闭包现在恰好
+触达这 143 个 —— `shared/` 里没有任何一个文件是“没有任何树触达”却被随包的。两份评审标准登记
+回执过去**只**因为登记处引用了它们的 criterion id 才随包；现在它们是被路径触达的，因为
+`shared/contracts/README.md` 点名了它们。回执规则仍然被测试 —— 把那一处提及清空，扫描就恰好
+少掉那两个文件，规则必须把它们补回来 —— 但它已经不再是它们随包的原因。而一个点名了 18 条
+`shared/` 路径的技能可以触达 81 个文件，因为其中有几条路径是*目录*
+（`shared/contracts/review_target/`、`shared/contracts/re_review/`、`cross_model/`），
+而一条目录引用会把其下所有文件一并拉进来。
 
-遍历**只读 Markdown**，而且这是承重设计而不是图省事：89 个载荷文件里有 16 个含合计 49 处
-引用形状的字符串，若遍历去读它们，其中 27 处会悬空。Python docstring 或 JSON schema 字符串里
-的路径是程序消费的数据，不是让 agent 去打开本移植里某个文件的指令 —— 因此 `pnpm test` 读 190 个
+遍历**只读 Markdown**，而且这是承重设计而不是图省事：120 个载荷文件里有 26 个含合计 67 处
+引用形状的字符串，若遍历去读它们，其中 42 处会悬空。Python docstring 或 JSON schema 字符串里
+的路径是程序消费的数据，不是让 agent 去打开本移植里某个文件的指令 —— 因此 `pnpm test` 读 222 个
 Markdown 文件、0 个载荷文件，而“端口内悬空”这个计数才仍然是一个有意义的 0。
 
-直说就是：**`deep-research` 与 `academic-paper` 继承了本移植无法满足的上游跨技能引用。**
-两者都是被忠实提供的，只是缺了这些目标。后续轮次要么把被引用的技能（`academic-pipeline`）
-一并 vendored，要么把提示块扩展到 `shared/` 范围；在那之前，metadata 就是“缺了什么”的完整记录，
-而提示块是对话内的警示。
+直说就是：**流水线继承了本移植无法满足的上游指令。** 它被忠实提供，只是缺了提示块点名的那些
+文件 —— 而它的完整性阶段还要 47 个根本不在这里的脚本，那是另一个、也是更强的说法。见
+[第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)。
+
+### 第五个技能，以及它如实的边界
+
+`academic-pipeline` 是本次发布里最有用的东西，也是最不完整的东西，这两半都必须说出来。
+
+**它是什么。** 一个调度器。它识别你处在研究或评审工作流的哪个阶段、推荐模式、在合适的位置分派
+`deep-research`、`academic-paper` 与 `academic-paper-reviewer`，并跟踪这次运行的阶段与
+状态。它自己不起草论文；它是决定由谁来做、以什么顺序来做的那一层。正因如此，它被实测出的依据是
+**`orchestration-closure`**，而不是散文起草或随包脚本执行：它通过分派一个自己并不包含的产出者
+来导致写入。它的动词计数在两条起草阈值上都是擦边未过 —— 39 个写作动词对 40 的下限、18 个起草动词
+对 20 —— 而这些计数每次测试都会打印、任何地方都不存储，因为依据命名的是触发了的那件仪器，
+从来不是对技能的概括。
+
+**它在这里做不到什么。** 它的完整性阶段 —— 检查稿件、语料、passport 或主张审计的那些 —— 会调用
+**上游仓库根目录 `scripts/` 下的 47 个脚本**：其中 36 个在它自己的 Markdown 里直接点名，另外 11 个
+由前者 import，合计 **1,806,561 字节**，它们的第三方依赖包括 `jsonschema`、`yaml` /
+`ruamel.yaml`、`pypdf` 与 `defusedxml`。**本移植不随附它们，而且这是决定，不是疏忽。**
+随包提供 1.8 MB 本插件从不执行、无法审计、甚至无法测试的 Python，比不提供更糟：那会让能力看起来
+存在，而唯一诚实的说法是它并不存在。上游的 `scripts/` 目录共 642 个文件，全部留在外面。
+
+**对你意味着什么，直说。** 依赖这些检查的每一个流水线阶段都会**失败，而不是假装**。你不会得到
+一份静默降级的完整性报告、一个编造出来的符合性结论或一张伪造的看板：你会得到一条错误，或者技能
+会告诉你该引用在本移植中不可用。要让这些阶段真正跑起来，宿主必须自己提供上游仓库，以及一个装了
+上述依赖的 Python 3 环境。
+
+**这比 `sr-screener` 的陈述更强，而这个差别正是重点。** `sr-screener` 的六个脚本就在它自己的
+vendored 树里，随包提供，所以插件可以说“它们在这里、已钉定、我从不运行”。流水线的脚本不随包、
+不在这里 —— 所以对那些阶段而言，不是插件拒绝执行什么，而是根本没有可执行的东西。
+
+**这一轮的结构性教训，也是本轮代价最大的一句。** 可触达的单位不是技能，而是**引用闭包**。一个
+新增的 shared 文件 `shared/contracts/README.md`，把 23 个没有任何技能点名的文件拉进了视野。而
+vendoring 一棵技能树，关闭的是**没有任何技能拥有**的 `shared/` 文件里的悬空引用：本移植过去报告
+为缺失的引用中有四个，在流水线树到位的那一刻就解析了，而这个四个里有三个只被 `shared/` 点名。
+所以“我们提供哪些技能”从一开始就是错的问题；“我们提供的任何东西触达了哪些引用”才是测试现在每次
+运行都在回答的问题。
 
 ### 工具
 
@@ -191,8 +260,8 @@ DSH 右侧栏（sidebar-right）中的 **Academic Review** 标签页列出工作
 | `quick` | 压缩的面板快速通过 | 投稿前或小改之后的快速体检。 |
 | `methodology-focus` | 侧重方法学席位 | 你希望方法/统计被最严格地审视。 |
 
-本次发布不在范围内：`academic-pipeline` 与 `sr-screener` 两个技能，
-以及 `re-review` / `guided` / `calibration` 三种评审模式（明确拒绝，不会静默降级）。
+本次发布不在范围内：`re-review` / `guided` / `calibration` 三种评审模式（明确拒绝，不会
+静默降级）。五个技能都会被提供；评审人拒绝的是评审*模式*，不是技能。
 
 ### 评审状态目录布局
 
@@ -218,22 +287,25 @@ DSH 右侧栏（sidebar-right）中的 **Academic Review** 标签页列出工作
 - **输入格式**：仅 `.md`、`.tex` 与 `.txt`。PDF **不会**被解析 —— `academic_review_create` 直接拒绝。
   需要时请先转换。
 - **稿件只读**：插件永远不写入被评审的论文。
-- **工具只属于评审人**：`deep-research`、`academic-paper` 与 `sr-screener` 以纯提示词技能
-  提供（没有工具、没有状态、没有 GUI）；本次发布没有流水线集成，也没有
-  re-review/guided/calibration 评审模式。
+- **工具只属于评审人**：`deep-research`、`academic-paper`、`sr-screener` 与
+  `academic-pipeline` 以纯提示词技能提供（没有工具、没有状态、没有 GUI）；本次发布没有流水线
+  集成，也没有 re-review/guided/calibration 评审模式。
 - **每个技能都只有指令，没有一个有沙箱**：`academic-paper` 用宿主自己的文件工具写文件，
-  `sr-screener` 靠运行自带的脚本来写 —— 而评审人与 `deep-research` 也可能用会话自己的工具写。
-  这些路径本插件一条都无法拦截，所以策略 A 到四个技能那里都只是前置文本加上 metadata 里的
+  `sr-screener` 靠运行自带的脚本来写，`academic-pipeline` 靠分派 `academic-paper` 来写 ——
+  而评审人与 `deep-research` 也可能用会话自己的工具写。
+  这些路径本插件一条都无法拦截，所以策略 A 到五个技能那里都只是前置文本加上 metadata 里的
   `writePolicyEnforced: false`，从来不是互锁。我们无法证明一个技能不会写，所以不会把它排除在
   规则之外 —— 它同样拿到那 684 字节。
 - **检测器只是文档，不是闸门**：`src/write-policy.ts` 仍然记下它能够*实测*出会写文件的技能，
   以及是被哪件仪器测出的，因为那是有价值的答案 —— 但没有任何技能因为这条记录而被提供或被拒绝。
   它的盲区是写进文档的、不是藏起来的：靠它自己不随附的 shell 命令写、靠内联 `python -c` 写、
   或靠"generate"/"produce"这类散文写出的正文，都会被判为非产出者，并且照样拿到写入策略块。
-- **随包代码只提供，不执行**：六个 Python 脚本原样随包并按 SHA-256 钉定；本插件从不运行它们、
-  从不审计它们做什么、也看不见它们写了什么。筛查需要宿主上有 `Python 3.9+`（仅标准库，
-  `openpyxl` 可选），真正执行它们的是宿主的 shell。没有 Python 工具链时，这个技能的那部分
-  完全不工作。
+- **随包代码只提供，不执行**：`sr-screener` 的六个 Python 脚本原样随包并按 SHA-256 钉定；
+  本插件从不运行它们、从不审计它们做什么、也看不见它们写了什么。筛查需要宿主上有
+  `Python 3.9+`（仅标准库，`openpyxl` 可选），真正执行它们的是宿主的 shell。没有 Python
+  工具链时，这个技能的那部分完全不工作。
+- **流水线的脚本根本不随包**，这是另一种、也是更强的限制：它的 47 个上游脚本不在本包中，所以
+  调用它们的完整性阶段会失败，而不是降级。见[第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)。
 - **两处人工检查点**：面板启动之前，以及编辑决定关闭评审之前。
 
 ## 写入策略 A — 只写新路径
@@ -246,9 +318,9 @@ DSH 右侧栏（sidebar-right）中的 **Academic Review** 标签页列出工作
 也不能阻止或撤销一次写入，写作技能外面也没有沙箱。
 
 因此对每个被提供的技能，这条规则的交付方式都是**被提供文本的第一个块** —— 同一段 684 字节的块
-被前置到四个正文的每一个之前，排在所有起草指令或命令行之前 —— 并在 metadata 中镜像为
-`writePolicy: 'new-paths-only'` 与 `writePolicyEnforced: false`（四个都有），外加
-`writePolicyBasis`（只在被仪器实测过的两个上）。它是模型被告知要遵守的**指令，不是互锁**；
+被前置到五个正文的每一个之前，排在所有起草指令或命令行之前 —— 并在 metadata 中镜像为
+`writePolicy: 'new-paths-only'` 与 `writePolicyEnforced: false`（五个都有），外加
+`writePolicyBasis`（只在被仪器实测过的三个上）。它是模型被告知要遵守的**指令，不是互锁**；
 metadata 用机器可读的方式这么写，就是为了没人能把 `writePolicy` 当成"已强制"来引用。请把它当作
 一条强指令加一份在被提供载荷里可见的审计痕迹，而不是运行时保证。
 
@@ -264,12 +336,16 @@ metadata 用机器可读的方式这么写，就是为了没人能把 `writePoli
 保证的方式证明了它 —— 它拿一个**不在任何表里**的技能名去调用渲染器，并断言完整的 684 字节照样
 返回。
 
-**两件仪器，留作证据 —— 它们不是闸门。** `src/write-policy.ts` 里的表记下我们能够*实测*出会
-产出文件的技能，以及是哪两件仪器之一测出的：**散文起草** —— 写作动词 ≥ 40 **且** 起草动词
-≥ 20；或**随包脚本执行** —— 同一行里出现解释器、一个本包确实随附在该技能**自己目录内**的可执行
-文件（按磁盘解析，不按文本），以及一个输出参数。`academic-paper` 由第一件测出
+**三件仪器，留作证据 —— 它们不是闸门。** `src/write-policy.ts` 里的表记下我们能够*实测*出会
+导致写入的技能，以及是哪三件仪器之一测出的：**散文起草** —— 写作动词 ≥ 40 **且** 起草动词
+≥ 20；**随包脚本执行** —— 同一行里出现解释器、一个本包确实随附在该技能**自己目录内**的可执行
+文件（按磁盘解析，不按文本），以及一个输出参数；以及**编排闭包** —— 阶段表把某个被提供的产出者
+放进一个席格，于是自己什么都不写的技能分派了真正写文件的技能。`academic-paper` 由第一件测出
 （`writePolicyBasis: 'prose-drafting'`），`sr-screener` 由第二件测出
-（`'bundled-script'`）；评审人与 `deep-research` 两件都测不出，但照样拿到写入策略块。
+（`'bundled-script'`），`academic-pipeline` 由第三件测出（`'orchestration-closure'`）；
+评审人与 `deep-research` 三件都测不出，但照样拿到写入策略块。每件仪器都刻意收得很窄：围栏里的
+示例、引文、自引用、路由行、或属于另一行的阶段都不会触发它，而且闭包只走一步 —— 分派了一个调度器
+的技能，不会继承那个调度器的产出者。
 
 qa-gate 对抗式造出的三种写入形态现在已是 `tests/write-policy.test.mjs` 里的 fixture —— 一个靠
 自己不随附的 shell 命令写（`mkdir -p exports && ls > out/inventory.md`）、一个靠内联
@@ -285,8 +361,9 @@ qa-gate 对抗式造出的三种写入形态现在已是 `tests/write-policy.tes
    输出文档是新建的，绝不追加到、也绝不覆盖别人的文件。
 2. **稿件永远不会被覆盖、移动、重命名或删除。** 不是被工具、不是被斜杠命令、不是被面板、
    不是被某个席位、也不是被编辑综合席。插件只会读取它（可能对它做哈希，用于钉定字节）。
-3. **四个被提供的技能遵循同一规则。** 它们都没有自己的写工具，也都无法被某个工具约束：
-   `academic-paper` 通过宿主的文件工具写，`sr-screener` 靠运行自己的脚本写，评审人与
+3. **五个被提供的技能遵循同一规则。** 它们都没有自己的写工具，也都无法被某个工具约束：
+   `academic-paper` 通过宿主的文件工具写，`sr-screener` 靠运行自己的脚本写，
+   `academic-pipeline` 靠分派 `academic-paper` 写，评审人与
    `deep-research` 用会话给它们的任何工具写。一次运行产出的任何东西（论文草稿、筛查结果、报告、
    笔记、参考文献）都写到新路径，而技能读到的一切（包括稿件）保持只读。在每一种情形里，规则都是以
    指令而非互锁的形式存在 —— 这正是写入策略块出现在四个正文里的原因，也正是需要你在对话记录里用
@@ -338,16 +415,17 @@ dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-revie
 钉定的 tag 或发布 tarball 用法相同：
 
 ```bash
-dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.4.1
-dsh plugin --profile <profile> add ./dsh-academic-review-0.4.1.tgz
+dsh plugin --profile <profile> add github:xuelinzheng41-maker/dsh-academic-review#v0.5.0
+dsh plugin --profile <profile> add ./dsh-academic-review-0.5.0.tgz
 ```
 
 构建产物（`lib/`）是有意提交进仓库的，因此从 git 安装不需要构建步骤。bundle patch
 `cordis.patch.yml` 会插入一行插件（`id: academic-review`、`name: dsh-academic-review`），
 并配置 `stateDir: .academic-review`。
 
-安装后，会话会获得五个 `academic_review_*` 工具和**四个**技能 —— `academic-paper-reviewer`、
-`deep-research`、`academic-paper` 与 `sr-screener`（见 `docs/PORT_SPEC.md`）。评审只写入 `<workspace>/.academic-review/<review_id>/`，不写别处。
+安装后，会话会获得五个 `academic_review_*` 工具和**五个**技能 —— `academic-paper-reviewer`、
+`deep-research`、`academic-paper`、`sr-screener` 与 `academic-pipeline`
+（见 `docs/PORT_SPEC.md`）。评审只写入 `<workspace>/.academic-review/<review_id>/`，不写别处。
 可以用插件的 `skills: [...]` 配置收窄提供范围（默认：所有 vendored 技能）；未知名称会让挂载失败，
 并列出实际存在的技能。
 
@@ -376,6 +454,41 @@ vendored 目录树与上游逐字节一致，并由测试套件和 `pnpm verify:
 （commit `1ec249df`）核对。
 
 ## 升级
+
+### 0.4.1 → 0.5.0
+
+0.5.0 增加第五个、也是最后一个被提供的技能 —— 上游的调度器 `academic-pipeline`，版本
+**3.23.2**（SKILL.md `last_updated` 2026-10-24）。**没有任何工具、路由或状态 schema 变化**：
+五个工具、它们的参数、评审状态 schema、面板路由与两个斜杠命令都与 0.4.1 完全一致，因此已有的
+`.academic-review/` 目录照常加载。
+
+- **新增：** `academic-pipeline`，以纯提示词方式提供 —— 没有工具、没有状态、没有 GUI、没有斜杠
+  命令。它识别阶段、推荐模式、分派 `deep-research` / `academic-paper` /
+  `academic-paper-reviewer` 并跟踪状态；它自己不起草任何东西，所以记录用第三件仪器列出它：
+  `writePolicyBasis: 'orchestration-closure'`。它的完整性阶段会调用 47 个本移植刻意不随附的上游
+  脚本，因此那些阶段会失败而不是假装：要让它们运行，宿主必须自己提供上游仓库，以及一个装了
+  `jsonschema`、`yaml` 与 `pypdf` 的 Python 3 环境。完整陈述见
+  [第五个技能，以及它如实的边界](#第五个技能以及它如实的边界)。
+- **头两个移植提示块消失了，载荷也随之变小。** `academic-paper` 与 `deep-research` 过去各带
+  一个提示块，都是为 `academic-pipeline/references/literature_corpus_consumers.md`；第五棵树现在
+  提供了那个文件，于是 `academic-paper` 从 65,113 变成 64,541（−572），`deep-research` 从
+  52,316 变成 51,753（−563）。今天唯一带提示块被提供的技能是 `academic-pipeline`：853 字节，
+  点名四个目标。评审人（47,984）与 `sr-screener`（33,212）未变。五个载荷合计
+  **257,424 字节**，其中 3,420 是写入策略块，五份各一次。
+- **随包管理：** 共 342 个文件（原 279 个）—— 技能文件 199 个（28 + 53 + 63 + 25 + 30）+ 143 个
+  shared，而且每一个 shared 文件现在都由路径扫描触达（`byScan: 143`、`byRegistryReceipt: 0`）：
+  那两份评审标准回执之所以随包，是因为 `shared/contracts/README.md` 点名了它们，而不是因为回执
+  规则补入。回执规则仍然存在、仍然被测试，测试方式是把那一处提及清空。包内现有 120 个非 Markdown
+  文件（`.json` 109、`.py` 6、`.js` 2、`.tex` 1、`.yaml` 1、`.gitkeep` 1）—— 最后
+  那个是空占位文件，正因为它，规则才是“Markdown 加载荷等于 manifest 总数”，而不是“载荷就意味着
+  代码”。
+- **shared 范围从 11 变成 7：** 流水线树解析了 `shared/` 文件一直在指向的全部四个
+  `academic-pipeline/references/...` 目标。剩下 7 个不同目标、9 处引用位置，全在 `docs/`、
+  `examples/` 与 `scripts/` 之下，没有一个在端口内。
+- **未变：** 评审人技能（1.11.1）、`deep-research`（2.12.1）、`academic-paper`（3.3.1）、
+  `sr-screener`（1.0.0）、五个工具、评审状态、面板、两个斜杠命令，以及 CC BY-NC 4.0 条款。
+
+升级方式：用同一来源构建的 0.5.0 替换本包，并重启会话。
 
 ### 0.3.0 → 0.4.0
 

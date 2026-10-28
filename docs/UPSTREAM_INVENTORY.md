@@ -13,7 +13,7 @@ commit's git object store, which is exactly what the vendoring pipeline copies i
 `vendor/`. It is never the size of a checkout. A `core.autocrlf=true` checkout
 inflates every file by its line count, because each LF arrives as CRLF, and that is
 how the previous edition of this table went wrong — by exactly one byte per line,
-on all 58 rows, the 44 vendored files and the 14 upstream-only scripts alike. To
+on all 88 rows, the 74 vendored files and the 14 upstream-only scripts alike. To
 re-derive any row, `git cat-file -s <commit>:<path>` in the upstream clone, or
 `stat` the file under `vendor/`; the two must agree, because the pipeline reads
 the object store too. `tests/release-invariants.test.mjs` re-measures the 44
@@ -60,6 +60,58 @@ NAMES all fourteen as unverified rather than reporting a skip.
 
 (Total: 1 SKILL.md + 7 agents + 14 references + 3 templates + 3 examples =
 28 files.)
+
+## academic-pipeline/ (30 files, all vendored unmodified)
+
+| File | Bytes |
+|---|---|
+| SKILL.md | 59,581 |
+| agents/claim_ref_alignment_audit_agent.md | 45,398 |
+| agents/collaboration_depth_agent.md | 10,031 |
+| agents/integrity_verification_agent.md | 75,249 |
+| agents/pipeline_orchestrator_agent.md | 178,444 |
+| agents/state_tracker_agent.md | 27,397 |
+| examples/full_pipeline_example.md | 18,078 |
+| examples/integrity_failure_recovery.md | 27,485 |
+| examples/mid_entry_example.md | 13,715 |
+| references/adapters/.gitkeep | 0 |
+| references/adapters/overview.md | 10,193 |
+| references/ai_research_failure_modes.md | 15,983 |
+| references/changelog.md | 5,919 |
+| references/claim_audit_calibration_protocol.md | 14,557 |
+| references/claim_verification_protocol.md | 31,231 |
+| references/external_review_protocol.md | 6,329 |
+| references/integrity_review_protocol.md | 7,315 |
+| references/literature_corpus_consumers.md | 11,962 |
+| references/mode_advisor.md | 8,257 |
+| references/passport_as_reset_boundary.md | 19,057 |
+| references/pipeline_state_machine.md | 29,019 |
+| references/plagiarism_detection_protocol.md | 13,795 |
+| references/process_summary_protocol.md | 16,150 |
+| references/progress_dashboard_template.md | 1,524 |
+| references/reinforcement_content.md | 1,396 |
+| references/reproducibility_audit.md | 2,667 |
+| references/score_trajectory_protocol.md | 3,913 |
+| references/team_collaboration_protocol.md | 10,312 |
+| references/two_stage_review_protocol.md | 3,041 |
+| templates/pipeline_status_template.md | 3,813 |
+
+(Total: 1 SKILL.md + 5 agents + 20 references (one of them a `.gitkeep` in
+`references/adapters/`) + 1 template + 3 examples = 30 files.)
+
+### What the pipeline's own tree names and this port does not ship
+
+The pipeline's instructions call **47 upstream scripts** from the repository-root
+`scripts/` directory: **36 named directly** in its own Markdown plus **11 more that
+those import** (`_skill_lint`, `ars_mark_read`, `audit_snapshot`,
+`bibliographic_integrity_signals`, `build_claim_standing_candidate_ledger`,
+`claim_standing_discovery`, `claim_standing_stance_runner`, `file_lock`,
+`policy_anchor_disclosure_referee`, `research_workflow_profile`,
+`resolve_review_target_context`). Together they are **1,806,561 repository bytes**, and
+their third-party imports are `jsonschema`, `yaml`/`ruamel.yaml`, `pypdf`,
+`defusedxml` and `referencing`. **This port vendors none of them, deliberately** - see
+`docs/PORT_SPEC.md` for the reasoning. The upstream `scripts/` directory as a whole
+is 642 files and stays out.
 
 ## shared/ files referenced by the reviewer tree (vendor unmodified)
 
@@ -133,19 +185,23 @@ recompute_receipts.py (57,049), review_criteria_binding.py (38,385).
 
 ## Not vendored
 
-Skills this port does not serve (`academic-pipeline`), and the upstream
-repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
-`.claude/`, `.github/`, `tools/`, and the repo-root `scripts/` directory. The
-root `scripts/` entry is one of the two reasons the reviewer is not a
-*demonstrated* file producer: those scripts exist upstream but live outside every
-skill tree, and this port vendors the four skill trees plus `shared/`, nothing
-else. It is not a reason to withhold the write-policy block — every served skill
+The upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
+`audits/`, `.claude/`, `.github/`, `tools/`, and the repo-root `scripts/`
+directory (`academic-pipeline/` left this list in 0.5.0, when it became the fifth
+vendored tree). The root `scripts/` entry is one of the two reasons the reviewer
+is not a *demonstrated* file producer - those scripts exist upstream but live
+outside every skill tree - and it is also why the pipeline's integrity stages
+cannot run from this package at all: this port vendors the five skill trees plus
+`shared/`, nothing else. It is not a reason to withhold the write-policy block — every served skill
 carries it, unconditionally.
 
-`deep-research/` and `academic-paper/` **are** vendored as of 0.2.0, and
-`sr-screener/` as of 0.4.0, each in its own tree and inventoried by
-`vendor-manifest.json`; this file stays the file-by-file inventory of the reviewer
-tree only.
+`deep-research/` and `academic-paper/` **are** vendored as of 0.2.0,
+`sr-screener/` as of 0.4.0 and `academic-pipeline/` as of 0.5.0, each in its own
+tree and inventoried by `vendor-manifest.json`. This file carries a byte row for
+every file in two of the five trees (the reviewer's, which is the one a review
+actually runs, and the pipeline's, whose references are the ones that dangle), a
+byte row for the `shared/` files the reviewer names, and a class table for the rest;
+the SHA-256 pins for all 342 files live in `vendor-manifest.json`.
 
 ## sr-screener/ (25 files, vendored unmodified, not executed)
 

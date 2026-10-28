@@ -1,4 +1,4 @@
-# DSH Port Spec — dsh-academic-review (0.4.0: reviewer surface + three prompt-only skills)
+# DSH Port Spec — dsh-academic-review (0.5.0: reviewer surface + four prompt-only skills)
 
 Status: draft for T2/T3 implementation · Prepared by T1 · Target plugin: `dsh-academic-review`
 
@@ -12,13 +12,15 @@ at that commit says 3.23.2; the skill-local version is authoritative for the
 reviewer skill.) License: **CC BY-NC 4.0** — see `THIRD_PARTY_NOTICES.md`
 and section 5 below.
 
-Served set (0.4.0): `academic-paper-reviewer` (1.11.1) is the only skill wired
-to plugin code — tools, review state, panel, slash commands. `deep-research`
-(2.12.1), `academic-paper` (3.3.1) and `sr-screener` (1.0.0) are vendored and
-served prompt-only: no tool, no state, no panel. `sr-screener` differs from the
-other two in one respect worth stating up front — its usefulness depends on the
-host running the six Python scripts it ships (§1.6). `academic-pipeline` remains
-**out of scope** and must not be started.
+Served set (0.5.0): `academic-paper-reviewer` (1.11.1) is the only skill wired to
+plugin code — tools, review state, panel, slash commands. `deep-research` (2.12.1),
+`academic-paper` (3.3.1), `sr-screener` (1.0.0) and `academic-pipeline` (3.23.2)
+are vendored and served prompt-only: no tool, no state, no panel. Two of them differ
+from the others in a respect worth stating up front: `sr-screener`'s usefulness
+depends on the host running the six Python scripts it ships (§1.6), and
+`academic-pipeline`'s integrity stages depend on 47 upstream scripts this port
+deliberately does not ship at all (§1.7) — a stronger limit than `sr-screener`'s,
+because there is nothing here for the host to run.
 
 ---
 
@@ -78,7 +80,7 @@ Upstream Iron Rules that MUST carry into the port verbatim in behavior:
 The port vendors **every** skill it serves, whole and byte-identical, under
 `vendor/<skill>/`, and `vendor/` is itself the registry: a directory is a
 skill exactly when it holds `SKILL.md` (so `vendor/shared/` is never mistaken
-for one). Four skills are vendored today, from one pinned upstream commit; the
+for one). Five skills are vendored today, from one pinned upstream commit; the
 skill list is a single `SKILLS` constant in `scripts/vendor-upstream.mjs` and a
 new skill is added by adding a name there and re-running `pnpm vendor`.
 
@@ -86,10 +88,11 @@ new skill is added by adding a name there and re-running `pnpm vendor`.
 |---|---|---|
 | `vendor/academic-paper-reviewer/` | 28 | SKILL.md, 7 `agents/`, 14 `references/`, 3 `templates/`, 3 `examples/` |
 | `vendor/deep-research/` | 53 | SKILL.md, 14 `agents/`, 24 `references/`, 6 `templates/`, 8 `examples/` |
-| `vendor/academic-paper/` | 63 | SKILL.md, 12 `agents/`, 29 `references/`, 11 `templates/`, 10 `examples/`; its `templates/latex_article_template.tex` (4,844 B) is the only non-Markdown file in the three trees vendored before `sr-screener` |
+| `vendor/academic-paper/` | 63 | SKILL.md, 12 `agents/`, 29 `references/`, 11 `templates/`, 10 `examples/`; its `templates/latex_article_template.tex` (4,844 B) was the first non-Markdown file this port ever vendored |
 | `vendor/sr-screener/` | 25 | SKILL.md, 15 Markdown files, 6 `.py` under `scripts/`, 2 `.js` workflow templates and 1 `.json` template under `templates/`, 1 example `.json` under `examples/` — 10 non-Markdown files, the first executable payload this port ships |
-| `vendor/shared/` (not a skill) | 110 | 18 root files, 71 `contracts/`, 16 `references/`, 1 `agents/`, 1 `templates/`, 1 `policy_data/`, 2 `review_criteria_sources/` |
-| **total** | **279** | every hash pinned in `vendor-manifest.json` (169 skill files + 110 shared) |
+| `vendor/academic-pipeline/` | 30 | SKILL.md, 5 `agents/`, 20 `references/` (one of them the empty placeholder `references/adapters/.gitkeep`), 1 `templates/`, 3 `examples/` — 29 Markdown files and a payload of one empty placeholder |
+| `vendor/shared/` (not a skill) | 143 | 18 root files, `contracts/`, 16 `references/`, 1 `agents/`, 1 `templates/`, 1 `policy_data/`, 2 `review_criteria_sources/`, and `contracts/README.md`, which is the index that names them |
+| **total** | **342** | every hash pinned in `vendor-manifest.json` (199 skill files + 143 shared) |
 
 File-by-file sizes for the reviewer tree are in `docs/UPSTREAM_INVENTORY.md`;
 the `deep-research` tree is inventoried by `vendor-manifest.json` (one SHA-256
@@ -114,11 +117,10 @@ write files* — 85 writing verbs and 46 drafting verbs in its own body, against
 **prose drafting**. That record is documentation and decides nothing about serving:
 policy A is **prepended** to every served body (the same 684 bytes) so the rule is
 read before the drafting instructions, and mirrored in metadata as
-`writePolicy: 'new-paths-only'` and `writePolicyEnforced: false` on all four
+`writePolicy: 'new-paths-only'` and `writePolicyEnforced: false` on all five
 skills, with `writePolicyBasis: 'prose-drafting'` on this one. Its tree holds
 `templates/latex_article_template.tex`, pinned byte-for-byte from the upstream git
 object (4,844 B; the CRLF worktree copy would have been 5,043 B and wrong) — the
-only non-Markdown file in the three trees vendored before `sr-screener`, and the
 first non-Markdown payload this port ever shipped, which is what proved the
 vendoring pipeline is extension-agnostic.
 
@@ -129,17 +131,35 @@ scoping and rapid reviews (8 modes, version **1.0.0**, SKILL.md `last_updated`
 Python with output arguments (`python $S/build_outputs.py --work sr_work
 --out Screening_TA --config screening_config.json`), so the record lists it by
 **bundled-script execution** rather than by drafting vocabulary. Same prepended
-block (684 bytes, one block, all four skills), the same two metadata keys on every
+block (684 bytes, one block, all five skills), the same two metadata keys on every
 skill, and `writePolicyBasis: 'bundled-script'` on this one.
 
-**Demonstrated, never gated — the OR of two instruments.** A skill is *recorded*
-as a file producer when EITHER holds, measured on its parsed body:
+`academic-pipeline` is upstream's orchestrator (version **3.23.2**, SKILL.md
+`last_updated` 2026-10-24, **30 files**): it detects stages, recommends modes,
+dispatches `deep-research` / `academic-paper` / `academic-paper-reviewer` and
+tracks state, and it drafts nothing itself. It is the third **demonstrated** cause of
+writes, by a **third instrument — orchestration closure**: a stage table gives a
+served producer a slot, so a skill that writes nothing dispatches the skill that
+does. `writePolicyBasis: 'orchestration-closure'` on this one. Its verb counts are a
+near miss on both drafting thresholds (39 writing against 40, 18 drafting against
+20) and are printed by the suite every run and stored nowhere: a basis names the
+instrument that fired, never a summary of the skill.
+
+**Demonstrated, never gated — the OR of three instruments.** A skill is *recorded*
+as a cause of writes when ANY of these holds, measured on its parsed body:
 
 1. **prose drafting** — writing verbs ≥ 40 **and** drafting verbs ≥ 20;
 2. **bundled-script execution** — a single line that carries an interpreter
    token, names an executable this package actually ships inside *that skill's
    own* directory (resolved against the disk, not the text), **and** carries an
-   output argument.
+   output argument;
+3. **orchestration closure** — a stage table that gives a *served* producer a slot
+   (a row whose subject is the orchestrator and whose slot names a skill this
+   package serves), so a skill that writes nothing dispatches the one that does.
+   Closure is one step only, and it is narrow by construction: a fenced example, a
+   quotation, a self-reference, a routing row or a phase that belongs to another row
+   does not fire it, and an orchestrator that dispatches another orchestrator
+   records nothing.
 
 Two shapes are recorded as non-producers even though they write files, and they
 are why this record cannot be trusted with the serving decision:
@@ -154,7 +174,7 @@ are why this record cannot be trusted with the serving decision:
   ships inside `academic-paper-reviewer/`, and that file lives at the upstream
   repository **root**, not in the reviewer's tree — it fails on location, not on
   existence: upstream really ships it, and this port records it as an unvendored
-  reference; and (b) this port vendors the four skill trees and `shared/`, and no
+  reference; and (b) this port vendors the five skill trees and `shared/`, and no
   part of the upstream root `scripts/` directory, so the file is also absent here.
   Both halves matter: a reader who checks upstream at `1ec249df` will find the
   file, and 'we do not ship it' would be true but incomplete.
@@ -184,32 +204,42 @@ vendored files are never edited; the notice is runtime text only. The full list
 always travels in `metadata.unavailableReferences` (+
 `unavailableReferenceCount`).
 
-Today two own-tree misses exist, one per prompt-only skill, and they name the
-same file: `deep-research/agents/bibliography_agent.md` and
-`academic-paper/agents/literature_strategist_agent.md` both point at
-`academic-pipeline/references/literature_corpus_consumers.md`. Per-skill
+Today **one** own-tree case exists, in one of the five skills:
+`academic-pipeline`'s own Markdown names `docs/PERFORMANCE.md`, two
+`docs/design/` specs and the `scripts/adapters/` directory, so that tree is served
+with an 853-byte notice listing four targets. Per-skill
 `metadata.unavailableReferenceCount` today: reviewer **0**, `deep-research`
-**1**, `academic-paper` **1** — the reviewer's own tree is clean, so the reviewer
-never receives a notice.
+**0**, `academic-paper` **0**, `sr-screener` **0**, `academic-pipeline` **4**.
+The two notices that existed at 0.4.1 — `deep-research`'s and `academic-paper`'s,
+both for `academic-pipeline/references/literature_corpus_consumers.md` —
+disappeared when that fifth tree was vendored, and both payloads shrank by exactly
+the notice each no longer needs: 572 bytes for `academic-paper`, 563 for
+`deep-research`. A payload that shrinks because a notice became unnecessary is an
+improvement, and the arithmetic is asserted in `tests/served-payloads.test.mjs` so
+the shrink cannot be mistaken for a defect later.
 
 **Scope 2 — the shared closure — is metadata-only.** `vendor/shared/` is reached
-identically by every served skill and contains **11 distinct references** (16
-reference sites) to unvendored upstream areas (4 `academic-pipeline/`, 5
+identically by every served skill and contains **7 distinct references** (9
+reference sites) to unvendored upstream areas (0 `academic-pipeline/`, 5
 `docs/design/`, 1 `examples/`, 1 `scripts/adapters/`). A body notice derived from
 that scope would fire on every skill and would change the reviewer's served
 bytes, so those misses are reported in
 `metadata.unavailableSharedReferences` (+ `unavailableSharedReferenceCount`) and
 **not** appended to any body.
 
-The count moved when `academic-paper` was vendored: **14 distinct targets before,
-11 now**, because the three targets that used to dangle under `academic-paper/`
-now resolve inside the vendored tree. That drop is the evidence that the list is
-*computed* — a hand-maintained list would still say 14.
+The count has moved twice, each time because a later tree resolved references an
+earlier one had left dangling: **14 distinct targets before `academic-paper` was
+vendored, 11 after it, and 7 after `academic-pipeline`** — the four the pipeline
+resolved were all `academic-pipeline/references/...` paths that files in
+`shared/` had been pointing at. That movement is the evidence that the list is
+*computed* — a hand-maintained list would still say 14 — and it is recorded as
+movement with a cause rather than as erosion.
 
-Consequence, stated plainly: `deep-research` and `academic-paper` inherit
-upstream cross-skill references this port cannot satisfy; a later round either
-vendors `academic-pipeline` or extends the notice to the shared scope
-deliberately.
+Consequence, stated plainly: this port's closure still names files it cannot
+satisfy, all of them under the upstream repository's `docs/`, `examples/` and
+`scripts/`, and none in port; and `academic-pipeline`'s integrity stages
+additionally ask for scripts that are not here at all (§1.7), which is a different
+and larger limit.
 
 **`vendor-manifest.json` schemaVersion 2** is the single source of truth for
 what is vendored and what the pins are:
@@ -223,19 +253,20 @@ what is vendored and what the pins are:
   "vendored": {
     "skillDir": "vendor",
     "skills": ["academic-paper-reviewer", "deep-research", "academic-paper",
-               "sr-screener"],
+               "sr-screener", "academic-pipeline"],
     "skillFileCounts": { "academic-paper-reviewer": 28, "deep-research": 53,
-                         "academic-paper": 63, "sr-screener": 25 },
-    "skillFileCount": 169,
-    "sharedFileCount": 110,
-    "sharedFileCounts": { "byScan": 108, "byRegistryReceipt": 2 },
-    "totalFileCount": 279
+                         "academic-paper": 63, "sr-screener": 25,
+                         "academic-pipeline": 30 },
+    "skillFileCount": 199,
+    "sharedFileCount": 143,
+    "sharedFileCounts": { "byScan": 143, "byRegistryReceipt": 0 },
+    "totalFileCount": 342
   },
-  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … 4 entries ],
-  "sharedFiles": [ "shared/…", … 110 entries ],
+  "skills": [ { "name": "…", "dir": "vendor/…", "fileCount": 28 }, … 5 entries ],
+  "sharedFiles": [ "shared/…", … 143 entries ],
   "sharedViaRegistryReceipts": [ { "file": "shared/review_criteria_sources/…",
                                    "criterionIds": [ … ] }, … ],
-  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 279 }
+  "files": { "<skill-or-shared>/<path>": "<sha256 of the repository blob>", … 342 }
 }
 ```
 
@@ -298,26 +329,34 @@ spans, bare prose), expands a directory reference to the files it holds
 file inside `shared/` name siblings relative to itself and to `shared/`, and
 iterates to a fixpoint. A target that does not exist upstream is collected and
 the run throws with the full list **before anything is written**. Result today:
-108 files by scan + 2 by registry receipt = 110 under `vendor/shared/`; the table
-above records the reviewer's share of that closure. The closure grew by 10 when
-`academic-paper` joined (98 → 108 by scan), and 13 of the 110 are reachable
-through that skill alone. (Upstream `shared/` has 155
-files; most belong to other skills and are NOT vendored.)
+**143 files under `vendor/shared/`, every one of them reached by the scan**
+(`byScan: 143`, `byRegistryReceipt: 0`); the table above records the reviewer's
+share of that closure. It grew from 110 to 143 when `academic-pipeline` joined, and
+the receipts changed hands with it: `shared/contracts/README.md` — itself new with
+that tree, and an index of 23 shared files — names
+`shared/review_criteria_sources/`, so the path scan now reaches both criteria
+receipts and the registry-receipt rule has nothing left to add. The rule is not dead
+(the test blanks that one mention and requires it to supply exactly those two files),
+but while the mention exists it cannot be what vendors them. (Upstream `shared/` has
+155 files; most belong to other skills and are NOT vendored.)
 
-**Two shared counts, two different measures — do not compare them directly.** The
-package **holds 110** shared files (108 by scan + 2 by registry receipt). The four
-skill trees **collectively reach 98 distinct shared targets**, and the shared-to-
-shared closure those 98 pull in accounts for the remaining files, which is why the
-two numbers differ by 12 and neither is wrong. `sr-screener` adds nothing to
-either measure: it names five `shared/` paths directly and reaches 74 once their
-own references are followed, and every one of the 74 was already in the closure
-through the older trees — a differential of zero, asserted as a comparison of two
-computed sets rather than as a pinned size.
+**Two counts, and today they are the same number.** The package **holds 143** shared
+files, and the five trees' reference closure reaches **exactly those 143** — nothing
+under `shared/` is vendored that no tree reaches, which is a stronger statement than
+the old "the two numbers differ by 12, and neither is wrong". The union is large
+because several `shared/` targets are *directories*
+(`shared/contracts/review_target/`, `shared/contracts/re_review/`,
+`cross_model/`, `patch/`, `activity/`, `shared/review_criteria_sources/`) and a
+directory reference pulls in everything under it: the reviewer's tree names 18
+`shared/` paths and reaches 81 files.
 
-The walk reads **Markdown only**, deliberately: 16 of the 89 payload files carry
-49 reference-shaped strings and 27 of them would dangle if the walk read them. A
+The walk reads **Markdown only**, deliberately: 26 of the 120 payload files carry
+67 reference-shaped strings and 42 of them would dangle if the walk read them. A
 path inside a Python docstring or a JSON schema string is data a program consumes,
-not an instruction telling the agent to open a file in this port.
+not an instruction telling the agent to open a file in this port — and an empty file
+is allowed payload, since `academic-pipeline`'s one payload file is an empty
+`.gitkeep`; the rule is "Markdown plus payload equals the manifest total", not
+"every payload file is text".
 
 ### 1.4 `scripts/` dependency map (advisory checkers)
 
@@ -342,16 +381,17 @@ mechanisms (§2) and need not be ported in Phase 1.
 
 ### 1.5 What must NOT be vendored
 
-Last changed in 0.4.0: `sr-screener/` left this list when it became a served
-skill, and the upstream root `scripts/` directory was named here explicitly,
-because its absence is one of the two reasons the reviewer is not a *demonstrated*
-file producer (§1.2). It is not a reason to withhold the block — every served skill
-carries it. The list is a fence, so it describes the field as it is today.
+Last changed in 0.5.0: `academic-pipeline/` left this list when it became a served
+skill — the last tree this port serves, which is why this fence now contains no skill
+at all. The upstream root `scripts/` directory stays named here explicitly, because
+its absence is one of the two reasons the reviewer is not a *demonstrated* file
+producer (§1.2) and the whole reason the pipeline's integrity stages cannot run
+(§1.7). It is not a reason to withhold the block — every served skill carries it. The
+list is a fence, so it describes the field as it is today.
 
-Skills this port does not serve (`academic-pipeline/`), and the upstream
-repository's non-skill trees `commands/`, `evals/`, `tests/`, `audits/`,
-`.github/`, `.claude/`, and the repo-root `scripts/` directory — this port
-vendors the four skill trees plus `shared/`, and nothing else. Vendoring root
+The upstream repository's non-skill trees `commands/`, `evals/`, `tests/`,
+`audits/`, `.github/`, `.claude/`, and the repo-root `scripts/` directory — this
+port vendors the five skill trees plus `shared/`, and nothing else. Vendoring root
 `scripts/` would put `scripts/audit_panel_claims.py` and its siblings inside the
 package, which is not a location any skill's own tree owns.
 
@@ -371,6 +411,11 @@ vendored files.
 executable payload. Its six Python scripts are pinned exactly like Markdown, and
 nothing in this plugin runs, audits or observes them; §1.6 states what that costs
 the user.
+
+`academic-pipeline/` **is** vendored too (§1.2), as of 0.5.0 — the fifth and last
+served tree, and the only one whose own Markdown names files this package does not
+ship. Its integrity stages want 47 upstream scripts that are deliberately not here;
+§1.7 states that limit in full.
 
 ### 1.6 `sr-screener`'s bundled scripts — shipped, pinned, never run
 
@@ -395,6 +440,39 @@ What this port does with them, stated plainly:
   them, and without Python 3.9+ that part of the skill does not work at all. It
   fails visibly — the command errors — rather than quietly returning something
   that looks like a screen.
+
+### 1.7 `academic-pipeline`'s scripts — not shipped, and that is the honest edge
+
+`academic-pipeline` is an orchestrator: it detects stages, recommends modes,
+dispatches `deep-research` / `academic-paper` / `academic-paper-reviewer` and
+tracks state. It does not write the paper. Its integrity stages — the ones that
+check a manuscript, a corpus, a passport or a claim audit — call **47 scripts from
+the upstream repository's root `scripts/` directory**: 36 named directly in its own
+Markdown plus 11 more that those import (`_skill_lint`, `ars_mark_read`,
+`audit_snapshot`, `bibliographic_integrity_signals`,
+`build_claim_standing_candidate_ledger`, `claim_standing_discovery`,
+`claim_standing_stance_runner`, `file_lock`, `policy_anchor_disclosure_referee`,
+`research_workflow_profile`, `resolve_review_target_context`), totalling
+**1,806,561 bytes**, whose third-party imports include `jsonschema`,
+`yaml`/`ruamel.yaml`, `pypdf` and `defusedxml`.
+
+**This port vendors none of them, deliberately.** Shipping 1.8 MB of Python that the
+plugin never executes, cannot audit and cannot even test would be worse than not
+shipping it: it would look like the capability were present, when the only honest
+statement is that it is not. The upstream `scripts/` directory is 642 files; all of
+it stays out (§1.5).
+
+The consequence, stated plainly: **every pipeline stage that depends on those checks
+will fail rather than pretend.** There is no silently degraded integrity report, no
+invented conformance verdict and no fabricated dashboard — there is an error, or the
+skill says the reference is unavailable. To run those stages at all, the host must
+supply the upstream repository and a Python 3 environment with those packages.
+
+This is a **stronger** statement than §1.6's, and the difference is the point:
+`sr-screener`'s six scripts live inside its own vendored tree and ship with the
+package, so the plugin can say "they are here, pinned, and never run by me". The
+pipeline's do not ship and are not here, so for those stages it is not that the
+plugin declines to execute something — there is nothing to execute.
 
 ---
 
@@ -534,10 +612,11 @@ This table is authoritative and mirrors `src/tools.ts`: every row is one
 `academic_review_create`, `academic_review_status`, `academic_review_confirm`,
 `academic_review_submit`, `academic_review_report` — five tools, no more.
 
-The three prompt-only skills do not touch this surface: none of `deep-research`,
-`academic-paper` or `sr-screener` registers a tool (§1.2), so the tool list below
-is still complete and its arguments, results and error codes are unchanged by
-0.4.0.
+The four prompt-only skills do not touch this surface: none of `deep-research`,
+`academic-paper`, `sr-screener` or `academic-pipeline` registers a tool (§1.2), so
+the tool list below is still complete and its arguments, results and error codes are
+unchanged by 0.5.0 — the fifth skill added an orchestrator to the served set, not a
+tool.
 
 | Tool | Args | Behavior |
 |---|---|---|
@@ -637,11 +716,12 @@ prompt or upstream instruction can relax it:
   read, and hashed to pin its bytes, and that is all;
 - an output path that already exists is **refused or renamed**, never clobbered
   (no overwrite, no append, no "move it out of the way");
-- none of the four served skills has a write tool: anything a run produces must go
+- none of the five served skills has a write tool: anything a run produces must go
   to a new path, and its inputs are read-only;
 - `academic-paper` writes with the host's file tools, `sr-screener` by running its
-  own bundled scripts, and the reviewer and `deep-research` with whatever the host
-  gives them; this plugin sees none of those writes. For all four the rule travels
+  own bundled scripts, `academic-pipeline` by dispatching `academic-paper`, and the
+  reviewer and `deep-research` with whatever the host gives them; this plugin sees
+  none of those writes. For all five the rule travels
   as the prepended policy block plus `writePolicy` / `writePolicyEnforced: false`
   in metadata (`writePolicyBasis` only where an instrument measured it), and the
   model is told to treat every output as a new path — including the `--out` target,
@@ -731,7 +811,8 @@ the detector is right, which is why it no longer gates anything.
 T2 — vendoring + implementation:
 1. `vendor/academic-paper-reviewer/` contains all 28 files byte-identical
    (SHA-256 match vs upstream tree; script-verifiable).
-2. `vendor/shared/` contains exactly the §1.3 dependency set, byte-identical.
+2. `vendor/shared/` contains exactly the §1.3 dependency set, byte-identical —
+   today 143 files, the closure `computeSharedClosure()` records.
 3. `academic_review_create/status/submit/report` tools implemented with the
    §3 schema; state file round-trips; SHA-256 paper pinning works.
 4. .pdf/.docx inputs rejected at create; .md/.tex/.txt accepted.
