@@ -171,7 +171,12 @@ async function compareArtifact(relativePath, tempRoot, roots) {
     const from = index === undefined ? 0 : Math.max(0, index - 80)
     console.error('build-determinism: FAILED - ' + relativePath + ' differs between build roots')
     if (index !== undefined) {
-      console.error('    first difference at byte ' + String(index))
+      // 'index' is an offset into the DECODED text, i.e. UTF-16 code units, so it must be
+      // converted before it is called a byte: the two are equal only while the bytes before
+      // the difference are ASCII, and this script exists to compare arbitrary build output.
+      // (The byte totals above come from Buffer.length, which is already bytes.)
+      console.error('    first difference at byte ' + String(Buffer.byteLength(text.slice(0, index), 'utf8'))
+        + ' (code unit ' + String(index) + ')')
       console.error('    repo: ' + JSON.stringify(text.slice(from, from + 160)))
       console.error('    temp: ' + JSON.stringify(otherText.slice(from, from + 160)))
     }

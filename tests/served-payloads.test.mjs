@@ -34,6 +34,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { Context } from '@deepseek-ai/cordis'
+import { EXPECTED_SERVED_BYTES, EXPECTED_SERVED_BYTES_TOTAL, byteLengthOf } from './helpers.mjs'
 import { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import {
   PORT_NOTICE_BEGIN,
@@ -79,13 +80,7 @@ const PRODUCERS = {
  * Re-pinned at 88356e3 (the academic-pipeline round). Only academic-pipeline has a notice
  * (853 bytes, four references its tree names that this port does not vendor).
  */
-const SERVED_BYTES = {
-  'academic-paper': 64541,
-  'academic-paper-reviewer': 47984,
-  'academic-pipeline': 59934,
-  'deep-research': 51753,
-  'sr-screener': 33212,
-}
+const SERVED_BYTES = EXPECTED_SERVED_BYTES
 const BLOCK_BYTES = 684
 
 /**
@@ -334,6 +329,26 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
       + '   change ' + String(change).padStart(6)
       + (inTable ? '  [' + PRODUCERS[skill] + ']' : ''))
   }
+
+  // THE TOTAL, in bytes, and reconciled against the per-skill pins rather than typed in: both
+  // this file and scripts/e2e.mjs read EXPECTED_SERVED_BYTES from tests/helpers.mjs, so the two
+  // instruments report one number. The code-unit count is printed next to it, LABELLED as such -
+  // String.length is UTF-16 code units, and the difference here is the multi-byte text in the
+  // vendored descriptions and bodies. Anyone adding a CJK paragraph sees both units move apart
+  // and knows which one the pins are in.
+  const measuredTotal = SERVED_SKILLS.reduce((sum, skill) => sum + byteLengthOf(served.get(skill).content), 0)
+  const measuredCodeUnits = SERVED_SKILLS.reduce((sum, skill) => sum + served.get(skill).content.length, 0)
+  assert.deepEqual(Object.keys(SERVED_BYTES).sort(), [...SERVED_SKILLS].sort(),
+    'the pinned payload map must cover exactly the served skills')
+  assert.equal(measuredTotal, EXPECTED_SERVED_BYTES_TOTAL,
+    'the five served payloads must total the sum of their pins, in bytes')
+  assert.equal(measuredCodeUnits, measuredTotal - 4020,
+    'the code-unit count differs from the byte count by the non-ASCII text; if this moves, a'
+    + ' body changed character content, which is a payload change and not a unit change')
+  console.log('# served total: ' + String(measuredTotal) + ' bytes (Buffer.byteLength utf8, = '
+    + SERVED_SKILLS.map(skill => String(SERVED_BYTES[skill])).join(' + ') + ') = '
+    + String(measuredCodeUnits) + ' UTF-16 code units - the 4020 gap is the non-ASCII text in the'
+    + ' vendored bodies and descriptions')
 
   // The notice is a property of the tree, not of the skill: the two trees whose own
   // markdown names paths this port does not vendor carry one, the other two carry none.

@@ -52,6 +52,8 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { fileURLToPath } from 'node:url'
 import {
+  EXPECTED_SERVED_BYTES,
+  EXPECTED_SERVED_BYTES_TOTAL,
   PAPER_TEXT,
   callTool,
   expectFailure,
@@ -708,7 +710,16 @@ async function main() {
     // Loading is the half that can dangle: the model follows SKILL.md and its
     // agent/reference files. Every body must arrive complete and frontmatter-free,
     // each reporting the version its own frontmatter declares.
+    // EVERY COUNT IN THIS BLOCK IS IN BYTES: Buffer.byteLength(content, 'utf8'). It used to be
+    // String.length, which is UTF-16 code units - the same quantity until a body or a
+    // description holds non-ASCII text, and then quietly 4020 smaller on this catalog (the
+    // Korean, Spanish and Chinese triggers in the vendored frontmatter). A check that says
+    // bytes and counts code units is how the 58 CRLF-inflated rows and the 49098-that-was-
+    // really-48548 both happened, so the unit is named at every use and the code-unit count is
+    // printed next to it, LABELLED as code units rather than called bytes.
+    const servedPayloads = new Map()
     let deliveredBytes = 0
+    let deliveredCodeUnits = 0
     for (const skillName of EXPECTED_SKILL_NAMES) {
       const definition = await skills.get(skillName, { cwd: runWorkspace })
       assert.ok(definition !== undefined, skillName + ' must load through the mounted registry')
@@ -716,13 +727,32 @@ async function main() {
       assert.ok(typeof definition.description === 'string' && definition.description.trim().length > 0,
         skillName + ' must be served with a non-empty description')
       assert.equal(definition.content.startsWith('---'), false, skillName + ' body must not start with the frontmatter fence')
-      assert.ok(definition.content.length > 1000, skillName + ' body looks truncated')
+      assert.ok(Buffer.byteLength(definition.content, 'utf8') > 1000, skillName + ' body looks truncated (bytes)')
       assert.equal(definition.metadata.upstreamSkillVersion, EXPECTED_SKILL_VERSIONS[skillName])
-      deliveredBytes += definition.content.length
+      servedPayloads.set(skillName, definition)
+      deliveredBytes += Buffer.byteLength(definition.content, 'utf8')
+      deliveredCodeUnits += definition.content.length
     }
+
+    // RECONCILIATION, the point of the shared constant: the mounted registry must serve
+    // exactly the payloads the release gate pins, per skill and in total. tests/helpers.mjs
+    // holds EXPECTED_SERVED_BYTES for both instruments - this harness and
+    // tests/served-payloads.test.mjs - so the two can no longer report two different truths:
+    // a unit error or a body change fails here instead of leaving two numbers in the log.
+    for (const [skillName, definition] of servedPayloads) {
+      assert.equal(Buffer.byteLength(definition.content, 'utf8'), EXPECTED_SERVED_BYTES[skillName],
+        skillName + ': the served payload must be the pinned number of bytes')
+    }
+    assert.equal(deliveredBytes, EXPECTED_SERVED_BYTES_TOTAL,
+      'the five served payloads must total the sum of their pins, in bytes')
+    assert.equal(deliveredBytes - deliveredCodeUnits, 4020,
+      'the byte/code-unit gap must stay the non-ASCII text in these bodies; if it moves, a body'
+      + ' changed character content rather than a count being taken in the wrong unit')
     ok('all five skills load through the registry ('
       + EXPECTED_SKILL_NAMES.map(name => name + ' ' + EXPECTED_SKILL_VERSIONS[name]).join(' + ')
-      + '), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
+      + '), ' + String(deliveredBytes) + ' served bytes (Buffer.byteLength utf8) = '
+      + EXPECTED_SKILL_NAMES.map(name => String(EXPECTED_SERVED_BYTES[name])).join(' + ')
+      + ', the same payloads being ' + String(deliveredCodeUnits) + ' UTF-16 code units, no frontmatter fence')
 
     // deep-research and academic-paper are prompt-only in the tool sense: neither
     // may contribute a tool. Grep the registered names and descriptions (a count
@@ -819,6 +849,8 @@ async function main() {
       // verbatim, then whatever notice the tree earns. What differs per skill is the
       // notice and the pinned total, not the presence of the rule.
       assert.equal(Buffer.byteLength(before), 684, skillName + ': the prepended block moved')
+      assert.equal(Buffer.byteLength(content), EXPECTED_SERVED_BYTES[skillName],
+        skillName + ': the served payload must be the pinned number of bytes (see tests/helpers.mjs)')
       if (skillName === 'academic-pipeline') {
         // The ordering check this script has always made, on the one tree that can still
         // make it: with a single notice left, skipping the check would have left the
@@ -828,24 +860,20 @@ async function main() {
         assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
         assert.equal(after.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
         assert.equal(Buffer.byteLength(after), 853, 'the academic-pipeline port notice moved')
-        assert.equal(Buffer.byteLength(content), 59934, 'the academic-pipeline payload moved')
       } else if (skillName === 'academic-paper') {
         // It carried a 572-byte notice until 0.5.0, when the academic-pipeline tree resolved
         // the paths its markdown names. The absence is asserted WITH that arithmetic, so a
         // returned notice reads as a regression and not as a silent re-pin.
         assert.equal(after, '', 'academic-paper earns no port notice any more: the pipeline tree resolves its paths')
-        assert.equal(Buffer.byteLength(content), 64541, 'the academic-paper payload moved')
         assert.equal(65113 - Buffer.byteLength(content), 572, 'academic-paper must have shrunk by exactly its former notice')
       } else if (skillName === 'sr-screener') {
         // No notice on this tree: every path its own markdown names is vendored. If it
         // ever earns one the payload grows by exactly that notice and this pin moves.
         assert.equal(after, '', 'sr-screener earns no port notice on this tree')
-        assert.equal(Buffer.byteLength(content), 33212, 'the sr-screener payload moved')
       } else if (skillName === 'deep-research') {
         // Same story as academic-paper: its one missing reference is vendored now, so the
         // notice is gone (-563) and only the body may remain after the block.
         assert.equal(after, '', 'deep-research earns no port notice any more: its one missing file is vendored')
-        assert.equal(Buffer.byteLength(content), 51753, 'the deep-research payload moved')
         assert.equal(52316 - Buffer.byteLength(content), 563, 'deep-research must have shrunk by exactly its former notice')
       } else {
         // The reviewer is still the canary, but of the BODY: the rule now legitimately
@@ -853,7 +881,6 @@ async function main() {
         // text and nothing appended after it.
         assert.equal(after, '', 'the reviewer must carry no appended text')
         assert.equal(content, block + vendored, 'the reviewer payload must be exactly block + the untouched vendored body')
-        assert.equal(Buffer.byteLength(content), 47984, 'the reviewer payload moved')
       }
     }
     for (const line of payloadBytes) console.log('      payload ' + line)

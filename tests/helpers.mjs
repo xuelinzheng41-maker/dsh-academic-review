@@ -9,6 +9,42 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+/**
+ * The served payload of every vendored skill, in bytes, as the release gate pins it.
+ *
+ * ONE source of truth, because two instruments quote this quantity: tests/served-payloads
+ * measures the provider's output, and scripts/e2e.mjs measures the same payloads through a
+ * mounted registry. Before this constant existed the two disagreed by 4020 and nobody could
+ * tell which was wrong: e2e summed String.length, i.e. UTF-16 code units, and called the
+ * result bytes. Bytes are Buffer.byteLength(text, 'utf8'); the two differ by 4020 here
+ * because the vendored descriptions and bodies carry Korean, Spanish and Chinese text.
+ *
+ * Each value is the served payload - write-policy block + vendored body + port notice - so
+ * the total is the sum, never a separately maintained number.
+ */
+export const EXPECTED_SERVED_BYTES = {
+  'academic-paper': 64541,
+  'academic-paper-reviewer': 47984,
+  'academic-pipeline': 59934,
+  'deep-research': 51753,
+  'sr-screener': 33212,
+}
+
+/** The five payloads together, derived so it cannot drift from the per-skill pins. */
+export const EXPECTED_SERVED_BYTES_TOTAL = Object.values(EXPECTED_SERVED_BYTES)
+  .reduce((sum, bytes) => sum + bytes, 0)
+
+/**
+ * UTF-8 byte length, the unit every count in this repository is quoted in.
+ *
+ * Use this, not String.length: `.length` is UTF-16 code units and silently undercounts any
+ * text with non-ASCII in it. The distinction is the reason the 58 CRLF-inflated rows and the
+ * 49098-that-was-really-48548 both happened.
+ */
+export function byteLengthOf(text) {
+  return Buffer.byteLength(text, 'utf8')
+}
+
 /** Minimal manuscript used by the lifecycle tests. */
 export const PAPER_TEXT = [
   '# Grain-ball clustering for noisy labels',
