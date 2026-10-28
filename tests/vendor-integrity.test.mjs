@@ -5,26 +5,45 @@
  */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { criterionIds } from '../scripts/vendor-upstream.mjs'
+import { computeRegistryReceipts, computeSharedClosure, criterionIds } from '../scripts/vendor-upstream.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
-const EXPECTED_SKILLS = ['academic-paper-reviewer', 'deep-research', 'academic-paper', 'sr-screener']
+const EXPECTED_SKILLS = [
+  'academic-paper-reviewer',
+  'deep-research',
+  'academic-paper',
+  'sr-screener',
+  'academic-pipeline',
+]
 const EXPECTED_SKILL_FILE_COUNTS = {
   'academic-paper-reviewer': 28,
   'deep-research': 53,
   'academic-paper': 63,
   'sr-screener': 25,
+  'academic-pipeline': 30,
 }
-// Counted from the upstream git objects: 169 skill files + 110 shared files.
-const EXPECTED_TOTAL_FILES = 279
-// The closure is derived, but its SIZE is pinned here on purpose: a rule change
-// that quietly stops following part of the tree has to be a deliberate edit.
-const EXPECTED_SHARED_COUNTS = { total: 110, byScan: 108, byRegistryReceipt: 2 }
+// The closure is derived, but its SIZE is pinned here on purpose: a rule change that
+// quietly stops following part of the tree has to be a deliberate edit.
+//
+// byRegistryReceipt is 0 as of the academic-pipeline round, and that is a change of FACT
+// rather than a relaxation: shared/contracts/README.md (new with that tree) names
+// shared/review_criteria_sources/, so the path scan now reaches both receipts and the
+// receipt rule has nothing left to add. The rule is not dead - the test below drives it
+// with that one mention blanked and requires it to supply exactly those two files - but
+// while the mention exists it cannot be what vendors them, and a count claiming otherwise
+// would be describing an older tree.
+const EXPECTED_SHARED_COUNTS = { total: 143, byScan: 143, byRegistryReceipt: 0 }
+// Counted from the upstream git objects: 199 skill files + 143 shared files. Was 279
+// (169 + 110) before academic-pipeline was vendored; derived from the two counts above so
+// that updating one without the other is caught here.
+const EXPECTED_TOTAL_FILES = Object.values(EXPECTED_SKILL_FILE_COUNTS)
+  .reduce((sum, count) => sum + count, 0) + EXPECTED_SHARED_COUNTS.total
 
 test('vendor-manifest.json pins the upstream identity and the vendored skills', async () => {
   const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
@@ -34,7 +53,8 @@ test('vendor-manifest.json pins the upstream identity and the vendored skills', 
   assert.equal(manifest.upstream.license, 'CC BY-NC 4.0')
   assert.deepEqual(manifest.vendored.skills, EXPECTED_SKILLS)
   assert.deepEqual(manifest.vendored.skillFileCounts, EXPECTED_SKILL_FILE_COUNTS)
-  assert.equal(manifest.vendored.skillFileCount, 28 + 53 + 63 + 25)
+  assert.equal(manifest.vendored.skillFileCount,
+    Object.values(EXPECTED_SKILL_FILE_COUNTS).reduce((sum, count) => sum + count, 0))
   assert.equal(manifest.vendored.sharedFileCount, manifest.sharedFiles.length)
   assert.equal(manifest.vendored.sharedFileCount, EXPECTED_SHARED_COUNTS.total)
   assert.deepEqual(manifest.vendored.sharedFileCounts, {
@@ -94,11 +114,20 @@ test('the shared closure is recorded once per file and never overlaps a skill tr
       'shared entry points into the ' + skill + ' tree',
     )
   }
-  // Every shared file is vendored by exactly one rule, and the manifest says which.
+  // Every shared file is vendored by exactly one rule, and the manifest says which. The
+  // formula is the invariant; the split is a fact about the current tree. It used to be
+  // 108 + 2 with the receipts unreachable by the scan; now the scan reaches them, so it is
+  // 143 + 0 and the receipts are recorded as receipt CANDIDATES rather than as an addition.
+  // Both halves are asserted: the sum must balance, and no rule may claim more receipts
+  // than there are.
   assert.equal(manifest.sharedCarriedOver, undefined, 'no catch-all carry-over field')
   const counts = manifest.vendored.sharedFileCounts
   assert.equal(counts.byScan + counts.byRegistryReceipt, manifest.sharedFiles.length)
-  assert.equal(counts.byRegistryReceipt, manifest.sharedViaRegistryReceipts.length)
+  assert.ok(counts.byRegistryReceipt <= manifest.sharedViaRegistryReceipts.length,
+    'a rule may not claim more receipts than exist')
+  for (const receipt of manifest.sharedViaRegistryReceipts) {
+    assert.ok(manifest.sharedFiles.includes(receipt.file), 'a cited receipt must still be vendored: ' + receipt.file)
+  }
 })
 
 test('a provenance receipt is vendored only because the registry cites its criterion ids', async () => {
@@ -225,17 +254,113 @@ test('a shared file only academic-paper references is vendored, and the other sk
   assert.ok(PAPER_ONLY_SHARED.length > 0)
 })
 
-test('the registry receipts are unreachable by the path scan, so the receipt rule is what vendors them', async () => {
-  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
-  const receipts = manifest.sharedViaRegistryReceipts.map(entry => entry.file)
-  assert.equal(receipts.length, EXPECTED_SHARED_COUNTS.byRegistryReceipt)
-  const everything = await textOutside([])
-  for (const receipt of receipts) {
-    const mentions = everything.filter(entry => entry.name !== receipt && entry.text.includes(receipt)).map(entry => entry.name)
-    assert.deepEqual(mentions, [], receipt + ' is named by ' + mentions.join(', ') + ', so the scan could have found it')
+/**
+ * A read-only index over a vendored tree, shaped like the upstream index the vendoring
+ * pipeline hands to computeSharedClosure: a path that leaves the tree (any dot-dot
+ * segment) is invisible, because an index over one tree cannot see outside it.
+ */
+function treeIndex(root) {
+  const normal = (path) => path.replace(/\/{2,}/gu, '/')
+  return {
+    readText: (path) => readFileSync(join(root, normal(path)), 'utf8'),
+    typeOf: (path) => {
+      if (path.includes('..') || path.includes('./')) return 'missing'
+      try {
+        return statSync(join(root, normal(path))).isDirectory() ? 'dir' : 'file'
+      } catch {
+        return 'missing'
+      }
+    },
+    filesUnder: (path) => {
+      if (path.includes('..')) return []
+      const out = []
+      const walk = (relativePath) => {
+        for (const entry of readdirSync(join(root, relativePath), { withFileTypes: true })) {
+          const next = relativePath + '/' + entry.name
+          if (entry.isDirectory()) walk(next)
+          else out.push(next)
+        }
+      }
+      try {
+        walk(normal(path))
+      } catch {
+        return []
+      }
+      return out.sort()
+    },
   }
-  // byScan must therefore be exactly the scan set, with the receipts added on top.
-  assert.equal(manifest.vendored.sharedFileCounts.byScan + receipts.length, manifest.sharedFiles.length)
+}
+
+/**
+ * The shared/ scope is decided by two rules. This test used to assert that the receipts
+ * were UNREACHABLE by the path scan - that nothing named them, so the receipt rule was
+ * the only thing that could vendor them. That premise stopped being true when the
+ * academic-pipeline tree arrived: shared/contracts/README.md names
+ * shared/review_criteria_sources/, the scan reaches both receipts, and byRegistryReceipt
+ * fell to 0. Deleting the test would have been the easy edit and the wrong one: the
+ * receipt rule is still the only thing that vendors a provenance receipt no path names,
+ * and if it broke, nothing would notice until a re-vendor shipped a registry whose
+ * criteria claim provenance we do not ship.
+ *
+ * So it asserts the CURRENT state and then drives the rule with the one mention blanked -
+ * the counterfactual ci-engineer built by hand - requiring the receipt rule to supply
+ * exactly the two files the scan loses, and the two counts to still sum to the total.
+ */
+test('the scan reaches every shared file today, and the receipt rule still supplies what it cannot see', async () => {
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
+  const index = treeIndex(join(repoRoot, 'vendor'))
+  const skillFiles = Object.keys(manifest.files)
+    .filter(file => manifest.vendored.skills.some(skill => file.startsWith(skill + '/')))
+    .sort()
+
+  // CURRENT STATE: the scan alone reproduces the recorded closure, file for file.
+  const closure = computeSharedClosure({ skillFiles, readText: index.readText, typeOf: index.typeOf, filesUnder: index.filesUnder })
+  assert.deepEqual(closure.missing, [], 'every reference the vendored markdown makes must resolve')
+  assert.deepEqual(closure.sharedFiles, manifest.sharedFiles,
+    'the path scan must reproduce manifest.sharedFiles exactly while it reaches every file')
+  assert.equal(manifest.vendored.sharedFileCounts.byScan, manifest.sharedFiles.length,
+    'byScan must account for every shared file while the scan reaches them all')
+  assert.equal(manifest.vendored.sharedFileCounts.byRegistryReceipt, 0,
+    'the receipt rule adds nothing while the scan sees the receipts; a non-zero count means the two'
+    + ' rules double-counted, and the formula would still balance')
+
+  // Why the scan wins: exactly one vendored file names the receipts directory. Recorded
+  // here so that if that mention disappears, this test is the thing that says so.
+  const namers = Object.keys(manifest.files).filter(file =>
+    index.readText(file).includes('shared/review_criteria_sources/'))
+  assert.deepEqual(namers, ['shared/contracts/README.md'],
+    'the mention that makes the receipts reachable must be named here')
+
+  // COUNTERFACTUAL: blank that one mention. The scan loses the receipts; the rule must
+  // supply them, and nothing else may change.
+  const anchor = 'shared/review_criteria_sources/'
+  const blanked = (file) => file === 'shared/contracts/README.md'
+    ? index.readText(file).split(anchor).join('')
+    : index.readText(file)
+  assert.equal(blanked('shared/contracts/README.md').includes(anchor), false,
+    'the counterfactual must actually remove the mention, not merely be intended to')
+  const blind = computeSharedClosure({ skillFiles, readText: blanked, typeOf: index.typeOf, filesUnder: index.filesUnder })
+  assert.equal(blind.sharedFiles.length, closure.sharedFiles.length - 2,
+    'blanking the mention must lose exactly the two receipts, so the counterfactual measures the rule'
+    + ' and not the edit')
+
+  const receipts = computeRegistryReceipts({
+    receiptFiles: index.filesUnder('shared/review_criteria_sources'),
+    readText: index.readText,
+  })
+  const scanned = new Set(blind.sharedFiles)
+  const viaReceipts = receipts.included.map(entry => entry.file).filter(file => !scanned.has(file)).sort()
+  assert.deepEqual(viaReceipts, manifest.sharedViaRegistryReceipts.map(entry => entry.file).sort(),
+    'the receipt rule must supply exactly the files the scan cannot see')
+  assert.deepEqual(manifest.sharedFiles.filter(file => !blind.sharedFiles.includes(file)), viaReceipts,
+    'the files the scan lost and the files the rule supplied must be the same set')
+  assert.equal(blind.sharedFiles.length + viaReceipts.length, manifest.sharedFiles.length,
+    'scan + receipt rule must still reconstruct the recorded closure')
+
+  console.log('# shared/ rules: scan alone reproduces ' + String(closure.sharedFiles.length)
+    + ' files (byRegistryReceipt 0); with its one mention blanked the scan loses '
+    + String(viaReceipts.length) + ' and the receipt rule supplies exactly those: '
+    + String(blind.sharedFiles.length) + ' + ' + String(viaReceipts.length) + ' = ' + String(manifest.sharedFiles.length))
 })
 
 // --- extension-agnostic vendoring -------------------------------------------
@@ -253,7 +378,25 @@ test('the vendor step is extension-agnostic: every payload file is pinned and co
   const manifest = JSON.parse(await readFile(join(repoRoot, 'vendor-manifest.json'), 'utf8'))
   const names = Object.keys(manifest.files)
   const payload = names.filter(name => !name.endsWith('.md'))
-  assert.ok(payload.length >= 89, 'expected at least 89 non-markdown files, got ' + payload.length)
+  // The floor used to be 'at least 89' because four trees held four different amounts of
+  // payload and the only point was that markdown was not the only thing shipped. With five
+  // trees a floor that low would pass while a whole skill's payload vanished, so the
+  // expectation is per tree and exact. academic-pipeline contributes one file (.gitkeep).
+  const PAYLOAD_PER_TREE = {
+    'academic-paper': 1,
+    'academic-paper-reviewer': 0,
+    'academic-pipeline': 1,
+    'deep-research': 0,
+    'sr-screener': 10,
+    shared: 108,
+  }
+  for (const [tree, expected] of Object.entries(PAYLOAD_PER_TREE)) {
+    const held = payload.filter(name => tree === 'shared' ? name.startsWith('shared/') : name.startsWith(tree + '/'))
+    assert.equal(held.length, expected,
+      'the ' + tree + ' tree must ship ' + String(expected) + ' payload file(s), saw ' + String(held.length))
+  }
+  assert.equal(payload.length, Object.values(PAYLOAD_PER_TREE).reduce((sum, count) => sum + count, 0),
+    'the payload count is the sum of the per-tree counts, so a file leaving one tree cannot hide in the total')
   // The fourth skill contributes exactly its ten payload files.
   const srPayload = payload.filter(name => name.startsWith('sr-screener/'))
   assert.deepEqual(srPayload.sort(), [
@@ -268,9 +411,18 @@ test('the vendor step is extension-agnostic: every payload file is pinned and co
     'sr-screener/templates/workflows/ft_screening.template.js',
     'sr-screener/templates/workflows/ta_screening.template.js',
   ])
+  // A placeholder is allowed to be empty, and nothing else is. academic-pipeline ships one
+  // (.gitkeep, which exists to keep an otherwise-empty adapters/ directory in the tree), so
+  // the rule is narrowed by NAME rather than dropped: an empty file that is not the known
+  // placeholder still fails, and the placeholder is still pinned and hashed below.
+  const PLACEHOLDERS = new Set(['academic-pipeline/references/adapters/.gitkeep'])
   for (const name of payload) {
     const bytes = await readFile(join(repoRoot, 'vendor', name))
     assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.files[name], 'digest drift in ' + name)
+    if (PLACEHOLDERS.has(name)) {
+      assert.equal(bytes.length, 0, name + ' is a placeholder, so emptiness is the whole of it')
+      continue
+    }
     assert.ok(bytes.length > 0, name + ' ships empty')
     if (TEXT_EXTENSIONS.has(name.slice(name.lastIndexOf('.')))) {
       assert.equal(bytes.includes(0x0d), false, name + ' carries CR, so something text-converted it')

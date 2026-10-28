@@ -76,13 +76,22 @@ const PAPER_SKILL_NAME = 'academic-paper'
 /** The fourth vendored skill: the first one that ships executable payload. */
 const SCREENER_SKILL_NAME = 'sr-screener'
 
+/** The fifth vendored skill (0.5.0): the only one whose own tree names unvendored paths. */
+const PIPELINE_SKILL_NAME = 'academic-pipeline'
+
 /**
  * The served catalog, pinned by hand. vendor-integrity.test.mjs pins the same
  * set against the manifest; this file pins it against the provider, because a
  * test that merely iterates whatever happens to be vendored proves less than one
  * that states what it expects to find.
  */
-const EXPECTED_SERVED_SKILLS = ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, SCREENER_SKILL_NAME]
+const EXPECTED_SERVED_SKILLS = [
+  'academic-paper',
+  REVIEW_SKILL_NAME,
+  PIPELINE_SKILL_NAME,
+  DEEP_RESEARCH_SKILL_NAME,
+  SCREENER_SKILL_NAME,
+]
 
 /**
  * Upstream areas a vendored file may name without the target being vendored
@@ -91,7 +100,11 @@ const EXPECTED_SERVED_SKILLS = ['academic-paper', REVIEW_SKILL_NAME, DEEP_RESEAR
  * skills the plugin serves plus their shared/ closure.
  */
 const UNVENDORED_UPSTREAM_AREAS = new Map([
-  ['academic-pipeline', 'upstream skill academic-pipeline: not vendored by this port (only paper, reviewer and deep-research are served)'],
+  // 'academic-pipeline' was listed here until 0.5.0, when that skill became the fifth
+  // vendored tree. It is deliberately GONE rather than kept as a tolerated area: a
+  // reference to academic-pipeline/... is in port now, so it must resolve and a miss has
+  // to fail. The stale-entry check below is what forced this edit rather than letting the
+  // allowlist quietly absorb the tree it used to excuse.
   ['docs', 'upstream repository docs/design specs: not vendored by this port'],
   ['examples', 'upstream repository examples/: not vendored by this port'],
   ['scripts', 'upstream repository scripts/: not vendored by this port'],
@@ -279,7 +292,7 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
   // The walk covers every skill and the shared tree the skills read.
   assert.deepEqual(
     [...new Set(scan.files.map(name => name.split('/')[0]))].sort(),
-    [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, PAPER_SKILL_NAME, SCREENER_SKILL_NAME, 'shared'].sort(),
+    [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME, PAPER_SKILL_NAME, SCREENER_SKILL_NAME, PIPELINE_SKILL_NAME, 'shared'].sort(),
     'the walk must cover every vendored area',
   )
   // Pin the markdown counts per tree rather than comparing them to "whatever is
@@ -289,6 +302,7 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
     [DEEP_RESEARCH_SKILL_NAME]: 53,
     [PAPER_SKILL_NAME]: 62,
     [SCREENER_SKILL_NAME]: 15,
+    [PIPELINE_SKILL_NAME]: 29,
   }
   for (const [skillName, expected] of Object.entries(MARKDOWN_PER_SKILL)) {
     assert.equal(
@@ -305,15 +319,18 @@ test('every vendored markdown reference resolves inside vendor/, except the unve
     [DEEP_RESEARCH_SKILL_NAME]: 0,
     [PAPER_SKILL_NAME]: 1,
     [SCREENER_SKILL_NAME]: 10,
+    // The fifth tree's one payload file is a .gitkeep, which is the point: the rule is
+    // 'markdown plus payload equals the manifest total', not 'payload means code'.
+    [PIPELINE_SKILL_NAME]: 1,
   }
   for (const [skillName, payload] of Object.entries(PAYLOAD_PER_SKILL)) {
     const total = manifest.skills.find(skill => skill.name === skillName).fileCount
     assert.equal(total - MARKDOWN_PER_SKILL[skillName], payload,
       skillName + ' must ship ' + String(payload) + ' non-markdown file(s)')
   }
-  // A hand-pinned catalog: the vendored set is four skills, not "however many".
+  // A hand-pinned catalog: the vendored set is exactly these skills, not "however many".
   assert.deepEqual([...manifest.vendored.skills].sort(), [...EXPECTED_SERVED_SKILLS].sort())
-  assert.ok(scan.files.length >= 170, 'expected the whole vendored tree, got ' + String(scan.files.length) + ' markdown files')
+  assert.ok(scan.files.length >= 222, 'expected the whole vendored tree (222 markdown files), got ' + String(scan.files.length))
   assert.ok(scan.references >= 400, 'expected at least 400 references, got ' + String(scan.references))
 
   // No vendored file may reach outside the vendored tree.
@@ -387,7 +404,7 @@ test('the deep-research tree references 34 distinct shared/ paths and every one 
   }
 })
 
-test('the served payload keeps its order and its byte counts (reviewer canary, deep-research, academic-paper)', async (t) => {
+test('the served payload keeps its order and its byte counts (reviewer canary, the pipeline notice, two former notices)', async (t) => {
   const { served } = await servedSkills()
 
   const reviewer = served.get(REVIEW_SKILL_NAME)
@@ -396,6 +413,8 @@ test('the served payload keeps its order and its byte counts (reviewer canary, d
   const researchBody = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
   const paper = served.get(PAPER_SKILL_NAME)
   const paperBody = await vendoredBody(PAPER_SKILL_NAME)
+  const pipeline = served.get(PIPELINE_SKILL_NAME)
+  const pipelineBody = await vendoredBody(PIPELINE_SKILL_NAME)
   const block = renderWritePolicyBlock()
 
   // CANARY, RE-AIMED. It used to be "the reviewer is its vendored body, nothing prepended
@@ -414,49 +433,85 @@ test('the served payload keeps its order and its byte counts (reviewer canary, d
   assert.equal(byteLength(reviewer.content), 47984, 'the reviewer served payload moved')
   assert.equal(byteLength(reviewerBody), 47300)
 
-  // academic-paper: block, then body, then the appended port notice - in that order.
+  // academic-paper: block, then the vendored body verbatim, and nothing after it. This
+  // tree carried the appended port notice until 0.5.0; the academic-pipeline tree now
+  // supplies the paths the paper markdown names, so the notice is gone and the payload is
+  // 572 bytes shorter. The absence is asserted WITH that arithmetic - a shrink with no
+  // recorded cause is indistinguishable from a body that lost text - and the ORDER
+  // assertions moved to academic-pipeline below rather than being deleted with the subject.
   assert.equal(paper.content.startsWith(WRITE_POLICY_BEGIN), true, 'the write-policy block must be first')
   assert.equal(paper.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block')
   assert.equal(paper.content.indexOf(WRITE_POLICY_END), block.lastIndexOf('<!-- dsh-academic-review:write-policy:end -->'))
   const blockEnd = paper.content.indexOf(WRITE_POLICY_END) + WRITE_POLICY_END.length
   const bodyStart = paper.content.indexOf(paperBody)
-  const noticeStart = bodyStart + paperBody.length
-  const notice = paper.content.slice(noticeStart)
   assert.ok(bodyStart >= blockEnd, 'the vendored body must follow the write-policy block (block ends ' + String(blockEnd) + ', body starts ' + String(bodyStart) + ')')
   assert.equal(paper.content.slice(0, blockEnd), block.slice(0, blockEnd), 'the block must be served verbatim, in front')
-  assert.equal(notice.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the appended port notice must come last, directly after the body')
-  assert.equal(notice.includes('academic-pipeline/references/literature_corpus_consumers.md'), true,
-    'the notice must name the file it is apologising for')
-  assert.equal(notice.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
-  assert.equal(paper.content.slice(noticeStart).includes(WRITE_POLICY_BEGIN), false, 'policy A must never appear after the body')
-  assert.equal(paper.content.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
+  assert.equal(paper.content, block + paperBody, 'academic-paper must be served as block + body, with nothing appended')
+  assert.equal(paper.content.includes(PORT_NOTICE_BEGIN), false, 'the paper tree resolves now, so it earns no notice')
+  assert.equal(paper.content.includes(PORT_NOTICE_END), false)
   t.diagnostic('served bytes  ' + PAPER_SKILL_NAME + ': ' + String(byteLength(paper.content))
     + ' = vendored body ' + String(byteLength(paperBody))
     + ' + write-policy block ' + String(byteLength(block))
-    + ' + port notice ' + String(byteLength(notice)))
-  assert.equal(byteLength(paper.content), 65113, 'the academic-paper served payload moved')
+    + ' + port notice 0')
+  assert.equal(byteLength(paper.content), 64541, 'the academic-paper served payload moved')
   assert.equal(byteLength(paperBody), 63857)
   assert.equal(byteLength(block), 684)
-  assert.equal(byteLength(notice), 572)
+  assert.equal(65113 - byteLength(paper.content), 572,
+    'academic-paper must have shrunk by exactly the notice it no longer needs (572 bytes) and nothing else')
 
-  // deep-research: block, then the vendored body verbatim, then its own notice.
+  // deep-research: block, then the vendored body verbatim, and nothing after it. Its one
+  // missing reference is vendored now, so its notice is gone too (563 bytes).
   assert.equal(research.content.startsWith(block), true, 'the write-policy block must be first, for every served skill')
-  assert.equal(research.content.slice(block.length, block.length + researchBody.length), researchBody,
-    'the vendored deep-research body must be served verbatim, directly after the block')
-  const researchNotice = research.content.slice(block.length + researchBody.length)
+  assert.equal(research.content.slice(block.length), researchBody,
+    'the vendored deep-research body must be served verbatim, directly after the block, with nothing appended')
   assert.equal(research.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block on deep-research')
-  assert.equal(researchNotice.trimEnd().endsWith(PORT_NOTICE_END), true)
-  assert.equal(research.content.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
+  assert.equal(research.content.includes(PORT_NOTICE_BEGIN), false, 'deep-research earns no notice now: the file it named is vendored')
   t.diagnostic('served bytes  ' + DEEP_RESEARCH_SKILL_NAME + ': ' + String(byteLength(research.content))
     + ' = write-policy block ' + String(byteLength(block)) + ' + vendored body ' + String(byteLength(researchBody))
-    + ' + port notice ' + String(byteLength(researchNotice)))
-  assert.equal(byteLength(research.content), 52316, 'the deep-research served payload moved')
+    + ' + port notice 0')
+  assert.equal(byteLength(research.content), 51753, 'the deep-research served payload moved')
   assert.equal(byteLength(researchBody), 51069)
+  assert.equal(52316 - byteLength(research.content), 563,
+    'deep-research must have shrunk by exactly the notice it no longer needs (563 bytes) and nothing else')
+
+  // academic-pipeline: the ORDER this test exists for, asserted on the one skill that still
+  // earns a notice - write-policy block, then the vendored body verbatim, then the notice,
+  // which ends the payload. Same assertions the paper tree used to carry, so the property
+  // is still tested and the tree it is tested on is the one that can exercise it.
+  assert.equal(pipeline.content.startsWith(block), true, 'the write-policy block must be first, for every served skill')
+  const pipelineBlockEnd = pipeline.content.indexOf(WRITE_POLICY_END) + WRITE_POLICY_END.length
+  const pipelineBodyStart = pipeline.content.indexOf(pipelineBody)
+  assert.ok(pipelineBodyStart >= pipelineBlockEnd, 'the vendored pipeline body must follow the write-policy block')
+  assert.equal(pipeline.content.slice(0, pipelineBlockEnd), block.slice(0, pipelineBlockEnd), 'the block must be served verbatim, in front')
+  // The block renderer ends with a blank line, so the body starts after a '\n\n' seam; the
+  // point is that the seam is only whitespace and only those two newlines - a '\n\n\n', a
+  // heading or a stray sentence between the rule and the skill would fail here.
+  assert.equal(pipeline.content.slice(pipelineBlockEnd, pipelineBodyStart), '\n\n',
+    'nothing but the block/body seam may sit between the block and the body')
+  assert.equal(pipeline.content.slice(pipelineBlockEnd, pipelineBodyStart).trim(), '')
+  const pipelineNotice = pipeline.content.slice(pipelineBodyStart + pipelineBody.length)
+  assert.equal(pipelineNotice.trimStart().startsWith(PORT_NOTICE_BEGIN), true,
+    'the appended port notice must come last, directly after the body')
+  assert.equal(pipelineNotice.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
+  assert.equal(pipelineNotice.includes('docs/PERFORMANCE.md'), true, 'the notice must name the files it is apologising for')
+  assert.equal(pipelineNotice.includes(WRITE_POLICY_BEGIN), false, 'policy A must never appear after the body')
+  assert.equal(pipeline.content.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
+  assert.equal(pipeline.content.split(WRITE_POLICY_BEGIN).length, 2, 'exactly one write-policy block on academic-pipeline')
+  t.diagnostic('served bytes  ' + PIPELINE_SKILL_NAME + ': ' + String(byteLength(pipeline.content))
+    + ' = write-policy block ' + String(byteLength(block)) + ' + vendored body ' + String(byteLength(pipelineBody))
+    + ' + port notice ' + String(byteLength(pipelineNotice)))
+  assert.equal(byteLength(pipeline.content), 59934, 'the academic-pipeline served payload moved')
+  assert.equal(byteLength(pipelineBody), 58397)
+  assert.equal(byteLength(pipelineNotice), 853)
+  assert.equal(byteLength(block) + byteLength(pipelineBody) + byteLength(pipelineNotice), byteLength(pipeline.content),
+    'the pipeline payload must be exactly block + body + notice')
 
   // The block is attached to every served skill and to nothing else: it is not in the
   // metadata twice, not in the notice, and never after the body.
   assert.equal(paper.content.slice(block.length + paperBody.length).includes(WRITE_POLICY_BEGIN), false,
     'the block must appear before the body and only there')
+  assert.equal(pipeline.content.slice(block.length + pipelineBody.length).includes(WRITE_POLICY_BEGIN), false,
+    'not on the pipeline either: the notice carries no policy text')
   assert.equal(reviewer.content.split(WRITE_POLICY_BEGIN).length - 1, 1, 'the reviewer carries it exactly once')
   assert.equal(research.content.split(WRITE_POLICY_BEGIN).length - 1, 1, 'deep-research carries it exactly once')
 })

@@ -49,7 +49,8 @@ test('applying the plugin registers five tools and every vendored skill', async 
   ])
 
   const summaries = await skills.list({ cwd: space.root })
-  assert.deepEqual(summaries.map(summary => summary.name), ['academic-paper', 'academic-paper-reviewer', 'deep-research', 'sr-screener'])
+  assert.deepEqual(summaries.map(summary => summary.name),
+    ['academic-paper', 'academic-paper-reviewer', 'academic-pipeline', 'deep-research', 'sr-screener'])
   // Every resource base is an absolute directory under the packaged vendor tree.
   for (const summary of summaries) {
     assert.equal(summary.provider, 'academic-review')
@@ -141,9 +142,18 @@ test('a narrowed skills config serves only the named skill', async t => {
 test('an unknown skills config entry fails the mount with a clear message', async () => {
   const space = await workspace()
   try {
+    // The message is asserted by shape rather than as one long literal: it must name the
+    // typo AND list every skill that IS available, so a fifth skill cannot silently drop out
+    // of the list that makes the error useful.
     assert.throws(
       () => mount({ stateDir: '.academic-review', workspaceRoot: space.root, skills: ['deep-resarch'] }),
-      /unknown vendored skill "deep-resarch": available skills are academic-paper, academic-paper-reviewer, deep-research/u,
+      error => {
+        assert.match(error.message, /unknown vendored skill "deep-resarch"/u)
+        for (const skill of ['academic-paper', 'academic-paper-reviewer', 'academic-pipeline', 'deep-research', 'sr-screener']) {
+          assert.ok(error.message.includes(skill), 'the error must list the available skill ' + skill)
+        }
+        return true
+      },
     )
   } finally {
     await space.cleanup()

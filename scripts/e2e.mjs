@@ -77,9 +77,21 @@ const REVIEW_ID_RE = /^rev-[0-9]{8}-[0-9a-f]{8}$/
 /** Timestamps the plugin assigns carry an explicit offset, never a bare Z. */
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
 /** The skills the plugin contract promises to serve, in discovery (alphabetical) order. */
-const EXPECTED_SKILL_NAMES = ['academic-paper', 'academic-paper-reviewer', 'deep-research', 'sr-screener']
+const EXPECTED_SKILL_NAMES = [
+  'academic-paper',
+  'academic-paper-reviewer',
+  'academic-pipeline',
+  'deep-research',
+  'sr-screener',
+]
 /** Version each skill's own frontmatter declares, pinned so a re-vendor is visible. */
-const EXPECTED_SKILL_VERSIONS = { 'academic-paper': '3.3.1', 'academic-paper-reviewer': '1.11.1', 'deep-research': '2.12.1', 'sr-screener': '1.0.0' }
+const EXPECTED_SKILL_VERSIONS = {
+  'academic-paper': '3.3.1',
+  'academic-paper-reviewer': '1.11.1',
+  'academic-pipeline': '3.23.2',
+  'deep-research': '2.12.1',
+  'sr-screener': '1.0.0',
+}
 /** The one non-markdown vendored file: 4844 B, sha256 of the upstream git object. */
 const TEX_TEMPLATE = 'academic-paper/templates/latex_article_template.tex'
 const TEX_TEMPLATE_SHA256 = '1f9112782a501b605d17ce644598cdd5e5ef250560198677266976038ccbc3c9'
@@ -662,7 +674,7 @@ async function main() {
       assert.equal(candidate.path, join(repoRoot, 'vendor', skillName, 'SKILL.md'))
       assert.ok((await stat(candidate.path)).size > 0, candidate.path + ' must exist and be non-empty')
     }
-    ok('plugin mounted; all four vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
+    ok('plugin mounted; all five vendored skills are advertised (' + vendored.join(' + ') + ') with absolute resource bases')
 
     // Loading is the half that can dangle: the model follows SKILL.md and its
     // agent/reference files. Every body must arrive complete and frontmatter-free,
@@ -679,8 +691,9 @@ async function main() {
       assert.equal(definition.metadata.upstreamSkillVersion, EXPECTED_SKILL_VERSIONS[skillName])
       deliveredBytes += definition.content.length
     }
-    ok('all four skills load through the registry (academic-paper 3.3.1 + academic-paper-reviewer 1.11.1 '
-      + '+ deep-research 2.12.1 + sr-screener 1.0.0), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
+    ok('all five skills load through the registry ('
+      + EXPECTED_SKILL_NAMES.map(name => name + ' ' + EXPECTED_SKILL_VERSIONS[name]).join(' + ')
+      + '), ' + String(deliveredBytes) + ' served bytes, no frontmatter fence')
 
     // deep-research and academic-paper are prompt-only in the tool sense: neither
     // may contribute a tool. Grep the registered names and descriptions (a count
@@ -699,7 +712,9 @@ async function main() {
       if (/sr[ _-]?screener|screening/iu.test(haystack)) offending.push('sr-screener mention in ' + schema.name)
     }
     assert.deepEqual(offending, [], 'a prompt-only skill leaked a tool onto the surface')
-    for (const narrowedSkill of ['deep-research', 'academic-paper', 'sr-screener']) {
+    // Every prompt-only skill in the catalog is mounted alone once: a fifth tree must not
+    // be able to add a tool, and a narrowed mount must still serve exactly one skill.
+    for (const narrowedSkill of EXPECTED_SKILL_NAMES.filter(name => name !== 'academic-paper-reviewer')) {
       const narrowed = await mountReviewPlugin({
         stateDir: STATE_DIR,
         workspaceRoot: runWorkspace,
@@ -709,8 +724,9 @@ async function main() {
       const narrowedSkills = (await narrowed.skills.list({ cwd: runWorkspace })).map(skill => skill.name)
       assert.deepEqual(narrowedSkills, [narrowedSkill], 'the narrowed mount serves only ' + narrowedSkill)
     }
-    ok('prompt-only skills add no tools: deep-research-only, academic-paper-only and sr-screener-only mounts each '
-      + 'expose the same five academic_review_* tools, and no tool name or description mentions any of them')
+    ok('prompt-only skills add no tools: ' + EXPECTED_SKILL_NAMES.filter(name => name !== 'academic-paper-reviewer')
+      .map(name => name + '-only').join(', ') + ' mounts each expose the same five academic_review_* tools,'
+      + ' and no tool name or description mentions any of them')
 
     // The served payloads are the release artefact. Order matters as much as
     // presence: the write-policy block is only a pre-emptive rule if it comes
@@ -740,20 +756,34 @@ async function main() {
       assert.equal(content.split(WRITE_POLICY_BEGIN).length, 2, skillName + ': one block in the whole payload, so a double attachment fails here')
       assert.equal(after.includes(WRITE_POLICY_BEGIN), false, skillName + ': policy A must never appear after the body')
       assert.equal(Buffer.byteLength(before), 684, skillName + ': the prepended block moved')
-      if (skillName === 'academic-paper') {
+      if (skillName === 'academic-pipeline') {
+        // The ordering check this script has always made, on the one tree that can still
+        // make it: with a single notice left, skipping the check would have left the
+        // property untested rather than tested once. The notice must follow the body and
+        // end the payload.
         assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'the port notice must follow the body')
         assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the port notice must end the payload')
         assert.equal(after.split(PORT_NOTICE_BEGIN).length, 2, 'exactly one port notice')
-        assert.equal(Buffer.byteLength(content), 65113, 'the academic-paper payload moved')
+        assert.equal(Buffer.byteLength(after), 853, 'the academic-pipeline port notice moved')
+        assert.equal(Buffer.byteLength(content), 59934, 'the academic-pipeline payload moved')
+      } else if (skillName === 'academic-paper') {
+        // It carried a 572-byte notice until 0.5.0, when the academic-pipeline tree resolved
+        // the paths its markdown names. The absence is asserted WITH that arithmetic, so a
+        // returned notice reads as a regression and not as a silent re-pin.
+        assert.equal(after, '', 'academic-paper earns no port notice any more: the pipeline tree resolves its paths')
+        assert.equal(Buffer.byteLength(content), 64541, 'the academic-paper payload moved')
+        assert.equal(65113 - Buffer.byteLength(content), 572, 'academic-paper must have shrunk by exactly its former notice')
       } else if (skillName === 'sr-screener') {
         // No notice on this tree: every path its own markdown names is vendored. If it
         // ever earns one the payload grows by exactly that notice and this pin moves.
         assert.equal(after, '', 'sr-screener earns no port notice on this tree')
         assert.equal(Buffer.byteLength(content), 33212, 'the sr-screener payload moved')
       } else if (skillName === 'deep-research') {
-        assert.equal(after.trimStart().startsWith(PORT_NOTICE_BEGIN), true, 'deep-research keeps its own append notice')
-        assert.equal(after.trimEnd().endsWith(PORT_NOTICE_END), true, 'the notice must end the deep-research payload')
-        assert.equal(Buffer.byteLength(content), 52316, 'the deep-research payload moved')
+        // Same story as academic-paper: its one missing reference is vendored now, so the
+        // notice is gone (-563) and only the body may remain after the block.
+        assert.equal(after, '', 'deep-research earns no port notice any more: its one missing file is vendored')
+        assert.equal(Buffer.byteLength(content), 51753, 'the deep-research payload moved')
+        assert.equal(52316 - Buffer.byteLength(content), 563, 'deep-research must have shrunk by exactly its former notice')
       } else {
         // The reviewer is still the canary, but of the BODY: the rule now legitimately
         // precedes it, so what must stay true is that nothing was added to the vendored
@@ -765,22 +795,35 @@ async function main() {
     }
     for (const line of payloadBytes) console.log('      payload ' + line)
     ok('served payloads keep order and bytes: every skill is block + body (+ notice where the tree names unvendored '
-      + 'areas) - academic-paper 65113, reviewer 47984 (canary: body untouched), deep-research 52316, sr-screener 33212')
+      + 'areas) - academic-paper 64541, reviewer 47984 (canary: body untouched), academic-pipeline 59934 '
+      + '(the one notice left: 853 B, four references), deep-research 51753, sr-screener 33212')
 
     // The payload is a class, not one template. Counting it here means a file that
     // disappears from the tree fails the harness even if nothing else noticed, and
     // the CR check is what catches a worktree copy converted on the way in.
     const manifestFiles = Object.keys(manifest.files)
     const payloadNames = manifestFiles.filter(name => name.endsWith('.md') === false)
-    assert.equal(manifestFiles.length, 279, 'the vendored file count moved')
-    assert.equal(payloadNames.length, 89, 'the non-markdown payload count moved')
+    // 342 = 199 skill files (28 + 63 + 30 + 53 + 25) + 143 shared; 120 of them are not
+    // markdown. Was 279 / 89 before academic-pipeline was vendored. The counts are PINNED
+    // here rather than derived from the manifest, so a manifest and a tree that shrink
+    // together still fail this harness.
+    assert.equal(manifestFiles.length, 342, 'the vendored file count moved')
+    assert.equal(manifest.vendored.totalFileCount, manifestFiles.length, 'the manifest total must equal its own file map')
+    assert.equal(payloadNames.length, 120, 'the non-markdown payload count moved')
+    // A placeholder may be empty; nothing else may be. academic-pipeline ships one
+    // (.gitkeep) and the rule is narrowed by name rather than dropped.
+    const PLACEHOLDERS = new Set(['academic-pipeline/references/adapters/.gitkeep'])
     let payloadCrFree = 0
     for (const name of payloadNames) {
       const bytes = await readFile(join(repoRoot, 'vendor', name))
+      if (PLACEHOLDERS.has(name)) {
+        assert.equal(bytes.length, 0, name + ' is a placeholder, so emptiness is the whole of it')
+        continue
+      }
       assert.ok(bytes.length > 0, name + ' ships empty')
       if (bytes.includes(0x0d) === false) payloadCrFree += 1
     }
-    assert.equal(payloadCrFree, payloadNames.length, 'a payload file carries CR, so something text-converted it')
+    assert.equal(payloadCrFree, payloadNames.length - PLACEHOLDERS.size, 'a payload file carries CR, so something text-converted it')
     ok('the vendored payload is a class: ' + String(manifestFiles.length) + ' files, ' + String(payloadNames.length)
       + ' non-markdown, every one present, non-empty and CR-free')
 

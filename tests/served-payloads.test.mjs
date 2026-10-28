@@ -1,8 +1,8 @@
 /**
  * What ships, and what is served (t30, items 2 and 4).
  *
- * sr-screener made the package's payload extension-agnostic: 89 of the 279 vendored
- * files are not markdown (79 .json, 6 .py, 2 .js, 1 .tex, 1 .yaml). Pinning a list
+ * sr-screener made the package's payload extension-agnostic: 120 of the 342 vendored
+ * files are not markdown (109 .json, 6 .py, 2 .js, 1 .tex, 1 .yaml, 1 .gitkeep). Pinning a list
  * of six script names would prove that those six exist and nothing else, so the
  * assertions here are shaped as a class:
  *
@@ -13,11 +13,15 @@
  * - each payload file's bytes hash to the blob the index holds, computed by git
  *   itself with --no-filters: that is the "not normalised by any tooling" proof, and
  *   it is why a CRLF worktree copy cannot pass;
- * - the four served payloads all carry policy A: block + body (+ a notice where the tree
+ * - the five served payloads all carry policy A: block + body (+ a notice where the tree
  *   names unvendored areas). The rule is attached to every skill rather than selected by
  *   a detector, so the reviewer and deep-research gain the block and the two skills that
  *   already had it do not move; the table survives as documentation of why each skill was
  *   classified as it was.
+ * - a notice that DISAPPEARS is asserted, not deleted. academic-paper and deep-research
+ *   each carried one until the academic-pipeline tree was vendored, which resolves the
+ *   paths their markdown names; both totals therefore SHRANK, and the shrink is recorded
+ *   with its cause so that a returned notice reads as a regression and not as a re-pin.
  *
  * @module dsh-academic-review/tests/served-payloads
  */
@@ -50,39 +54,92 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorRoot = defaultVendorBasePath()
 const vendorDir = join(repoRoot, 'vendor')
 
-/** The four served skills, in discovery order. */
-const SERVED_SKILLS = ['academic-paper', 'academic-paper-reviewer', 'deep-research', 'sr-screener']
+/** The five served skills, in discovery order. */
+const SERVED_SKILLS = [
+  'academic-paper',
+  'academic-paper-reviewer',
+  'academic-pipeline',
+  'deep-research',
+  'sr-screener',
+]
 
-/** The two skills policy A travels with, and why each one qualifies. */
-const PRODUCERS = { 'academic-paper': 'prose-drafting', 'sr-screener': 'bundled-script' }
+/** The skills the table names, and the instrument that put each one there. */
+const PRODUCERS = {
+  'academic-paper': 'prose-drafting',
+  'academic-pipeline': 'orchestration-closure',
+  'sr-screener': 'bundled-script',
+}
 
 /**
- * Measured at 3f16ec3 ("attach policy A to every served skill") with the provider's own
- * output, not typed in from a report: the block is 684 bytes and these are the served
- * totals. They are pinned so that a body reflow, a notice change or a block edit has to
- * be a deliberate re-pin. The relationships below also assert each total against its
- * parts, so a failure says which part moved.
+ * Measured from the provider's own output, not typed in from a report: the block is 684
+ * bytes and these are the served totals. They are pinned so that a body reflow, a notice
+ * change or a block edit has to be a deliberate re-pin. The relationships below also
+ * assert each total against its parts, so a failure says which part moved.
+ *
+ * Re-pinned at 88356e3 (the academic-pipeline round). Only academic-pipeline has a notice
+ * (853 bytes, four references its tree names that this port does not vendor).
  */
-const SERVED_BYTES = { 'academic-paper': 65113, 'academic-paper-reviewer': 47984, 'deep-research': 52316, 'sr-screener': 33212 }
+const SERVED_BYTES = {
+  'academic-paper': 64541,
+  'academic-paper-reviewer': 47984,
+  'academic-pipeline': 59934,
+  'deep-research': 51753,
+  'sr-screener': 33212,
+}
 const BLOCK_BYTES = 684
 
 /**
- * The totals as they stood while the rule was SELECTED (two producers only), and the
- * change each skill was allowed to make when it became ATTACHED (all four). The delta is
- * asserted separately from the total because a total can be right for the wrong reason:
- * a double attachment shows as +1368, a missing block on a producer shows as -684, and
- * both would leave 'block + body + notice' arithmetically satisfied if the block were
- * counted twice on one side.
+ * The served totals at the v0.4.1 freeze, and what moved since. A delta is asserted
+ * separately from the total because a total can be right for the wrong reason: a body
+ * reflow and a lost notice can cancel out, and 'block + body + notice' stays arithmetically
+ * satisfied either way.
+ *
+ * The two NEGATIVE deltas are improvements and are recorded as such. A notice is only
+ * emitted for a reference the served tree makes to a path this port does not vendor, so a
+ * notice that goes away means the path now resolves - academic-paper and deep-research each
+ * named four or five areas that academic-pipeline's own files now supply. Asserting the
+ * shrink against the former notice size (below) is what stops 'the total went down' from
+ * reading as a regression, and stops 'the total came back up' from passing silently.
  */
-const PREVIOUS_PIN = { 'academic-paper': 65113, 'academic-paper-reviewer': 47300, 'deep-research': 51632, 'sr-screener': 33212 }
-const DELTA = { 'academic-paper': 0, 'academic-paper-reviewer': BLOCK_BYTES, 'deep-research': BLOCK_BYTES, 'sr-screener': 0 }
+const V041_TOTALS = {
+  'academic-paper': 65113,
+  'academic-paper-reviewer': 47984,
+  'deep-research': 52316,
+  'sr-screener': 33212,
+}
+const CHANGE_SINCE_V041 = {
+  'academic-paper': -572,
+  'academic-paper-reviewer': 0,
+  'academic-pipeline': 59934,
+  'deep-research': -563,
+  'sr-screener': 0,
+}
+
+/** Notice bytes that left with the changed trees: academic-paper, deep-research. */
+const NOTICE_LOST = { 'academic-paper': 572, 'deep-research': 563 }
+
+/** The one notice the served set still earns, and how many references it names. */
+const PIPELINE_NOTICE_BYTES = 853
+const PIPELINE_NOTICE_REFERENCES = 4
 
 /** The vendored file count and how many of them are payload rather than markdown. */
-const VENDORED_FILES = 279
-const PAYLOAD_FILES = 89
+const VENDORED_FILES = 342
+const PAYLOAD_FILES = 120
 /** Per-skill split: markdown + payload = the manifest's fileCount. */
-const MARKDOWN_PER_SKILL = { 'academic-paper': 62, 'academic-paper-reviewer': 28, 'deep-research': 53, 'sr-screener': 15 }
-const PAYLOAD_PER_SKILL = { 'academic-paper': 1, 'academic-paper-reviewer': 0, 'deep-research': 0, 'sr-screener': 10 }
+const MARKDOWN_PER_SKILL = {
+  'academic-paper': 62,
+  'academic-paper-reviewer': 28,
+  'academic-pipeline': 29,
+  'deep-research': 53,
+  'sr-screener': 15,
+}
+const PAYLOAD_PER_SKILL = {
+  'academic-paper': 1,
+  'academic-paper-reviewer': 0,
+  'academic-pipeline': 1,
+  'deep-research': 0,
+  'sr-screener': 10,
+}
 
 /** Extensions whose bytes are text, so a CR would be a conversion artefact. */
 const TEXT_EXTENSIONS = new Set(['.json', '.py', '.js', '.mjs', '.cjs', '.tpl', '.yaml', '.yml', '.tex', '.txt'])
@@ -125,7 +182,7 @@ test('the payload is a class, not a list: count, tree/manifest bijection, bytes,
     byExtension[extension] = (byExtension[extension] ?? 0) + 1
   }
   assert.equal(payload.length, PAYLOAD_FILES, 'the non-markdown payload count moved')
-  assert.deepEqual(byExtension, { '.json': 79, '.py': 6, '.js': 2, '.tex': 1, '.yaml': 1 },
+  assert.deepEqual(byExtension, { '.json': 109, '.py': 6, '.js': 2, '.tex': 1, '.yaml': 1, '.gitkeep': 1 },
     'the payload is what the manifest says it is, extension by extension')
 
   // Per skill: markdown + payload = the manifest's own fileCount, so a skill that
@@ -141,9 +198,18 @@ test('the payload is a class, not a list: count, tree/manifest bijection, bytes,
     assert.equal(declared.fileCount, mine.length, skill + ' fileCount must match the tree')
   }
 
+  // A placeholder is allowed to be empty and nothing else is. academic-pipeline ships one
+  // (.gitkeep, which exists to keep an otherwise-empty adapters/ directory), so the rule is
+  // narrowed by NAME rather than dropped: an empty file that is not the known placeholder
+  // still fails here.
+  const PLACEHOLDERS = new Set(['academic-pipeline/references/adapters/.gitkeep'])
   let crFree = 0
   for (const name of payload) {
     const bytes = await readFile(join(vendorDir, name))
+    if (PLACEHOLDERS.has(name)) {
+      assert.equal(bytes.length, 0, name + ' is a placeholder, so emptiness is the whole of it')
+      continue
+    }
     assert.ok(bytes.length > 0, name + ' ships empty')
     assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.files[name], 'digest drift in ' + name)
     if (TEXT_EXTENSIONS.has(name.slice(name.lastIndexOf('.')))) {
@@ -239,11 +305,15 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
     assert.equal(byteLength(definition.content), BLOCK_BYTES + byteLength(body) + byteLength(notice),
       skill + ': the served payload must be block + body + notice')
     assert.equal(byteLength(definition.content), SERVED_BYTES[skill], skill + ': the served payload moved')
-    // The DELTA is the component check: a total can be right while a component is
-    // wrong, and the two skills that gained the rule this round must gain exactly one
-    // block while the two that already had it must not move at all.
-    assert.equal(SERVED_BYTES[skill] - PREVIOUS_PIN[skill], DELTA[skill],
-      skill + ': the change since the previous pin must be exactly ' + String(DELTA[skill]) + ' byte(s)')
+    // The CHANGE is the component check: a total can be right while a component is
+    // wrong. A skill with no v0.4.1 total is an addition, and says so.
+    const change = CHANGE_SINCE_V041[skill]
+    if (V041_TOTALS[skill] === undefined) {
+      assert.equal(change, SERVED_BYTES[skill], skill + ': a skill that was not served at v0.4.1 is recorded as an addition')
+    } else {
+      assert.equal(SERVED_BYTES[skill] - V041_TOTALS[skill], change,
+        skill + ': the change since the v0.4.1 pin must be exactly ' + String(change) + ' byte(s)')
+    }
 
     // The policy is advertised for every skill now, because it is prepended to every
     // skill; the enforcement flag still tells the truth, and the basis - the instrument
@@ -261,7 +331,7 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
       + ' = body ' + String(byteLength(body)).padStart(6)
       + ' + block ' + String(byteLength(block)).padStart(3)
       + ' + notice ' + String(byteLength(notice)).padStart(3)
-      + '   delta ' + String(DELTA[skill]).padStart(4)
+      + '   change ' + String(change).padStart(6)
       + (inTable ? '  [' + PRODUCERS[skill] + ']' : ''))
   }
 
@@ -274,10 +344,31 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
     assert.equal(definition.content.slice(block.length + bodies.get(skill).length), '',
       skill + ' earns no port notice: every path its own markdown names is vendored')
   }
-  for (const skill of ['academic-paper', 'deep-research']) {
+  //
+  // academic-paper and deep-research USED to be in that list. They are asserted absent now,
+  // with the arithmetic of the notice they lost, because the two ways this can go wrong are
+  // opposite: a notice that quietly returns (a reference that stopped resolving) would be
+  // invisible in a list that had simply dropped their names, and a shrink with no recorded
+  // cause would look like a body that lost text.
+  for (const [skill, formerNotice] of Object.entries(NOTICE_LOST)) {
     const definition = served.get(skill)
     const notice = definition.content.slice(block.length + bodies.get(skill).length)
-    assert.notEqual(notice.trim(), '', skill + ' must still carry the notice for the areas this port does not vendor')
+    assert.equal(notice, '', skill + ' earns no port notice: the academic-pipeline tree now supplies every path its markdown names')
+    assert.equal(formerNotice, -CHANGE_SINCE_V041[skill],
+      skill + ' must have shrunk by exactly the notice it no longer needs, and by nothing else')
+    assert.equal(SERVED_BYTES[skill], V041_TOTALS[skill] - formerNotice,
+      skill + ': the body must be byte-identical to the v0.4.1 body; only the notice left')
+  }
+
+  // The one notice the served set still earns, asserted down to its size: a path that was
+  // added to the tree and now resolves shows here as a smaller notice, and a path that
+  // stopped resolving shows as a larger one.
+  {
+    const definition = served.get('academic-pipeline')
+    const notice = definition.content.slice(block.length + bodies.get('academic-pipeline').length)
+    assert.equal(byteLength(notice), PIPELINE_NOTICE_BYTES, 'the academic-pipeline port notice moved')
+    assert.equal(definition.metadata.unavailableReferenceCount, PIPELINE_NOTICE_REFERENCES,
+      'the notice must name exactly the references this port does not vendor')
   }
 
   // The table's two entries still describe two different measurements with two
@@ -285,9 +376,10 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
   // presence no longer depends on it - so a third skill arriving with a new reason is a
   // table edit and nothing else.
   const bases = Object.values(PRODUCERS)
-  assert.equal(new Set(bases).size, 2, 'the table must keep two different reasons on record')
+  assert.equal(new Set(bases).size, Object.keys(PRODUCERS).length,
+    'the table must keep one distinct basis per entry on record')
   const reasons = Object.keys(PRODUCERS).map(skill => fileProducingEntry(skill).reason)
-  assert.equal(new Set(reasons).size, 2, 'each table entry needs its own reason, not a shared one')
+  assert.equal(new Set(reasons).size, Object.keys(PRODUCERS).length, 'each table entry needs its own reason, not a shared one')
   for (const reason of reasons) {
     assert.equal(typeof reason, 'string', 'a table entry must carry a reason')
     assert.equal(reason.trim().includes(' '), true, 'the reason must be a sentence, not a label')
@@ -295,8 +387,12 @@ test('all four served payloads carry the rule: block + body (+ notice), and the 
   for (const skill of Object.keys(PRODUCERS)) {
     assert.equal(fileProducingEntry(skill).basis, PRODUCERS[skill], skill + ' must still qualify on ' + PRODUCERS[skill])
   }
-  console.log('# attached rule: ' + String(BLOCK_BYTES) + ' bytes on all four skills; table reasons differ '
-    + '(academic-paper -> ' + PRODUCERS['academic-paper'] + ', sr-screener -> ' + PRODUCERS['sr-screener'] + ') and are documentation now')
-  console.log('# reviewer = block + body, deep-research = block + body + notice, academic-paper = block + body + notice, '
-    + 'sr-screener = block + body (no notice on this tree)')
+  console.log('# attached rule: ' + String(BLOCK_BYTES) + ' bytes on all ' + String(SERVED_SKILLS.length)
+    + ' skills; table reasons differ ('
+    + Object.entries(PRODUCERS).map(([skill, basis]) => skill + ' -> ' + basis).join(', ')
+    + ') and are documentation now')
+  console.log('# academic-pipeline = block + body + notice(' + String(PIPELINE_NOTICE_BYTES) + '); academic-paper, '
+    + 'academic-paper-reviewer, deep-research, sr-screener = block + body, no notice on this tree'
+    + ' (academic-paper -' + String(NOTICE_LOST['academic-paper']) + ' and deep-research -'
+    + String(NOTICE_LOST['deep-research']) + ' are former notices that the pipeline tree resolved)')
 })

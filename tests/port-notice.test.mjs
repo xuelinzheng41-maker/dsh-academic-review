@@ -1,12 +1,21 @@
 /**
  * Served-skill port notice tests (P3-1, t14).
  *
- * deep-research/agents/bibliography_agent.md instructs the model to read
- * ../../academic-pipeline/references/literature_corpus_consumers.md, which this
- * package does not contain. A prompt-only skill that points at a missing file
- * teaches the model to improvise, so the provider now appends a delimited port
- * notice naming the missing paths and mirroring them in metadata - while a skill
- * with nothing missing is served byte-identically to the vendored body.
+ * A prompt-only skill that points at a file the package does not contain teaches the
+ * model to improvise, so the provider appends a delimited port notice naming the missing
+ * paths and mirrors them in metadata - while a skill with nothing missing is served as
+ * block + body and nothing else.
+ *
+ * Who earns a notice changed in the academic-pipeline round, and both directions are
+ * asserted here rather than edited away:
+ *   - deep-research was the skill this file was written for. Its one missing reference
+ *     (../../academic-pipeline/references/literature_corpus_consumers.md) is now vendored,
+ *     so it is served clean, and the file's existence is asserted as the reason.
+ *   - academic-pipeline is the only skill with a notice now: four paths its own markdown
+ *     names - docs/PERFORMANCE.md, two design specs and scripts/adapters/ - are not
+ *     vendored, so those four are what the notice mechanism is exercised on.
+ * The notice is a property of the TREE, not of a skill's luck: the same rule produces
+ * four entries for one skill and zero for four others, from the same code path.
  */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -37,6 +46,27 @@ import { renderWritePolicyBlock } from '../lib/write-policy.js'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const vendorRoot = defaultVendorBasePath()
 
+/** The fifth vendored skill: the only one whose own tree names unvendored paths. */
+const PIPELINE_SKILL_NAME = 'academic-pipeline'
+
+/**
+ * What academic-pipeline's own markdown names and this port does not ship, measured with
+ * the provider's own output. Every other served skill reports zero own-tree misses.
+ */
+const MISSING_TARGETS = [
+  'docs/PERFORMANCE.md',
+  'docs/design/2026-04-26-ars-v3.6.5-consumer-integration-design.md',
+  'docs/design/2026-04-30-ars-v3.6.7-step-6-orchestrator-hooks-spec.md',
+  'scripts/adapters/',
+]
+
+/**
+ * The shared/ scope, measured: 7 distinct targets, reached through the shared/ files a
+ * skill actually references. The docs still claim 11 references across 16 sites from the
+ * four-skill tree; this is the number, and the mismatch is reported rather than copied.
+ */
+const SHARED_SCOPE_TARGETS = 7
+
 /** Registration control stand-in; the provider only reads it passively. */
 function control() {
   const controller = new AbortController()
@@ -54,15 +84,14 @@ async function vendoredBody(skillName) {
   return parseSkillDocument(raw).body
 }
 
-test('deep-research is served with a notice naming the one reference this port does not ship', async () => {
+test('academic-pipeline is served with a notice naming the four references this port does not ship', async () => {
   const instance = provider()
   const candidates = await instance.list()
-  const candidate = candidates.find(item => item.name === DEEP_RESEARCH_SKILL_NAME)
+  const candidate = candidates.find(item => item.name === PIPELINE_SKILL_NAME)
+  assert.ok(candidate !== undefined, 'academic-pipeline must be advertised')
   const definition = await instance.get(candidate, {})
-  const body = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
+  const body = await vendoredBody(PIPELINE_SKILL_NAME)
   const block = renderWritePolicyBlock()
-
-  const missingTarget = 'academic-pipeline/references/literature_corpus_consumers.md'
   // Since 3f16ec3 the write-policy rule is prepended to every served skill, so the payload
   // is block + body + notice. The body is still served unmodified and the notice is still
   // appended; the parts are located by block.length + body.length rather than by
@@ -76,18 +105,59 @@ test('deep-research is served with a notice naming the one reference this port d
   assert.match(notice, /not upstream text/iu)
   assert.match(notice, /do not fabricate or paraphrase/iu)
 
-  // Exactly that one path, named with its referencing file, and nothing else.
-  const named = [...notice.matchAll(/`([^`]+.(?:md|json|yaml|ya?ml))`/gu)].map(match => match[1])
-  assert.deepEqual([...new Set(named)].sort(), [missingTarget, 'agents/bibliography_agent.md'].sort())
+  // Exactly those four paths, each with the file in THIS tree that names it, and nothing
+  // else: one bullet per target, no padding, no other tree's misses.
+  const named = [...notice.matchAll(/[\u0060]([^\u0060]+)[\u0060]/gu)].map(match => match[1])
+  const bullets = notice.split('\n').filter(line => line.startsWith('- '))
+  assert.equal(bullets.length, MISSING_TARGETS.length, 'one bullet per missing target')
+  for (const target of MISSING_TARGETS) {
+    assert.equal(named.includes(target), true, 'the notice must name ' + target)
+  }
+  assert.equal(named.filter(name => MISSING_TARGETS.includes(name)).length, MISSING_TARGETS.length,
+    'a target must be named once, not repeated')
+  for (const source of named) {
+    if (MISSING_TARGETS.includes(source)) continue
+    // The other backticked names are the referencing files, and they must exist here.
+    assert.equal(await existsInside(vendorRoot, PIPELINE_SKILL_NAME + '/' + source), true,
+      'a named source must be a file in this skill tree: ' + source)
+  }
   assert.equal(notice.includes('academic-paper/references'), false, 'shared-tree misses are not this skill\'s notice')
-  assert.match(notice, /named by `agents\/bibliography_agent\.md`/u)
 
   // Mirror in metadata for a UI that never parses the body.
-  assert.deepEqual(definition.metadata.unavailableReferences, [missingTarget])
-  assert.equal(definition.metadata.unavailableReferenceCount, 1)
+  assert.deepEqual(definition.metadata.unavailableReferences, MISSING_TARGETS)
+  assert.equal(definition.metadata.unavailableReferenceCount, MISSING_TARGETS.length)
 
   // Short enough to stay a footnote, not a second document.
   assert.ok(notice.split('\n').length <= 16, 'notice is ' + notice.split('\n').length + ' lines')
+})
+
+/**
+ * The other half, and the reason this file's subject moved: deep-research used to be the
+ * skill that earned a notice. Its one missing reference is vendored now, so the notice is
+ * GONE - asserted absent rather than deleted, because a notice that silently returns is a
+ * path that stopped resolving, and a test that had simply stopped naming deep-research
+ * could not tell the two apart.
+ */
+test('deep-research earns no notice now, because the one file it named is vendored', async () => {
+  const instance = provider()
+  const candidates = await instance.list()
+  const candidate = candidates.find(item => item.name === DEEP_RESEARCH_SKILL_NAME)
+  assert.ok(candidate !== undefined)
+  const definition = await instance.get(candidate, {})
+  const body = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
+  const block = renderWritePolicyBlock()
+
+  assert.equal(definition.content, block + body, 'deep-research must be served as block + body, with nothing appended')
+  assert.equal(definition.content.includes(PORT_NOTICE_BEGIN), false)
+  assert.equal(definition.metadata.unavailableReferenceCount, 0)
+  assert.deepEqual(definition.metadata.unavailableReferences, [])
+
+  // WHY the absence is correct: the target is in the tree. Without this the assertion above
+  // would pass just as happily if the scanner stopped seeing references at all.
+  const formerTarget = 'academic-pipeline/references/literature_corpus_consumers.md'
+  assert.equal(await existsInside(vendorRoot, formerTarget), true,
+    'the notice can only be absent because this file is vendored now')
+  assert.ok((await readFile(join(vendorRoot, formerTarget), 'utf8')).length > 0, formerTarget + ' must not be an empty file')
 })
 
 test('academic-paper-reviewer is served with no notice and its body is unchanged byte-for-byte', async () => {
@@ -129,18 +199,37 @@ test('academic-paper-reviewer is served with no notice and its body is unchanged
 })
 
 test('the resolver reports a missing target as missing, not as resolved', async () => {
-  const target = 'academic-pipeline/references/literature_corpus_consumers.md'
-  const scan = await scanVendorReferences({ vendorBasePath: vendorRoot, skillName: DEEP_RESEARCH_SKILL_NAME })
-  assert.deepEqual(scan.missing.map(entry => entry.target), [target])
-  assert.equal(scan.resolved.some(entry => entry.target === target), false)
+  // Driven on the one tree that has misses now. The path this test used on deep-research
+  // (academic-pipeline/references/literature_corpus_consumers.md) is vendored, and the
+  // assertions at the end keep that in view: the case moved, it did not weaken.
+  const scan = await scanVendorReferences({ vendorBasePath: vendorRoot, skillName: PIPELINE_SKILL_NAME })
+  assert.deepEqual(scan.missing.map(entry => entry.target).sort(), MISSING_TARGETS)
   assert.equal(scan.resolved.length + scan.missing.length, scan.references)
-  assert.equal(await existsInside(vendorRoot, target), false)
-  assert.equal(await existsInside(vendorRoot, 'deep-research/SKILL.md'), true)
+  for (const entry of scan.missing) {
+    assert.equal(scan.resolved.some(other => other.target === entry.target), false,
+      entry.target + ' cannot be both resolved and missing')
+    assert.equal(await existsInside(vendorRoot, entry.target), false, entry.target + ' is reported missing but exists')
+    // A scan row carries the referencing FILE; the grouped form used below turns that into
+    // the sources list, so both shapes are checked rather than assumed to agree.
+    assert.equal(entry.exists, false, entry.target + ' is reported missing but the scanner found it')
+    assert.equal(typeof entry.file, 'string', entry.target + ' must name what references it')
+    assert.equal(entry.file.startsWith(PIPELINE_SKILL_NAME + '/'), true,
+      'a miss reported for ' + PIPELINE_SKILL_NAME + ' must come from its own tree, saw ' + entry.file)
+  }
+  assert.equal(await existsInside(vendorRoot, PIPELINE_SKILL_NAME + '/SKILL.md'), true)
 
-  const missing = await missingReferencesForSkill({ vendorBasePath: vendorRoot, skillName: DEEP_RESEARCH_SKILL_NAME })
-  assert.deepEqual(missing, [{ target, sources: ['deep-research/agents/bibliography_agent.md'] }])
-  // The reviewer's own tree is clean, so it never gets a notice.
+  const missing = await missingReferencesForSkill({ vendorBasePath: vendorRoot, skillName: PIPELINE_SKILL_NAME })
+  assert.deepEqual(missing.map(entry => entry.target), MISSING_TARGETS)
+  assert.deepEqual(missing[0], {
+    target: 'docs/PERFORMANCE.md',
+    sources: ['academic-pipeline/references/passport_as_reset_boundary.md'],
+  })
+  // The two trees whose own references all resolve are clean, so they get no notice...
   assert.deepEqual(await missingReferencesForSkill({ vendorBasePath: vendorRoot, skillName: REVIEW_SKILL_NAME }), [])
+  assert.deepEqual(await missingReferencesForSkill({ vendorBasePath: vendorRoot, skillName: DEEP_RESEARCH_SKILL_NAME }), [])
+  // ...and the deep-research case resolved for a reason that can be checked.
+  assert.equal(await existsInside(vendorRoot, 'academic-pipeline/references/literature_corpus_consumers.md'), true,
+    'deep-research is clean because this path is now vendored, not because the scanner stopped looking')
 })
 
 test('a reference that escapes the package is reported, never followed or thrown', async () => {
@@ -226,15 +315,20 @@ test('the mounted provider serves the notice through the host registry', async (
   const ctx = new Context()
   const skills = new SkillRegistry(ctx)
   registerReviewSkillProvider(ctx, { providerName: 'academic-review', vendorBasePath: vendorRoot })
-  const research = await skills.get(DEEP_RESEARCH_SKILL_NAME, { cwd: repoRoot })
-  assert.ok(research !== undefined)
-  assert.equal(research.metadata.unavailableReferenceCount, 1)
-  assert.deepEqual(research.metadata.unavailableReferences, ['academic-pipeline/references/literature_corpus_consumers.md'])
-  assert.ok(research.content.includes(PORT_NOTICE_BEGIN))
-  const reviewer = await skills.get(REVIEW_SKILL_NAME, { cwd: repoRoot })
-  assert.ok(reviewer !== undefined)
-  assert.equal(reviewer.content.includes(PORT_NOTICE_BEGIN), false)
-  assert.equal(reviewer.metadata.unavailableReferenceCount, 0)
+  const pipeline = await skills.get(PIPELINE_SKILL_NAME, { cwd: repoRoot })
+  assert.ok(pipeline !== undefined)
+  assert.equal(pipeline.metadata.unavailableReferenceCount, MISSING_TARGETS.length)
+  assert.deepEqual(pipeline.metadata.unavailableReferences, MISSING_TARGETS)
+  assert.ok(pipeline.content.includes(PORT_NOTICE_BEGIN))
+  assert.ok(pipeline.content.includes(PORT_NOTICE_END))
+  // Through the host registry, the clean skills stay clean: the notice is not added by the
+  // plugin layer on top of the provider, so the two layers cannot disagree.
+  for (const cleanName of [REVIEW_SKILL_NAME, DEEP_RESEARCH_SKILL_NAME]) {
+    const clean = await skills.get(cleanName, { cwd: repoRoot })
+    assert.ok(clean !== undefined, cleanName + ' must be served')
+    assert.equal(clean.content.includes(PORT_NOTICE_BEGIN), false, cleanName + ' must be served without a notice')
+    assert.equal(clean.metadata.unavailableReferenceCount, 0)
+  }
 })
 
 test('the shared/ scope is reported in metadata for both skills, with the body untouched', async () => {
@@ -245,6 +339,8 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
 
   const reviewerShared = reviewer.metadata.unavailableSharedReferences
   const researchShared = research.metadata.unavailableSharedReferences
+  const pipeline = await instance.get(candidates.find(item => item.name === PIPELINE_SKILL_NAME), {})
+  const pipelineShared = pipeline.metadata.unavailableSharedReferences
 
   // Both skills read the same shared/ protocol files, so both must disclose the
   // same misses - which is exactly why this cannot live in a served body.
@@ -252,11 +348,24 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   assert.ok(reviewerShared.length > 0)
   assert.equal(reviewer.metadata.unavailableSharedReferenceCount, reviewerShared.length)
   assert.equal(research.metadata.unavailableSharedReferenceCount, researchShared.length)
-  // The known upstream areas the shared files point at, spot-checked by name.
-  // academic-paper is vendored now, so that reference resolves; the misses that
-  // remain are the upstream areas this port still does not ship.
-  assert.ok(reviewerShared.includes('academic-pipeline/references/plagiarism_detection_protocol.md'), reviewerShared.join(', '))
+  assert.equal(reviewerShared.length, SHARED_SCOPE_TARGETS, 'the shared scope moved: ' + reviewerShared.join(', '))
+  assert.deepEqual(pipelineShared, reviewerShared,
+    'the shared scope is a property of shared/, so a skill that reaches it must report the same set')
+  // The known upstream areas the shared files point at, spot-checked by name. Both
+  // vendored trees (academic-paper, academic-pipeline) are resolved now, so what remains
+  // is the documentation and adapter directories this port still does not ship.
   assert.ok(reviewerShared.includes('scripts/adapters/'), reviewerShared.join(', '))
+  assert.ok(reviewerShared.includes('examples/passport_with_experiment_provenance.yaml'), reviewerShared.join(', '))
+  // The negative half, which is what proves the vendoring worked: the two references that
+  // used to dangle under the pipeline and paper trees must no longer be reported. Without
+  // this, a disclosure that regressed to the old target list would satisfy everything above.
+  for (const resolvedNow of [
+    'academic-pipeline/references/plagiarism_detection_protocol.md',
+    'academic-paper/references/abstract_writing_guide.md',
+  ]) {
+    assert.equal(reviewerShared.includes(resolvedNow), false,
+      resolvedNow + ' is vendored, so it must have stopped being reported: ' + reviewerShared.join(', '))
+  }
   // ...and the negative half, which is the proof the vendoring actually worked: the
   // reference that used to dangle under academic-paper/ must no longer be reported.
   // Without this, a disclosure that regressed to the old 14-target list would still
@@ -264,15 +373,17 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   assert.equal(reviewerShared.includes('academic-paper/references/abstract_writing_guide.md'), false,
     'academic-paper is vendored, so this reference must have stopped being reported: ' + reviewerShared.join(', '))
 
-  // deep-research carries BOTH lists separately: one own-tree miss and the shared set.
-  assert.deepEqual(research.metadata.unavailableReferences, ['academic-pipeline/references/literature_corpus_consumers.md'])
-  assert.equal(research.metadata.unavailableReferenceCount, 1)
-  assert.equal(researchShared.length > 1, true, 'the shared scope must not be conflated with the own-tree scope')
-  // Overlap is real and honest: bibliography_agent.md names the target directly,
-  // and shared/handoff_schemas.md names it too. The scopes answer different
-  // questions, so the target may legitimately appear in both.
-  assert.equal(researchShared.includes('academic-pipeline/references/literature_corpus_consumers.md'), true)
+  // The two scopes answer different questions, so they are carried separately: a skill can
+  // be served clean on its own tree while the shared files it reads still name misses.
+  assert.deepEqual(research.metadata.unavailableReferences, [], 'the deep-research own-tree scope is clean now')
+  assert.equal(research.metadata.unavailableSharedReferenceCount, SHARED_SCOPE_TARGETS,
+    'the shared scope must not be conflated with the own-tree scope')
   assert.equal(reviewer.metadata.unavailableReferences.length, 0, 'the reviewer own-tree scope is clean')
+  // ...and the pipeline is the mirror image: own-tree misses AND the shared set, with the
+  // own-tree list the shorter of the two. That asymmetry is what the two fields are for.
+  assert.deepEqual(pipeline.metadata.unavailableReferences, MISSING_TARGETS)
+  assert.equal(pipelineShared.length > pipeline.metadata.unavailableReferences.length, true,
+    'the shared scope must be reported independently of the own-tree scope')
 
   // The bodies are untouched by any of this. Each payload is rebuilt from its parts - the
   // prepended block, the vendored body, and the notice the provider derives - so the
@@ -281,10 +392,7 @@ test('the shared/ scope is reported in metadata for both skills, with the body u
   const reviewerBody = await vendoredBody(REVIEW_SKILL_NAME)
   const researchBody = await vendoredBody(DEEP_RESEARCH_SKILL_NAME)
   assert.equal(reviewer.content, block + reviewerBody)
-  assert.equal(research.content, block + researchBody + renderPortNotice(
-    DEEP_RESEARCH_SKILL_NAME,
-    [{ target: 'academic-pipeline/references/literature_corpus_consumers.md', sources: ['deep-research/agents/bibliography_agent.md'] }],
-  ))
+  assert.equal(research.content, block + researchBody, 'deep-research is block + body, with no notice to append')
 })
 
 test('the shared scope walks only shared/ markdown the skill actually reaches', async () => {
